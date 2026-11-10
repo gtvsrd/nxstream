@@ -6,13 +6,27 @@ on:
   workflow_dispatch:
 
 jobs:
+  testes:
+    name: Testes (PC)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v5
+
+      - name: Rodar testes
+        run: make -C tests
+
   build:
+    name: Compilar .nro
     runs-on: ubuntu-latest
     container: devkitpro/devkita64:latest
 
     steps:
       - name: Baixar o código
         uses: actions/checkout@v5
+
+      - name: Instalar bibliotecas
+        run: dkp-pacman -Sy --noconfirm --needed switch-curl switch-zlib
 
       - name: Compilar
         run: make -j$(nproc)

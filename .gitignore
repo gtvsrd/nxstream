@@ -3,3 +3,5 @@ build/
 *.nacp
 *.elf
 *.map
+tests/test_parse
+tests/teste_token.json*

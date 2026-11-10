@@ -15,13 +15,13 @@ include $(DEVKITPRO)/libnx/switch_rules
 #---------------------------------------------------------------------------------
 TARGET      := nxstream
 BUILD       := build
-SOURCES     := source
+SOURCES     := source source/core source/auth source/api third_party/cjson
 DATA        := data
-INCLUDES    := include
+INCLUDES    := source third_party/cjson
 
 APP_TITLE   := NXStream
 APP_AUTHOR  := gtvsrd
-APP_VERSION := 0.0.2
+APP_VERSION := 0.1.0
 
 #---------------------------------------------------------------------------------
 # Flags de compilação
@@ -34,7 +34,8 @@ CXXFLAGS := $(CFLAGS) -fno-rtti -fno-exceptions
 ASFLAGS  := -g $(ARCH)
 LDFLAGS   = -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-LIBS     := -lnx
+# libcurl do devkitPro usa o TLS nativo do Switch (backend libnx)
+LIBS     := -lcurl -lz -lnx
 LIBDIRS  := $(PORTLIBS) $(LIBNX)
 
 #---------------------------------------------------------------------------------
