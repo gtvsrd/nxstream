@@ -117,6 +117,38 @@ static void teste_consoles(void) {
     CHECAR(!xapi_parse_consoles("{\"erro\":1}", &c));
 }
 
+static void teste_sessao(void) {
+    puts("sessao de streaming");
+    XSessao s;
+    CHECAR(xapi_parse_sessao("{\"sessionId\":\"ABC-123\",\"sessionPath\":\"/v5/sessions/home/ABC-123\",\"state\":\"Provisioning\"}", &s));
+    CHECAR(!strcmp(s.caminho, "v5/sessions/home/ABC-123"));
+    CHECAR(!strcmp(s.id, "ABC-123"));
+    CHECAR(xapi_parse_sessao("{\"sessionPath\":\"v5/sessions/home/X9\"}", &s) && !strcmp(s.caminho, "v5/sessions/home/X9"));
+    CHECAR(!xapi_parse_sessao("{\"state\":\"Provisioning\"}", &s));
+
+    char det[128];
+    CHECAR(xapi_parse_estado("{\"state\":\"Provisioning\"}", det, sizeof det) == XSESSAO_PREPARANDO);
+    CHECAR(!strcmp(det, "Provisioning"));
+    CHECAR(xapi_parse_estado("{\"state\":\"ReadyToConnect\"}", det, sizeof det) == XSESSAO_AGUARDA_LOGIN);
+    CHECAR(xapi_parse_estado("{\"state\":\"Provisioned\"}", det, sizeof det) == XSESSAO_PRONTA);
+    CHECAR(xapi_parse_estado("{\"state\":\"WaitingForResources\"}", det, sizeof det) == XSESSAO_NA_FILA);
+    CHECAR(xapi_parse_estado("{\"state\":\"Failed\",\"errorDetails\":{\"code\":\"ConsoleOff\",\"message\":\"Console nao responde\"}}", det, sizeof det) == XSESSAO_FALHOU);
+    CHECAR(!strcmp(det, "ConsoleOff: Console nao responde"));
+    CHECAR(xapi_parse_estado("{\"state\":\"Novidade\"}", det, sizeof det) == XSESSAO_DESCONHECIDO);
+    CHECAR(xapi_parse_estado("<html>", det, sizeof det) == XSESSAO_ERRO);
+
+    char *corpo = xapi_corpo_play("F4001ABCDEF");
+    CHECAR(corpo && strstr(corpo, "\"serverId\":\"F4001ABCDEF\""));
+    CHECAR(corpo && strstr(corpo, "\"nanoVersion\":\"V3;WebrtcTransport.dll\""));
+    CHECAR(corpo && strstr(corpo, "\"titleId\":\"\""));
+    free(corpo);
+
+    char *t = auth_parse_token_console(200, "{\"token_type\":\"bearer\",\"access_token\":\"LPT\",\"refresh_token\":\"R\"}");
+    CHECAR(t && !strcmp(t, "LPT"));
+    free(t);
+    CHECAR(auth_parse_token_console(400, "{\"error\":\"invalid_grant\"}") == NULL);
+}
+
 static void teste_armazenamento(void) {
     puts("armazenamento do token");
     const char *arq = "teste_token.json";
@@ -140,6 +172,7 @@ int main(void) {
     teste_xbl();
     teste_streaming();
     teste_consoles();
+    teste_sessao();
     teste_armazenamento();
     printf("\n%d de %d verificacoes passaram\n", g_total - g_falhas, g_total);
     return g_falhas ? 1 : 0;

@@ -42,6 +42,13 @@
 #define GSSV_URL_LOGIN      "https://" GSSV_OFERTA ".gssv-play-prod.xboxlive.com/v2/login/user"
 #define GSSV_CLIENTE        "XboxComBrowser"
 #define API_CAMINHO_CONSOLES "/v6/servers/home"
+#define API_CAMINHO_PLAY     "/v5/sessions/home/play"
+// Demais chamadas da sessão usam o "sessionPath" devolvido pelo play:
+//   <sessionPath>/state, /connect, /keepalive, /sdp, /ice  e DELETE <sessionPath>
+
+// Token de transferência para o console (enviado em /connect)
+#define MS_URL_LIVE_TOKEN   "https://login.live.com/oauth20_token.srf"
+#define MS_ESCOPO_CONSOLE   "service::http://Passport.NET/purpose::PURPOSE_XBOX_CLOUD_CONSOLE_TRANSFER_TOKEN"
 
 // Identificação do cliente enviada à API de streaming
 #define NX_DEVICE_INFO \
@@ -60,3 +67,14 @@
 // ---------------------------------------------------------------------------
 #define HTTP_TEMPO_CONEXAO  10
 #define HTTP_TEMPO_TOTAL    20
+
+// ---------------------------------------------------------------------------
+// Sessão
+// ---------------------------------------------------------------------------
+#define SESSAO_INTERVALO_ESTADO_S   1     // consulta do estado enquanto prepara
+#define SESSAO_TEMPO_MAX_PREPARO_S  120   // desiste se não ficar pronta
+#define SESSAO_INTERVALO_KEEPALIVE_S 30   // o Greenlight usa 30 s
+#define SESSAO_MAX_CONNECT          3     // tentativas de /connect
+#define NX_IDIOMA                   "pt-BR"
+// Convenção do campo não confirmada (as referências usam valores fixos); não afeta a conexão
+#define NX_FUSO_MINUTOS             -180

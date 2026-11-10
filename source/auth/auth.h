@@ -45,6 +45,9 @@ AuthStatus auth_codigo_iniciar(AuthCodigo *codigo);
 AuthStatus auth_codigo_verificar(const AuthCodigo *codigo, AuthConta *conta);
 AuthStatus auth_renovar(AuthConta *conta);
 AuthStatus auth_streaming(const AuthConta *conta, AuthStreaming *streaming);
+// Token de transferência que o console pede em /connect (estado ReadyToConnect).
+// Não altera o refresh token salvo. *token deve ser liberado com free().
+AuthStatus auth_token_console(const AuthConta *conta, char **token);
 
 // Mensagem legível do último erro (para mostrar na tela)
 const char *auth_ultimo_erro(void);
@@ -63,3 +66,4 @@ AuthStatus auth_parse_token(long status, const char *json, AuthConta *conta);
 char      *auth_parse_xbl_token(const char *json, char *gamertag, int tam_gamertag);
 bool       auth_parse_streaming(const char *json, AuthStreaming *streaming);
 const char *auth_descrever_xerr(long long xerr);
+char      *auth_parse_token_console(long status, const char *json);

@@ -285,3 +285,47 @@ fim:
     free(xsts_token);
     return st;
 }
+
+// ---------------------------------------------------------------------------
+// 4. Token de transferência para o console (/connect)
+// ---------------------------------------------------------------------------
+AuthStatus auth_token_console(const AuthConta *conta, char **token) {
+    g_erro[0] = '\0';
+    *token = NULL;
+    if (!conta->refresh_token)
+        return AUTH_INVALIDO;
+
+    char *refresh = http_codificar(conta->refresh_token);
+    char *escopo = http_codificar(MS_ESCOPO_CONSOLE);
+    if (!refresh || !escopo) {
+        free(refresh);
+        free(escopo);
+        return AUTH_ERRO;
+    }
+    size_t tam = strlen(refresh) + strlen(escopo) + 256;
+    char *corpo = malloc(tam);
+    snprintf(corpo, tam, "client_id=%s&scope=%s&grant_type=refresh_token&refresh_token=%s",
+             MS_CLIENT_ID, escopo, refresh);
+    free(refresh);
+    free(escopo);
+
+    HttpResposta r;
+    bool ok = http_requisicao(HTTP_POST, MS_URL_LIVE_TOKEN, HEADERS_FORM, corpo, &r);
+    free(corpo);
+    if (!ok) {
+        definir_erro("Sem conexao com o servidor de login (%s).", r.erro);
+        return AUTH_ERRO_REDE;
+    }
+
+    *token = auth_parse_token_console(r.status, r.corpo);
+    AuthStatus st = AUTH_OK;
+    if (*token) {
+        LOG("auth: token de transferencia do console obtido");
+    } else {
+        log_resposta_erro("token do console", &r);
+        snprintf(g_erro, sizeof g_erro, "Login nao liberou acesso ao console (HTTP %ld).", r.status);
+        st = AUTH_ERRO;
+    }
+    http_resposta_liberar(&r);
+    return st;
+}

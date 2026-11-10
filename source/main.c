@@ -1,8 +1,9 @@
-// NXStream - Fase 1: login na conta Microsoft e lista de consoles
+// NXStream - Fase 2a: login, lista de consoles e sessão de streaming
 //
 // Interface em texto simples (console do libnx). Fluxo:
 //   INICIO -> (sem token salvo) LOGIN -> STREAMING -> LISTA
 //   INICIO -> (com token salvo) STREAMING -> LISTA
+//   LISTA -> (A no console) SESSAO -> LISTA
 // Nenhum erro fecha o app: sempre há "tentar de novo" ou "sair da conta".
 
 #include <stdio.h>
@@ -25,10 +26,12 @@
 #define COR_FRACA   "\x1b[37m"
 #define COR_FIM     "\x1b[0m"
 
-typedef enum { PASSO_INICIO, PASSO_LOGIN, PASSO_STREAMING, PASSO_LISTA, PASSO_SAIR } Passo;
+typedef enum { PASSO_INICIO, PASSO_LOGIN, PASSO_STREAMING, PASSO_LISTA, PASSO_SESSAO, PASSO_SAIR } Passo;
 
 static PadState g_controle;
 static u64 g_tick_anterior;
+static double g_ultimo_congelamento = 0; // segundos parado no último sleep/HOME
+static XConsole g_console;               // console escolhido na lista
 
 // ---------------------------------------------------------------------------
 // Sistema: eventos do applet e detector de congelamento
@@ -66,8 +69,10 @@ static u64 quadro(bool *fechar) {
     }
     double parado = segundos_desde(g_tick_anterior);
     g_tick_anterior = armGetSystemTick();
-    if (parado > 1.0)
+    if (parado > 1.0) {
         LOG("sistema: app ficou congelado por %.1f s", parado);
+        g_ultimo_congelamento = parado;
+    }
 
     padUpdate(&g_controle);
     return padGetButtonsDown(&g_controle);
@@ -325,8 +330,207 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming, time_t stre
         if ((b & HidNpadButton_AnyDown) && sel < consoles.total - 1)
             sel++;
         if ((b & HidNpadButton_A) && consoles.total > 0) {
-            LOG("main: console escolhido: %s", consoles.itens[sel].nome);
-            mensagem = COR_DESTAQ "A conexao com o console chega na fase 2." COR_FIM;
+            g_console = consoles.itens[sel];
+            LOG("main: console escolhido: %s (%s)", g_console.nome, g_console.estado);
+            return PASSO_SESSAO;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Passo: sessão de streaming (fase 2a)
+// Abre a sessão, acompanha os estados até ficar pronta e a mantém viva.
+// A conexão com o console (WebRTC) entra na fase 2b.
+// ---------------------------------------------------------------------------
+
+// Tela de erro da sessão. Retorna o próximo passo.
+static Passo erro_sessao(const char *titulo, const char *detalhe) {
+    cabecalho();
+    printf(COR_ERRO "%s" COR_FIM "\n\n", titulo);
+    if (detalhe && detalhe[0])
+        printf("%s\n\n", detalhe);
+    printf("A = tentar de novo\nB = voltar para a lista\n+ = fechar o app\n");
+    u64 b = esperar_botao(HidNpadButton_A | HidNpadButton_B | HidNpadButton_Plus);
+    return b == HidNpadButton_A ? PASSO_SESSAO : b == HidNpadButton_B ? PASSO_LISTA : PASSO_SAIR;
+}
+
+static void encerrar_sessao(const AuthStreaming *streaming, const XSessao *sessao) {
+    mostrar_aguarde("Encerrando a sessao...");
+    xapi_sessao_encerrar(streaming, sessao);
+}
+
+static void tempo_texto(char *buf, size_t tam, int s) {
+    if (s >= 3600)
+        snprintf(buf, tam, "%d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60);
+    else
+        snprintf(buf, tam, "%d:%02d", s / 60, s % 60);
+}
+
+static Passo passo_sessao(AuthConta *conta, AuthStreaming *streaming) {
+    char texto[160];
+    snprintf(texto, sizeof texto, "Abrindo sessao com %s...", g_console.nome);
+    mostrar_aguarde(texto);
+
+    XSessao sessao;
+    if (!xapi_sessao_iniciar(streaming, g_console.server_id, &sessao))
+        return erro_sessao("Nao foi possivel abrir a sessao.", xapi_ultimo_erro());
+
+    // --- 1. Preparação: consulta o estado até ficar pronta -----------------
+    u64 inicio = armGetSystemTick();
+    double proxima = 0;
+    int tentativas_connect = 0, erros_seguidos = 0, ultimo_segundo = -1;
+    XSessaoEstado estado = XSESSAO_PREPARANDO;
+    char detalhe[160] = "";
+    bool fechar = false;
+
+    while (estado != XSESSAO_PRONTA) {
+        double passou = segundos_desde(inicio);
+
+        if (passou > SESSAO_TEMPO_MAX_PREPARO_S) {
+            LOG("main: sessao nao ficou pronta em %d s", SESSAO_TEMPO_MAX_PREPARO_S);
+            encerrar_sessao(streaming, &sessao);
+            return erro_sessao("O console demorou demais para responder.",
+                               "Confira se ele esta ligado ou em repouso e conectado a internet.");
+        }
+
+        if (passou >= proxima) {
+            estado = xapi_sessao_estado(streaming, &sessao, detalhe, sizeof detalhe);
+            proxima = segundos_desde(inicio) + SESSAO_INTERVALO_ESTADO_S;
+            LOG("main: sessao: %s (%.0f s)", detalhe[0] ? detalhe : xapi_sessao_estado_texto(estado), passou);
+
+            if (estado == XSESSAO_ERRO) {
+                if (++erros_seguidos >= 5) {
+                    encerrar_sessao(streaming, &sessao);
+                    return erro_sessao("Perdi contato com o servico de streaming.", xapi_ultimo_erro());
+                }
+            } else {
+                erros_seguidos = 0;
+            }
+
+            if (estado == XSESSAO_FALHOU) {
+                encerrar_sessao(streaming, &sessao);
+                return erro_sessao("O console recusou a sessao.", detalhe);
+            }
+
+            if (estado == XSESSAO_AGUARDA_LOGIN) {
+                if (tentativas_connect >= SESSAO_MAX_CONNECT) {
+                    encerrar_sessao(streaming, &sessao);
+                    return erro_sessao("O console nao aceitou o login.",
+                                       "Confira se e a mesma conta configurada no Xbox.");
+                }
+                tentativas_connect++;
+                char *token = NULL;
+                if (auth_token_console(conta, &token) != AUTH_OK) {
+                    encerrar_sessao(streaming, &sessao);
+                    return erro_sessao("Nao foi possivel autorizar o acesso ao console.", auth_ultimo_erro());
+                }
+                bool ok = xapi_sessao_conectar(streaming, &sessao, token);
+                free(token);
+                if (!ok) {
+                    encerrar_sessao(streaming, &sessao);
+                    return erro_sessao("O console recusou o login.", xapi_ultimo_erro());
+                }
+            }
+        }
+
+        if ((int)passou != ultimo_segundo) {
+            ultimo_segundo = (int)passou;
+            cabecalho();
+            printf("Console: " COR_DESTAQ "%s" COR_FIM " (%s)\n\n", g_console.nome,
+                   xapi_tipo_amigavel(g_console.tipo));
+            printf("%s... %d s\n\n", xapi_sessao_estado_texto(estado), (int)passou);
+            printf(COR_FRACA "Se o console estava em repouso, ele acorda no modo de\n"
+                   "streaming (sem ligar a TV). Pode levar alguns segundos." COR_FIM "\n\n");
+            printf("B = cancelar\n");
+        }
+
+        u64 b = quadro(&fechar);
+        if (fechar) {
+            xapi_sessao_encerrar(streaming, &sessao);
+            return PASSO_SAIR;
+        }
+        if (b & HidNpadButton_B) {
+            encerrar_sessao(streaming, &sessao);
+            return PASSO_LISTA;
+        }
+    }
+
+    double tempo_preparo = segundos_desde(inicio);
+    LOG("main: sessao pronta em %.1f s", tempo_preparo);
+
+    // --- 2. Sessão ativa: mantém viva com keepalive ------------------------
+    u64 ativa_desde = armGetSystemTick();
+    u64 ultimo_keepalive = armGetSystemTick();
+    long status_keepalive = -1;     // -1 = nenhum enviado ainda
+    int keepalives_ok = 0, keepalives_falhos = 0;
+    char apos_sleep[96] = "";
+    ultimo_segundo = -1;
+
+    for (;;) {
+        bool forcar = false;
+        if (g_ultimo_congelamento > 0) {
+            // Acabou de voltar do sleep/HOME: testa na hora se a sessão sobreviveu
+            snprintf(apos_sleep, sizeof apos_sleep, "Voltou de %.0f s suspenso", g_ultimo_congelamento);
+            g_ultimo_congelamento = 0;
+            forcar = true;
+        }
+
+        if (forcar || segundos_desde(ultimo_keepalive) >= SESSAO_INTERVALO_KEEPALIVE_S) {
+            status_keepalive = xapi_sessao_keepalive(streaming, &sessao);
+            ultimo_keepalive = armGetSystemTick();
+            if (status_keepalive >= 200 && status_keepalive < 300)
+                keepalives_ok++;
+            else
+                keepalives_falhos++;
+            if (forcar) {
+                size_t n = strlen(apos_sleep);
+                snprintf(apos_sleep + n, sizeof apos_sleep - n, ": sessao %s (HTTP %ld)",
+                         (status_keepalive >= 200 && status_keepalive < 300) ? "continua viva" : "caiu",
+                         status_keepalive);
+                LOG("main: %s", apos_sleep);
+            }
+            if (status_keepalive == 404 || status_keepalive == 410) {
+                LOG("main: servidor encerrou a sessao");
+                return erro_sessao("A sessao foi encerrada pelo servidor.", NULL);
+            }
+            ultimo_segundo = -1; // redesenha
+        }
+
+        int ativa = (int)segundos_desde(ativa_desde);
+        if (ativa != ultimo_segundo) {
+            ultimo_segundo = ativa;
+            char t_ativa[16];
+            tempo_texto(t_ativa, sizeof t_ativa, ativa);
+            int desde_ka = (int)segundos_desde(ultimo_keepalive);
+
+            cabecalho();
+            printf("Console: " COR_DESTAQ "%s" COR_FIM " (%s)\n\n", g_console.nome,
+                   xapi_tipo_amigavel(g_console.tipo));
+            printf(COR_OK "Sessao pronta!" COR_FIM " (preparada em %.0f s)\n\n", tempo_preparo);
+            printf("Ativa ha: %s\n", t_ativa);
+            if (status_keepalive < 0)
+                printf("Keepalive: primeiro envio em %d s\n", SESSAO_INTERVALO_KEEPALIVE_S - desde_ka);
+            else
+                printf("Keepalive: %s (HTTP %ld) ha %d s  [%d ok, %d falhas]\n",
+                       (status_keepalive >= 200 && status_keepalive < 300) ? COR_OK "ok" COR_FIM
+                                                                            : COR_ERRO "falhou" COR_FIM,
+                       status_keepalive, desde_ka, keepalives_ok, keepalives_falhos);
+            if (apos_sleep[0])
+                printf("%s\n", apos_sleep);
+            printf("\n" COR_FRACA "Fase 2a: a sessao existe no servidor, mas o app ainda nao\n"
+                   "se conecta ao console. Isso chega na fase 2b." COR_FIM "\n\n");
+            printf("Teste: deixe ativa alguns minutos, ou durma o Switch e volte.\n\n");
+            printf("B = encerrar a sessao   + = encerrar e fechar\n");
+        }
+
+        u64 b = quadro(&fechar);
+        if (fechar || (b & HidNpadButton_Plus)) {
+            encerrar_sessao(streaming, &sessao);
+            return PASSO_SAIR;
+        }
+        if (b & HidNpadButton_B) {
+            encerrar_sessao(streaming, &sessao);
+            return PASSO_LISTA;
         }
     }
 }
@@ -389,6 +593,9 @@ int main(int argc, char *argv[]) {
                     break;
                 case PASSO_LISTA:
                     passo = passo_lista(&conta, &streaming, streaming_obtido);
+                    break;
+                case PASSO_SESSAO:
+                    passo = passo_sessao(&conta, &streaming);
                     break;
                 default:
                     passo = PASSO_SAIR;

@@ -154,6 +154,16 @@ const char *auth_descrever_xerr(long long xerr) {
     }
 }
 
+char *auth_parse_token_console(long status, const char *json) {
+    if (status != 200 || !json)
+        return NULL;
+    cJSON *raiz = cJSON_Parse(json);
+    const char *token = raiz ? texto(raiz, "access_token") : NULL;
+    char *copia = token ? strdup(token) : NULL;
+    cJSON_Delete(raiz);
+    return copia;
+}
+
 void auth_conta_liberar(AuthConta *conta) {
     free(conta->access_token);
     free(conta->refresh_token);
