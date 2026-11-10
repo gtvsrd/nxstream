@@ -26,6 +26,13 @@
 | 4 | Reconnection (sleep/resume, network loss, session expiry) | — |
 | 5 | Extras (rumble, settings, polish) | — |
 
+## Documentation (Portuguese)
+
+- [Project plan](docs/PLANO.md): goals, decisions, phases, risks
+- [Architecture](docs/ARQUITETURA.md): modules, threads, session state machine, libraries
+- [Protocol](docs/PROTOCOLO.md): how Xbox Remote Play works (auth, API, WebRTC)
+- [Development](docs/DESENVOLVIMENTO.md): building, testing on the Switch, logs, conventions
+
 ## Download
 
 Every push is built automatically by GitHub Actions. Open the latest run under the **Actions** tab and download the `nxstream-nro` artifact.
