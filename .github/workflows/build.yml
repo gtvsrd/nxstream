@@ -25,8 +25,10 @@ jobs:
       - name: Baixar o código
         uses: actions/checkout@v5
 
-      - name: Instalar bibliotecas
-        run: dkp-pacman -Sy --noconfirm --needed switch-curl switch-zlib
+      # A imagem oficial já inclui as portlibs (curl, zlib...).
+      # Downloads do pkg.devkitpro.org a partir do GitHub Actions são bloqueados.
+      - name: Conferir bibliotecas
+        run: ls -l $DEVKITPRO/portlibs/switch/lib/libcurl.a $DEVKITPRO/portlibs/switch/lib/libz.a
 
       - name: Compilar
         run: make -j$(nproc)
