@@ -21,7 +21,7 @@ INCLUDES    := include
 
 APP_TITLE   := NXStream
 APP_AUTHOR  := gtvsrd
-APP_VERSION := 0.0.1
+APP_VERSION := 0.0.2
 
 #---------------------------------------------------------------------------------
 # Flags de compilação

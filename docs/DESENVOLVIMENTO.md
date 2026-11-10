@@ -40,8 +40,11 @@ Para baixar: aba **Actions** → execução mais recente → seção **Artifacts
 | Abrir em title mode | Linha "Modo: TITLE MODE (ok)" | ✅ ok |
 | Rede | Linha com o IP do Switch | ✅ ok |
 | Apertar POWER, esperar ~10 s, acordar | App continua aberto e mostra "Switch acordou do sleep" | ✅ App continua aberto e conectado (linha do evento: a confirmar) |
-| Apertar Y logo após acordar | Tempo até a rede voltar como "conectado" | |
+| Apertar Y logo após acordar | Tempo até a rede voltar como "conectado" | ✅ Conectado de imediato |
 | Colocar e tirar da dock | Linha "Modo mudou" | |
+
+**v0.0.1:** o app não recebeu nenhum aviso ao acordar (o libnx suspende em silêncio por padrão). A rede volta conectada imediatamente.
+**v0.0.2:** ativa os avisos do sistema e adiciona detector de congelamento. Retestar sleep e HOME.
 
 As próximas fases recebem seus checklists aqui quando começarem.
 

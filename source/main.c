@@ -73,6 +73,10 @@ int main(int argc, char *argv[]) {
     AppletHookCookie cookie;
     appletHook(&cookie, ao_evento_do_sistema, NULL);
 
+    // Por padrão o libnx congela o app em silêncio no sleep e no HOME.
+    // Este modo continua suspendendo, mas pede ao sistema para AVISAR.
+    Result rc_foco = appletSetFocusHandlingMode(AppletFocusHandlingMode_SuspendHomeSleepNotify);
+
     printf("NXStream - diagnostico v%s\n", APP_VERSION);
     printf("========================================\n\n");
 
@@ -86,12 +90,31 @@ int main(int argc, char *argv[]) {
     else
         mostrar_rede();
 
-    printf("\nTeste: deixe a tela apagar ou aperte o botao POWER,\n");
-    printf("espere alguns segundos e acorde o Switch.\n");
-    printf("Os eventos vao aparecer abaixo.\n\n");
+    if (R_FAILED(rc_foco))
+        printf("Avisos do sistema: NAO ativados (0x%x)\n", rc_foco);
+    else
+        printf("Avisos do sistema: ativados\n");
+
+    printf("\nTeste 1: aperte POWER, espere e acorde o Switch.\n");
+    printf("Teste 2: aperte HOME, espere e volte para o app.\n");
+    printf("Os eventos vao aparecer abaixo sozinhos.\n\n");
     printf("Y = checar rede de novo   + = sair\n\n");
 
+    u64 tick_anterior = armGetSystemTick();
+
     while (appletMainLoop()) {
+        // Detector de congelamento: se passou muito tempo desde o último
+        // quadro, o app esteve suspenso (sleep ou HOME), com ou sem aviso.
+        u64 tick_agora = armGetSystemTick();
+        u64 ns = armTicksToNs(tick_agora - tick_anterior);
+        tick_anterior = tick_agora;
+        if (ns > 1000000000ULL) {
+            imprimir_hora();
+            printf("App ficou congelado por %.1f s\n", ns / 1e9);
+            imprimir_hora();
+            mostrar_rede();
+        }
+
         padUpdate(&controle);
         u64 apertados = padGetButtonsDown(&controle);
 
