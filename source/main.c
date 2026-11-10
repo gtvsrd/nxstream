@@ -458,12 +458,15 @@ static Passo passo_sessao(AuthConta *conta, AuthStreaming *streaming) {
     double tempo_preparo = segundos_desde(inicio);
     LOG("main: sessao pronta em %.1f s", tempo_preparo);
 
-    // --- 2. Sessão ativa: mantém viva com keepalive ------------------------
-    u64 ativa_desde = armGetSystemTick();
-    u64 ultimo_keepalive = armGetSystemTick();
-    long status_keepalive = -1;     // -1 = nenhum enviado ainda
-    int keepalives_ok = 0, keepalives_falhos = 0;
-    char apos_sleep[96] = "";
+    // --- 2. Sessão pronta: acompanha se continua viva ----------------------
+    // O keepalive só é aceito depois que a conexão WebRTC com o console está
+    // aberta (fase 2b): antes disso o servidor responde HTTP 400. Por isso,
+    // nesta etapa, a sessão é acompanhada consultando o estado a cada 30 s.
+    u64 pronta_desde = armGetSystemTick();
+    u64 ultima_verif = armGetSystemTick();
+    XSessaoEstado estado_verif = XSESSAO_PRONTA;
+    int verif_ok = 0, verif_falhas = 0;
+    char apos_sleep[128] = "";
     ultimo_segundo = -1;
 
     for (;;) {
@@ -475,51 +478,48 @@ static Passo passo_sessao(AuthConta *conta, AuthStreaming *streaming) {
             forcar = true;
         }
 
-        if (forcar || segundos_desde(ultimo_keepalive) >= SESSAO_INTERVALO_KEEPALIVE_S) {
-            status_keepalive = xapi_sessao_keepalive(streaming, &sessao);
-            ultimo_keepalive = armGetSystemTick();
-            if (status_keepalive >= 200 && status_keepalive < 300)
-                keepalives_ok++;
-            else
-                keepalives_falhos++;
+        if (forcar || segundos_desde(ultima_verif) >= SESSAO_INTERVALO_KEEPALIVE_S) {
+            estado_verif = xapi_sessao_estado(streaming, &sessao, detalhe, sizeof detalhe);
+            ultima_verif = armGetSystemTick();
+            bool viva = (estado_verif == XSESSAO_PRONTA);
+            if (viva) verif_ok++; else verif_falhas++;
+            LOG("main: verificacao da sessao: %s", detalhe[0] ? detalhe : xapi_sessao_estado_texto(estado_verif));
             if (forcar) {
                 size_t n = strlen(apos_sleep);
-                snprintf(apos_sleep + n, sizeof apos_sleep - n, ": sessao %s (HTTP %ld)",
-                         (status_keepalive >= 200 && status_keepalive < 300) ? "continua viva" : "caiu",
-                         status_keepalive);
+                snprintf(apos_sleep + n, sizeof apos_sleep - n, ": sessao %s (%s)",
+                         viva ? "continua viva" : "caiu",
+                         detalhe[0] ? detalhe : xapi_sessao_estado_texto(estado_verif));
                 LOG("main: %s", apos_sleep);
-            }
-            if (status_keepalive == 404 || status_keepalive == 410) {
-                LOG("main: servidor encerrou a sessao");
-                return erro_sessao("A sessao foi encerrada pelo servidor.", NULL);
             }
             ultimo_segundo = -1; // redesenha
         }
 
-        int ativa = (int)segundos_desde(ativa_desde);
-        if (ativa != ultimo_segundo) {
-            ultimo_segundo = ativa;
-            char t_ativa[16];
-            tempo_texto(t_ativa, sizeof t_ativa, ativa);
-            int desde_ka = (int)segundos_desde(ultimo_keepalive);
+        int pronta = (int)segundos_desde(pronta_desde);
+        if (pronta != ultimo_segundo) {
+            ultimo_segundo = pronta;
+            char t_pronta[16];
+            tempo_texto(t_pronta, sizeof t_pronta, pronta);
+            int desde_verif = (int)segundos_desde(ultima_verif);
 
             cabecalho();
             printf("Console: " COR_DESTAQ "%s" COR_FIM " (%s)\n\n", g_console.nome,
                    xapi_tipo_amigavel(g_console.tipo));
             printf(COR_OK "Sessao pronta!" COR_FIM " (preparada em %.0f s)\n\n", tempo_preparo);
-            printf("Ativa ha: %s\n", t_ativa);
-            if (status_keepalive < 0)
-                printf("Keepalive: primeiro envio em %d s\n", SESSAO_INTERVALO_KEEPALIVE_S - desde_ka);
+            printf("Pronta ha: %s\n", t_pronta);
+            if (verif_ok + verif_falhas == 0)
+                printf("Verificacao: primeira em %d s\n", SESSAO_INTERVALO_KEEPALIVE_S - desde_verif);
             else
-                printf("Keepalive: %s (HTTP %ld) ha %d s  [%d ok, %d falhas]\n",
-                       (status_keepalive >= 200 && status_keepalive < 300) ? COR_OK "ok" COR_FIM
-                                                                            : COR_ERRO "falhou" COR_FIM,
-                       status_keepalive, desde_ka, keepalives_ok, keepalives_falhos);
+                printf("Verificacao: %s ha %d s  [%d ok, %d falhas]\n",
+                       estado_verif == XSESSAO_PRONTA ? COR_OK "viva" COR_FIM
+                                                      : COR_ERRO "nao esta pronta" COR_FIM,
+                       desde_verif, verif_ok, verif_falhas);
+            if (estado_verif != XSESSAO_PRONTA && detalhe[0])
+                printf("Estado: %s\n", detalhe);
             if (apos_sleep[0])
                 printf("%s\n", apos_sleep);
             printf("\n" COR_FRACA "Fase 2a: a sessao existe no servidor, mas o app ainda nao\n"
-                   "se conecta ao console. Isso chega na fase 2b." COR_FIM "\n\n");
-            printf("Teste: deixe ativa alguns minutos, ou durma o Switch e volte.\n\n");
+                   "se conecta ao console. Isso (e o keepalive) chega na fase 2b." COR_FIM "\n\n");
+            printf("Teste: deixe aberta alguns minutos, ou durma o Switch e volte.\n\n");
             printf("B = encerrar a sessao   + = encerrar e fechar\n");
         }
 
