@@ -22,7 +22,7 @@ Para baixar: aba **Actions** → execução mais recente → seção **Artifacts
 
 ## Logs
 
-- **No cartão SD:** `/switch/nxstream/nxstream.log` (a partir da fase 1), com horário de cada evento.
+- **No cartão SD:** `/switch/nxstream/nxstream.log`, com horário de cada evento. O arquivo cresce a cada uso; pode ser apagado a qualquer momento.
 - **Ao vivo no PC (nxlink):** no menu do homebrew, aperte **Y** para entrar no modo de rede. No PC, com as ferramentas do devkitPro instaladas, rode:
   ```sh
   nxlink -s nxstream.nro
@@ -30,6 +30,14 @@ Para baixar: aba **Actions** → execução mais recente → seção **Artifacts
   O `.nro` é enviado ao Switch pela rede e as mensagens do app aparecem no terminal. Evita tirar o cartão SD a cada teste.
 
 **Nunca são gravados no log:** tokens, senhas, código de login e qualquer dado da conta.
+
+## Testes no PC
+
+As partes sem rede (interpretação das respostas da Microsoft e armazenamento do token) têm testes que rodam em qualquer PC com `gcc`, e também automaticamente no GitHub Actions:
+
+```sh
+make -C tests
+```
 
 ## Checklists de teste por fase
 
@@ -45,6 +53,21 @@ Para baixar: aba **Actions** → execução mais recente → seção **Artifacts
 
 **v0.0.1:** o app não recebeu nenhum aviso ao acordar (o libnx suspende em silêncio por padrão). A rede volta conectada imediatamente.
 **v0.0.2:** ativa os avisos do sistema e adiciona detector de congelamento. Retestar sleep e HOME.
+
+### Fase 1: login e lista de consoles (v0.1.0)
+
+| Teste | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Primeira abertura | Tela com endereço `microsoft.com/link` e um código | |
+| Digitar o código no celular/PC e logar | App detecta sozinho em poucos segundos e mostra "Conectando ao Xbox Live..." | |
+| Lista de consoles | Gamertag (ou "conectada") e seu Xbox com tipo e estado (Ligado / Em repouso) | |
+| Fechar e abrir o app de novo | Vai direto para a lista, **sem pedir login** | |
+| Abrir de novo no dia seguinte | Continua sem pedir login | |
+| Y na lista | Lista atualiza | |
+| X na lista e confirmar | Volta para a tela de login | |
+| Desligar o Wi-Fi do Switch e abrir o app | Mensagem de erro com "A = tentar de novo", **sem fechar o app** | |
+
+Se algo falhar, mande o arquivo `/switch/nxstream/nxstream.log` (ele não contém tokens).
 
 As próximas fases recebem seus checklists aqui quando começarem.
 

@@ -34,16 +34,30 @@ sequenceDiagram
 
 ## 1. Autenticação (fase 1)
 
-1. **Login por código (device code).** O app pede um código à Microsoft, mostra na tela, e o usuário digita em microsoft.com/link no celular ou PC. O app consulta periodicamente até o login ser concluído. Recebe um token de acesso e um **token de renovação**.
-2. **User token do Xbox Live** a partir do token da conta. **(a confirmar)**
-3. **Token XSTS** para o serviço de streaming. **(a confirmar)**
-4. **gsToken:** login no servidor de streaming com o XSTS. A resposta traz o gsToken e o endereço do servidor regional a usar. **(a confirmar)**
+Fonte: [`xal-node`](https://github.com/unknownskl/xal-node) (`src/msal.ts`), a biblioteca de autenticação usada pelo Greenlight. Implementação no NXStream: `source/auth/`. Endereços em `source/api/config.h`.
 
-Só o token de renovação é salvo em disco (`/switch/nxstream/token.json`). Os demais são renovados a partir dele a cada abertura do app.
+| # | Etapa | Requisição | Resultado |
+|---|---|---|---|
+| 1 | Pedir código | `POST login.microsoftonline.com/consumers/oauth2/v2.0/devicecode` (formulário: `client_id`, `scope=xboxlive.signin openid profile offline_access`) | `user_code`, `device_code`, `verification_uri`, `expires_in`, `interval` |
+| 2 | Aguardar login | `POST .../oauth2/v2.0/token` com `grant_type=urn:ietf:params:oauth:grant-type:device_code`, a cada `interval` segundos | Enquanto pendente: HTTP 400 `authorization_pending` (ou `slow_down`). Depois: `access_token` + `refresh_token` |
+| 3 | Renovar (próximas aberturas) | `POST .../oauth2/v2.0/token` com `grant_type=refresh_token` | Novos `access_token` e `refresh_token`. HTTP 400 `invalid_grant` = precisa logar de novo |
+| 4 | User token | `POST user.auth.xboxlive.com/user/authenticate`, JSON com `AuthMethod: RPS`, `RpsTicket: "d=<access_token>"`, `RelyingParty: http://auth.xboxlive.com` | `Token` |
+| 5 | XSTS | `POST xsts.auth.xboxlive.com/xsts/authorize`, JSON com `SandboxId: RETAIL`, `UserTokens: [<token>]`, `RelyingParty: http://gssv.xboxlive.com/` | `Token` (+ gamertag em `DisplayClaims.xui[0].gtg`, quando enviado). Erros trazem `XErr` (ex.: 2148916233 = conta sem perfil Xbox) |
+| 6 | Token de streaming | `POST xhome.gssv-play-prod.xboxlive.com/v2/login/user`, JSON `{token, offeringId: "xhome"}`, header `x-gssv-client: XboxComBrowser` | `gsToken`, `durationInSeconds` (~4 h) e `offeringSettings.regions[]` (usa a com `isDefault: true`, campo `baseUri`) |
+
+Observações:
+- O `client_id` é o público do app Xbox, o mesmo usado por xal-node/Greenlight.
+- **A Microsoft troca o refresh token a cada renovação.** O app salva o novo sempre que renova, senão o login "some" na abertura seguinte.
+- Só o refresh token é salvo em disco (`/switch/nxstream/token.json`). Os demais são obtidos a cada abertura. Nenhum token é escrito no log.
+- O HTTPS usa o TLS nativo do Switch (libcurl do devkitPro com backend libnx), com os certificados do próprio sistema. Se algum servidor falhar na verificação, colocar um `cacert.pem` em `/switch/nxstream/` faz o app usá-lo no lugar.
 
 ## 2. API de streaming do console (fases 1 e 2)
 
-Endereço base: o servidor regional retornado no login (formato visto nas referências: `https://<região>.core.gssv-play-prodxhome.xboxlive.com`). Todas as chamadas levam o gsToken.
+Endereço base: o `baseUri` da região padrão retornada na etapa 6 (formato: `https://<região>.core.gssv-play-prodxhome.xboxlive.com`).
+
+Headers de todas as chamadas: `Authorization: Bearer <gsToken>`, `X-Gssv-Client: XboxComBrowser`, `X-MS-Device-Info: <JSON do cliente>` (ver `NX_DEVICE_INFO` em `config.h`).
+
+Resposta de `/v6/servers/home`: `results[]` com `deviceName`, `serverId`, `powerState` (`On`, `ConnectedStandby`...), `consoleType` (`XboxSeriesX`...).
 
 | Método | Caminho | Para quê |
 |---|---|---|
