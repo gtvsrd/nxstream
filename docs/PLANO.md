@@ -26,8 +26,8 @@ Cada fase termina com um `.nro` testado no Switch antes de seguir para a próxim
 | Fase | Entrega | Critério de aceite (teste no Switch) | Status |
 |---|---|---|---|
 | **0** | Build automático + app de diagnóstico | Abre em title mode, mostra IP, registra eventos de sleep/resume | ✅ Concluída (v0.0.2 validada no Switch) |
-| **1** | Login por código + lista de consoles | Logar uma vez; reabrir o app sem pedir login; seu Xbox aparece listado com estado | 🧪 v0.1.0 em teste (branch `fase-1`) |
-| **2** | Sessão + WebRTC + vídeo | A tela do Xbox aparece no Switch (sem controle e sem som) | — |
+| **1** | Login por código + lista de consoles | Logar uma vez; reabrir o app sem pedir login; seu Xbox aparece listado com estado | ✅ Concluída (v0.1.0 validada no Switch) |
+| **2** | Sessão + WebRTC + vídeo | A tela do Xbox aparece no Switch (sem controle e sem som) | ⏳ Próxima |
 | **3** | Controle + áudio | Jogar normalmente; teste de rajada de botões sem queda | — |
 | **4** | Reconexão completa | Sleep/resume, queda do Wi-Fi por alguns segundos e sessão longa (1h+) sem fechar o app | — |
 | **5** | Vibração, configurações (qualidade, deadzone, mapeamento), acabamento | Uso normal do dia a dia | — |

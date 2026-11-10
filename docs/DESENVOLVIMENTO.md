@@ -58,14 +58,16 @@ make -C tests
 
 | Teste | Resultado esperado | Resultado obtido |
 |---|---|---|
-| Primeira abertura | Tela com endereço `microsoft.com/link` e um código | |
-| Digitar o código no celular/PC e logar | App detecta sozinho em poucos segundos e mostra "Conectando ao Xbox Live..." | |
-| Lista de consoles | Gamertag (ou "conectada") e seu Xbox com tipo e estado (Ligado / Em repouso) | |
-| Fechar e abrir o app de novo | Vai direto para a lista, **sem pedir login** | |
+| Primeira abertura | Tela com endereço `microsoft.com/link` e um código | ✅ |
+| Digitar o código no celular/PC e logar | App detecta sozinho em poucos segundos e mostra "Conectando ao Xbox Live..." | ✅ |
+| Lista de consoles | Gamertag (ou "conectada") e seu Xbox com tipo e estado (Ligado / Em repouso) | ✅ Console encontrado; A mostra o aviso da fase 2 |
+| Fechar e abrir o app de novo | Vai direto para a lista, **sem pedir login** | ✅ 2 a 3 s até a lista |
 | Abrir de novo no dia seguinte | Continua sem pedir login | |
 | Y na lista | Lista atualiza | |
 | X na lista e confirmar | Volta para a tela de login | |
 | Desligar o Wi-Fi do Switch e abrir o app | Mensagem de erro com "A = tentar de novo", **sem fechar o app** | |
+
+Sleep/resume com o app na lista: retoma em ~0,5 s.
 
 Se algo falhar, mande o arquivo `/switch/nxstream/nxstream.log` (ele não contém tokens).
 

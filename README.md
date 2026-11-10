@@ -7,7 +7,7 @@
 
 **Xbox Remote Play client for Nintendo Switch (homebrew).** Stream your own Xbox Series/One console to your Switch over your local network.
 
-> ⚠️ Early development. The current build is a diagnostics app only — streaming is not implemented yet.
+> ⚠️ Early development. The current build signs in to your Microsoft account and lists your consoles — streaming is not implemented yet.
 
 ## Goals
 
@@ -20,8 +20,8 @@
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 0 | Build pipeline + diagnostics app (title mode, network, sleep/resume events) | ✅ Done |
-| 1 | Microsoft account sign-in + console discovery | ⏳ Next |
-| 2 | Streaming session + video on screen | — |
+| 1 | Microsoft account sign-in + console discovery | ✅ Done |
+| 2 | Streaming session + video on screen | ⏳ Next |
 | 3 | Controller input + audio | — |
 | 4 | Reconnection (sleep/resume, network loss, session expiry) | — |
 | 5 | Extras (rumble, settings, polish) | — |
