@@ -37,9 +37,9 @@ Para baixar: aba **Actions** → execução mais recente → seção **Artifacts
 
 | Teste | Resultado esperado | Resultado obtido |
 |---|---|---|
-| Abrir em title mode | Linha "Modo: TITLE MODE (ok)" | |
-| Rede | Linha com o IP do Switch | |
-| Apertar POWER, esperar ~10 s, acordar | App continua aberto e mostra "Switch acordou do sleep" | |
+| Abrir em title mode | Linha "Modo: TITLE MODE (ok)" | ✅ ok |
+| Rede | Linha com o IP do Switch | ✅ ok |
+| Apertar POWER, esperar ~10 s, acordar | App continua aberto e mostra "Switch acordou do sleep" | ✅ App continua aberto e conectado (linha do evento: a confirmar) |
 | Apertar Y logo após acordar | Tempo até a rede voltar como "conectado" | |
 | Colocar e tirar da dock | Linha "Modo mudou" | |
 
