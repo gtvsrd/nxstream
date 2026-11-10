@@ -78,7 +78,7 @@ Se algo falhar, mande o arquivo `/switch/nxstream/nxstream.log` (ele não conté
 | A em um console **ligado** | Estados passam por "Preparando..." até "Sessao pronta!" | |
 | A em um console **em repouso** | Mesmo resultado; o console acorda só no modo de streaming | |
 | Tempo até ficar pronta | Mostrado na tela ("preparada em X s") | |
-| Deixar a sessão aberta 3+ minutos | Verificações com "viva" e nenhuma falha | v0.2.0: keepalive HTTP 400 a cada envio. Esperado: o servidor só aceita keepalive com a conexão WebRTC aberta (2b). v0.2.1 troca por consulta de estado |
+| Deixar a sessão aberta 3+ minutos | Verificações com "viva" e nenhuma falha | v0.2.0: keepalive HTTP 400 a cada envio (~30–40 s). Causa provável, ainda não confirmada: falta da conexão WebRTC (2b). v0.2.1 troca por consulta de estado |
 | Dormir o Switch 30 s com a sessão aberta e acordar | Linha "Voltou de X s suspenso: sessao continua viva" (ou "caiu") | |
 | Dormir o Switch 5+ minutos e acordar | Idem: descobre por quanto tempo a sessão sobrevive sem keepalive | |
 | B na sessão | Volta para a lista; a sessão é encerrada | |
