@@ -25,7 +25,7 @@ Cada fase termina com um `.nro` testado no Switch antes de seguir para a próxim
 
 | Fase | Entrega | Critério de aceite (teste no Switch) | Status |
 |---|---|---|---|
-| **0** | Build automático + app de diagnóstico | Abre em title mode, mostra IP, registra eventos de sleep/resume | ✅ Concluída (v0.0.2 em teste) |
+| **0** | Build automático + app de diagnóstico | Abre em title mode, mostra IP, registra eventos de sleep/resume | ✅ Concluída (v0.0.2 validada no Switch) |
 | **1** | Login por código + lista de consoles | Logar uma vez; reabrir o app sem pedir login; seu Xbox aparece listado com estado | 🧪 v0.1.0 em teste (branch `fase-1`) |
 | **2** | Sessão + WebRTC + vídeo | A tela do Xbox aparece no Switch (sem controle e sem som) | — |
 | **3** | Controle + áudio | Jogar normalmente; teste de rajada de botões sem queda | — |
@@ -40,7 +40,7 @@ A fase 2 é a mais pesada e arriscada, porque junta WebRTC, criptografia e decod
 |---|---|---|
 | Microsoft muda endpoints ou formatos da API | App para de conectar | Endereços e versões isolados em um único arquivo (`source/api/config.h`). Respostas inesperadas vão para o log. |
 | Portar a biblioteca WebRTC para o Switch | Atraso na fase 2 | Testar libdatachannel primeiro; libpeer como alternativa. Ver [ARQUITETURA.md](ARQUITETURA.md#webrtc). |
-| Sleep do Switch derruba todos os sockets | Conexão morre ao dormir | Máquina de estados recria WebRTC/sessão ao acordar (fase 4). O tempo de volta do Wi-Fi é medido na fase 0. |
+| Sleep do Switch derruba todos os sockets | Conexão morre ao dormir | Máquina de estados recria WebRTC/sessão ao acordar (fase 4). Fase 0 confirmou: o app recebe aviso ao dormir/acordar e o Wi-Fi volta na hora. |
 | Token de renovação dá acesso à conta Xbox | Segurança da conta | Fica só no cartão SD, nunca é enviado a outro lugar além dos servidores da Microsoft. Nunca é escrito no log. |
 | Build do FFmpeg é demorado | Builds lentos no CI | Cache do FFmpeg compilado no GitHub Actions. |
 
