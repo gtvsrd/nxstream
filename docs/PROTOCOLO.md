@@ -73,6 +73,18 @@ Resposta de `/v6/servers/home`: `results[]` com `deviceName`, `serverId`, `power
 
 Consultas a `/sdp` e `/ice` podem responder `204` (ainda sem dados): é preciso repetir até vir conteúdo.
 
+### Abrir e manter a sessão (fase 2a)
+
+Fonte: Greenlight (`xcloudapi.ts`, `streammanager.ts`) e xbox-xcloud-player (`apiclient.ts`). Implementação: `source/api/xapi.c`.
+
+1. **Criar:** `POST /v5/sessions/home/play` com `serverId` do console, `titleId` vazio e `settings` (`nanoVersion: "V3;WebrtcTransport.dll"`, `sdkType: "web"`, `osName: "windows"`, `locale`...). A resposta traz `sessionId`, `sessionPath` (ex.: `v5/sessions/home/<id>`) e `state`. Todas as chamadas seguintes usam `<baseUri>/<sessionPath>/...`.
+2. **Acompanhar:** `GET <sessionPath>/state` a cada 1 s até `Provisioned`.
+3. **Autorizar:** quando o estado for `ReadyToConnect`, obter um token de transferência em `POST login.live.com/oauth20_token.srf` (`grant_type=refresh_token`, `scope=service::http://Passport.NET/purpose::PURPOSE_XBOX_CLOUD_CONSOLE_TRANSFER_TOKEN`, mesmo `client_id` e refresh token do login) e enviar `POST <sessionPath>/connect` com `{"userToken": "<access_token>"}`. Esse token não substitui o refresh token salvo.
+4. **Manter viva:** `POST <sessionPath>/keepalive` (corpo `{}`) a cada 30 s.
+5. **Encerrar:** `DELETE <sessionPath>`.
+
+Abrir uma sessão com o console em repouso o acorda apenas no modo de streaming: o LED não acende por completo e o HDMI/TV não é acionado. É o mesmo comportamento do app oficial; não existe comando separado de "ligar".
+
 ### Estados da sessão
 
 | Estado | Significado | Ação do app |

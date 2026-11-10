@@ -71,6 +71,20 @@ Sleep/resume com o app na lista: retoma em ~0,5 s.
 
 Se algo falhar, mande o arquivo `/switch/nxstream/nxstream.log` (ele não contém tokens).
 
+### Fase 2a: sessão de streaming (v0.2.0)
+
+| Teste | Resultado esperado | Resultado obtido |
+|---|---|---|
+| A em um console **ligado** | Estados passam por "Preparando..." até "Sessao pronta!" | |
+| A em um console **em repouso** | Mesmo resultado; o console acorda só no modo de streaming | |
+| Tempo até ficar pronta | Mostrado na tela ("preparada em X s") | |
+| Deixar a sessão aberta 3+ minutos | Keepalives com "ok" e nenhuma falha | |
+| Dormir o Switch 30 s com a sessão aberta e acordar | Linha "Voltou de X s suspenso: sessao continua viva" (ou "caiu") | |
+| Dormir o Switch 5+ minutos e acordar | Idem: descobre por quanto tempo a sessão sobrevive sem keepalive | |
+| B na sessão | Volta para a lista; a sessão é encerrada | |
+
+Os dois testes de sleep não têm resposta "certa": servem para medir quanto tempo o servidor mantém a sessão sem keepalive. Isso define a estratégia de reconexão da fase 4.
+
 As próximas fases recebem seus checklists aqui quando começarem.
 
 ## Convenções
