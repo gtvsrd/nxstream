@@ -30,7 +30,9 @@ typedef enum { PASSO_INICIO, PASSO_LOGIN, PASSO_STREAMING, PASSO_LISTA, PASSO_SE
 
 static PadState g_controle;
 static u64 g_tick_anterior;
-static double g_ultimo_congelamento = 0; // segundos parado no último sleep/HOME
+static double g_ultimo_congelamento = 0; // segundos suspenso no último sleep/HOME (0 = nada novo)
+static bool g_retorno_pendente = false;   // sistema avisou que o app voltou a rodar
+static bool g_em_foco = true;             // último estado de foco conhecido
 static XConsole g_console;               // console escolhido na lista
 
 // ---------------------------------------------------------------------------
@@ -40,12 +42,17 @@ static void ao_evento_do_sistema(AppletHookType tipo, void *param) {
     (void)param;
     switch (tipo) {
         case AppletHookType_OnResume:
-            LOG("sistema: app retomado");
+            LOG("sistema: app retomado (sleep)");
+            g_retorno_pendente = true;
             break;
-        case AppletHookType_OnFocusState:
-            LOG("sistema: foco = %s", appletGetFocusState() == AppletFocusState_InFocus
-                                          ? "primeiro plano" : "segundo plano");
+        case AppletHookType_OnFocusState: {
+            bool em_foco = appletGetFocusState() == AppletFocusState_InFocus;
+            LOG("sistema: foco = %s", em_foco ? "primeiro plano" : "segundo plano");
+            if (em_foco && !g_em_foco)
+                g_retorno_pendente = true; // voltou do HOME (ou do sleep)
+            g_em_foco = em_foco;
             break;
+        }
         case AppletHookType_OnOperationMode:
             LOG("sistema: modo = %s", appletGetOperationMode() == AppletOperationMode_Console
                                           ? "dock" : "portatil");
@@ -67,11 +74,17 @@ static u64 quadro(bool *fechar) {
         *fechar = true;
         return 0;
     }
+    // Os avisos do sistema chegam dentro do appletMainLoop() do primeiro quadro
+    // depois da suspensão, então o tempo parado medido agora é o tempo suspenso.
+    // Sem aviso, um quadro lento é só o app esperando a rede (chamada HTTP).
     double parado = segundos_desde(g_tick_anterior);
     g_tick_anterior = armGetSystemTick();
-    if (parado > 1.0) {
-        LOG("sistema: app ficou congelado por %.1f s", parado);
-        g_ultimo_congelamento = parado;
+    if (g_retorno_pendente) {
+        g_retorno_pendente = false;
+        g_ultimo_congelamento = parado > 0.1 ? parado : 0.1;
+        LOG("sistema: app voltou depois de %.1f s suspenso", parado);
+    } else if (parado > 2.0) {
+        LOG("sistema: quadro demorou %.1f s (esperando a rede)", parado);
     }
 
     padUpdate(&g_controle);
@@ -468,6 +481,7 @@ static Passo passo_sessao(AuthConta *conta, AuthStreaming *streaming) {
     int verif_ok = 0, verif_falhas = 0;
     char apos_sleep[128] = "";
     ultimo_segundo = -1;
+    g_ultimo_congelamento = 0; // ignora suspensões anteriores à sessão ficar pronta
 
     for (;;) {
         bool forcar = false;
