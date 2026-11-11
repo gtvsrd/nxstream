@@ -107,6 +107,30 @@ static void registrar_tempo(double ms) {
     g_estado.ms_maximo = maximo;
 }
 
+// Quadro pronto para a tela: fica guardado até a thread principal buscá-lo
+// (decod_pegar_quadro). Se chegar outro antes, o antigo nunca chega à tela.
+static AVFrame *g_pronto;
+
+static void entregar_para_tela(void) {
+    if (g_quadro->format != AV_PIX_FMT_NVTEGRA) { // pela CPU: a tela só desenha os do NVDEC
+        av_frame_unref(g_quadro);
+        return;
+    }
+    AVFrame *f = av_frame_alloc();
+    if (!f) {
+        av_frame_unref(g_quadro);
+        return;
+    }
+    av_frame_move_ref(f, g_quadro);
+    pthread_mutex_lock(&g_trava);
+    if (g_pronto) {
+        av_frame_free(&g_pronto);
+        g_estado.nao_exibidos++;
+    }
+    g_pronto = f;
+    pthread_mutex_unlock(&g_trava);
+}
+
 static void decodificar(Item *item) {
     g_pacote->data = item->dados;
     g_pacote->size = (int)item->tamanho;
@@ -129,7 +153,7 @@ static void decodificar(Item *item) {
             if (primeiro)
                 LOG("decod: primeiro quadro decodificado %dx%d (%s)", g_quadro->width, g_quadro->height,
                     nome ? nome : "?");
-            av_frame_unref(g_quadro); // fase 2c.3: aqui o quadro irá para a tela
+            entregar_para_tela();
         }
     }
     double ms = armTicksToNs(armGetSystemTick() - inicio) / 1e6;
@@ -219,6 +243,8 @@ bool decod_iniciar(void) {
         g_estado.hardware = true;
     }
 
+    // Quadros presos fora do decodificador: o que está na tela e o que espera por ela
+    g_ctx->extra_hw_frames = 3;
     // Streaming: entregar cada quadro assim que possível, sem acumular
     g_ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
     g_ctx->flags2 |= AV_CODEC_FLAG2_FAST;
@@ -259,6 +285,14 @@ void decod_ler(DecodEstado *copia) {
     pthread_mutex_unlock(&g_trava);
 }
 
+AVFrame *decod_pegar_quadro(void) {
+    pthread_mutex_lock(&g_trava);
+    AVFrame *f = g_pronto;
+    g_pronto = NULL;
+    pthread_mutex_unlock(&g_trava);
+    return f;
+}
+
 void decod_limpar_pedido_chave(void) {
     pthread_mutex_lock(&g_trava);
     g_estado.precisa_chave = false;
@@ -276,6 +310,7 @@ void decod_encerrar(void) {
 
     pthread_mutex_lock(&g_trava);
     esvaziar_fila_trancada();
+    av_frame_free(&g_pronto);
     g_estado.ativo = false;
     pthread_mutex_unlock(&g_trava);
 

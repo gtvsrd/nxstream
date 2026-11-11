@@ -26,11 +26,11 @@ flowchart LR
 | `auth` | `source/auth/` | Login por código (device code), cadeia de tokens, renovação, armazenamento no SD |
 | `xbox_api` | `source/api/` | HTTPS para listar consoles, criar sessão, trocar SDP/ICE, keepalive, encerrar |
 | `webrtc` | `source/net/` | Conexão com o console, DTLS/SRTP, canais de dados |
-| `video` | `source/media/` | `h264_info`: tipos de NAL, quadro-chave e resolução (SPS), testado no PC. `decodificador`: fila de até 8 quadros e thread própria que decodifica pelo NVDEC (FFmpeg do devkitPro, `AV_HWDEVICE_TYPE_NVTEGRA`); se a fila encher, descarta até o próximo quadro-chave e pede um ao console. Depois: desenho na tela |
+| `video` | `source/media/` | `h264_info`: tipos de NAL, quadro-chave e resolução (SPS), testado no PC. `decodificador`: fila de até 8 quadros e thread própria que decodifica pelo NVDEC (FFmpeg do devkitPro, `AV_HWDEVICE_TYPE_NVTEGRA`); se a fila encher, descarta até o próximo quadro-chave e pede um ao console; o quadro pronto mais recente fica guardado para a tela. `video_tela`: desenho pela GPU com o deko3d; a memória de cada quadro do NVDEC vira um bloco da GPU (luma R8 + croma RG8 no layout de vídeo, sem cópia, como no Moonlight-Switch) e um shader converte NV12 → RGB (BT.709/601). Os shaders ficam em `shaders/`, compilados pelo `uam` no build e embutidos no executável |
 | `audio` | `source/media/` | Decodificação Opus e saída de som |
 | `input` | `source/input/` | Leitura do controle, mapeamento, envio em ritmo fixo, vibração |
 | `session` | `source/session/` | Máquina de estados que coordena tudo, incluindo reconexão |
-| `ui` | `source/ui/` | Telas em texto: login, lista de consoles, status, erros |
+| `ui` | `source/ui/` | Telas em texto (console do libnx): login, lista de consoles, status, erros. `sobreposicao`: terminal 80x45 com a mesma fonte e cores do console, desenhado numa imagem RGBA por cima do vídeo (estatísticas, menu, avisos) |
 
 Regra geral: **`auth`, `xbox_api` e a montagem de pacotes de `input` não dependem do libnx** (só de libcurl, cJSON e C padrão). Assim compilam também no PC, e a lógica é testada no CI sem precisar do Switch.
 
@@ -136,7 +136,8 @@ nxstream/
 │   ├── media/      vídeo e áudio
 │   ├── input/      controle
 │   ├── session/    máquina de estados
-│   └── ui/         telas em texto
+│   └── ui/         telas em texto e texto por cima do vídeo
+├── shaders/        shaders da GPU (GLSL, compilados pelo uam)
 ├── third_party/    bibliotecas incluídas no código (cJSON etc.)
 ├── tests/          testes que rodam no PC/CI
 ├── docs/           esta documentação

@@ -1,11 +1,13 @@
-// NXStream - Fase 2c: login, lista de consoles, conexão com o console e vídeo
+// NXStream - Fase 2c: login, lista de consoles, conexão com o console e vídeo na tela
 //
-// Interface em texto simples (console do libnx). Fluxo:
+// Interface em texto simples (console do libnx); com o vídeo na tela (fase 2c.3)
+// o console é desligado e o texto vai para uma camada por cima do vídeo. Fluxo:
 //   INICIO -> (sem token salvo) LOGIN -> STREAMING -> LISTA
 //   INICIO -> (com token salvo) STREAMING -> LISTA
 //   LISTA -> (A no console) SESSAO -> LISTA
 // Nenhum erro fecha o app: sempre há "tentar de novo" ou "sair da conta".
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,6 +23,8 @@
 #include "core/terminar.h"
 #include "net/conexao.h"
 #include "media/decodificador.h"
+#include "media/video_tela.h"
+#include "ui/sobreposicao.h"
 #include "net/rtc_comum.h"
 #include "net/rtc_diag.h"
 
@@ -77,10 +81,39 @@ static double segundos_desde(u64 tick) {
     return armTicksToNs(armGetSystemTick() - tick) / 1e9;
 }
 
+// ---------------------------------------------------------------------------
+// Texto: console do libnx ou camada por cima do vídeo
+// ---------------------------------------------------------------------------
+static bool g_capturando = false; // true: o texto vai para a camada sobre o vídeo
+
+// Como printf, mas respeita para onde o texto está indo agora
+static void tp(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+static void tp(const char *fmt, ...) {
+    char buf[1024];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof buf, fmt, ap);
+    va_end(ap);
+    if (g_capturando)
+        sobre_printf("%s", buf);
+    else
+        fputs(buf, stdout);
+}
+
+// Volta para o console de texto (desliga a GPU, que usa a mesma janela).
+// Precisa vir antes de fechar a conexão: os quadros na tela são do decodificador.
+static void modo_texto(void) {
+    if (!video_tela_ativa())
+        return;
+    video_tela_encerrar();
+    consoleInit(NULL);
+}
+
 // Um quadro: processa o sistema e o controle. Retorna os botões apertados.
 // *fechar fica true quando o sistema pede para encerrar o app.
 static u64 quadro(bool *fechar) {
-    consoleUpdate(NULL);
+    if (!video_tela_ativa()) // com o vídeo, quem mostra a tela é video_tela_desenhar()
+        consoleUpdate(NULL);
     if (!appletMainLoop()) {
         *fechar = true;
         return 0;
@@ -119,9 +152,12 @@ static u64 esperar_botao(u64 mascara) {
 // Telas
 // ---------------------------------------------------------------------------
 static void cabecalho(void) {
-    consoleClear();
-    printf(COR_TITULO "NXStream" COR_FIM " v%s - Xbox Remote Play\n", APP_VERSION);
-    printf("================================================================\n\n");
+    if (!g_capturando) {
+        modo_texto(); // qualquer tela de texto tira o vídeo da frente
+        consoleClear();
+    }
+    tp(COR_TITULO "NXStream" COR_FIM " v%s - Xbox Remote Play\n", APP_VERSION);
+    tp("================================================================\n\n");
 }
 
 static void mostrar_aguarde(const char *mensagem) {
@@ -409,6 +445,7 @@ typedef enum { ET_OFERTA, ET_RESPOSTA, ET_CANDIDATOS, ET_CONECTANDO, ET_CONECTAD
 static Passo falha_conexao(const AuthStreaming *s, const XSessao *sessao,
                            const char *titulo, const char *detalhe) {
     LOG("main: conexao: %s %s", titulo, detalhe ? detalhe : "");
+    modo_texto();
     conexao_encerrar();
     encerrar_sessao(s, sessao);
     return erro_sessao(titulo, detalhe);
@@ -416,11 +453,46 @@ static Passo falha_conexao(const AuthStreaming *s, const XSessao *sessao,
 
 static void linha_etapa(const char *nome, EtapaConexao atual, EtapaConexao esta, double t, const char *extra) {
     if (atual > esta)
-        printf("  %-26s " COR_OK "ok" COR_FIM " %5.1f s  %s\n", nome, t, extra ? extra : "");
+        tp("  %-26s " COR_OK "ok" COR_FIM " %5.1f s  %s\n", nome, t, extra ? extra : "");
     else if (atual == esta)
-        printf("  %-26s " COR_DESTAQ "..." COR_FIM "\n", nome);
+        tp("  %-26s " COR_DESTAQ "..." COR_FIM "\n", nome);
     else
-        printf("  %-26s " COR_FRACA "-" COR_FIM "\n", nome);
+        tp("  %-26s " COR_FRACA "-" COR_FIM "\n", nome);
+}
+
+// Menu do vídeo (+ e - segurados por 1 s)
+enum { MENU_VOLTAR, MENU_ESTATISTICAS, MENU_DESCONECTAR, MENU_FECHAR, MENU_ITENS };
+
+static void desenhar_menu(int item, bool estatisticas) {
+    const char *nomes[MENU_ITENS] = {"Voltar ao jogo", estatisticas ? "Esconder estatisticas" : "Mostrar estatisticas",
+                                     "Desconectar", "Fechar o app"};
+    const int x = 22, y = 15, largura = 36;
+    // Cada linha é preenchida até a largura para o fundo da caixa ficar uniforme
+    sobre_cursor(x, y);
+    sobre_printf("%-*s", largura, "");
+    sobre_cursor(x, y + 1);
+    sobre_printf("  " COR_TITULO "NXStream" COR_FIM "%-*s", largura - 10, "");
+    sobre_cursor(x, y + 2);
+    sobre_printf("%-*s", largura, "");
+    for (int i = 0; i < MENU_ITENS; i++) {
+        sobre_cursor(x, y + 3 + i);
+        if (i == item)
+            sobre_printf("  " COR_DESTAQ "> %-*s" COR_FIM, largura - 4, nomes[i]);
+        else
+            sobre_printf("    %-*s", largura - 4, nomes[i]);
+    }
+    sobre_cursor(x, y + 3 + MENU_ITENS);
+    sobre_printf("%-*s", largura, "");
+    sobre_cursor(x, y + 4 + MENU_ITENS);
+    sobre_printf(COR_FRACA "  Cima/baixo, A = ok, B = voltar    " COR_FIM);
+    sobre_cursor(x, y + 5 + MENU_ITENS);
+    sobre_printf("%-*s", largura, "");
+}
+
+static void desenhar_aviso_menu(void) {
+    const char *t = " Segure + e - por 1 s para abrir o menu ";
+    sobre_cursor((SOBRE_COLUNAS - (int)strlen(t)) / 2, SOBRE_LINHAS - 2);
+    sobre_printf("%s", t);
 }
 
 static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double tempo_preparo) {
@@ -453,6 +525,14 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
     int ultimo_quadro = -1;
     bool fechar = false;
     g_ultimo_congelamento = 0;
+    // Vídeo na tela e menu (fase 2c.3)
+    bool video_tentou = false;
+    char video_erro[160] = "";
+    double t_video = 0;
+    bool menu_aberto = false, menu_mudou = false, esperar_soltar = false;
+    bool mostrar_estatisticas = false;
+    int menu_item = 0;
+    double segurando_desde = -1;
 
     for (;;) {
         ConexaoEstado e;
@@ -618,14 +698,25 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
         }
 
         // --- Tela (4 vezes por segundo) ----------------------------------------
+        // Com o vídeo na tela, o mesmo texto vai para a camada por cima dele, e só
+        // quando as estatísticas estão ligadas no menu.
         int marca = (int)(segundos_desde(inicio) * 4);
-        if (marca != ultimo_quadro) {
+        bool em_video = video_tela_ativa();
+        bool redesenhar = marca != ultimo_quadro || menu_mudou;
+        if (redesenhar) {
             ultimo_quadro = marca;
+            menu_mudou = false;
+            if (em_video) {
+                sobre_limpar(mostrar_estatisticas || menu_aberto ? 150 : 0);
+                g_capturando = true;
+            }
+        }
+        if (redesenhar && (!em_video || mostrar_estatisticas)) {
             char extra[64];
             cabecalho();
-            printf("Console: " COR_DESTAQ "%s" COR_FIM " (%s)   sessao pronta em %.0f s\n\n", g_console.nome,
+            tp("Console: " COR_DESTAQ "%s" COR_FIM " (%s)   sessao pronta em %.0f s\n\n", g_console.nome,
                    xapi_tipo_amigavel(g_console.tipo), tempo_preparo);
-            printf("Conectando ao console:\n");
+            tp("Conectando ao console:\n");
             snprintf(extra, sizeof extra, "(%d candidatos locais)", e.locais.total);
             linha_etapa("1. Oferta local", etapa, ET_OFERTA, t_etapa[ET_OFERTA], extra);
             linha_etapa("2. Resposta do console", etapa, ET_RESPOSTA, t_etapa[ET_RESPOSTA], NULL);
@@ -633,83 +724,164 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
             linha_etapa("3. Candidatos de rede", etapa, ET_CANDIDATOS, t_etapa[ET_CANDIDATOS], extra);
             linha_etapa("4. Conexao WebRTC", etapa, ET_CONECTANDO, t_etapa[ET_CONECTANDO], NULL);
             if (e.handshake_ok)
-                printf("  %-26s " COR_OK "ok" COR_FIM " %5.1f s\n", "5. Handshake dos canais", e.t_handshake);
+                tp("  %-26s " COR_OK "ok" COR_FIM " %5.1f s\n", "5. Handshake dos canais", e.t_handshake);
             else
-                printf("  %-26s %s\n", "5. Handshake dos canais",
+                tp("  %-26s %s\n", "5. Handshake dos canais",
                        etapa == ET_CONECTADO ? COR_DESTAQ "..." COR_FIM : COR_FRACA "-" COR_FIM);
-            printf("\nCanais:");
+            tp("\nCanais:");
             for (int c = 0; c < NUM_CANAIS; c++)
-                printf("  %s %s", conexao_nome_canal((Canal)c),
+                tp("  %s %s", conexao_nome_canal((Canal)c),
                        e.canal_aberto[c] ? COR_OK "aberto" COR_FIM : COR_FRACA "-" COR_FIM);
-            printf("\n");
+            tp("\n");
 
             if (etapa == ET_CONECTADO) {
                 char t_con[16];
                 tempo_texto(t_con, sizeof t_con, (int)(segundos_desde(inicio) - e.t_conectado));
-                printf("\n" COR_OK "CONECTADO" COR_FIM " ha %s\n", t_con);
-                printf("\nVideo:\n");
+                tp("\n" COR_OK "CONECTADO" COR_FIM " ha %s\n", t_con);
+                tp("\nVideo:\n");
                 if (e.sps_valido)
-                    printf("  Resolucao: " COR_DESTAQ "%dx%d" COR_FIM "  (H.264 %s, nivel %d.%d)\n",
+                    tp("  Resolucao: " COR_DESTAQ "%dx%d" COR_FIM "  (H.264 %s, nivel %d.%d)\n",
                            e.sps.largura, e.sps.altura, h264_nome_perfil(e.sps.perfil),
                            e.sps.nivel / 10, e.sps.nivel % 10);
                 else
-                    printf("  Resolucao: " COR_FRACA "aguardando o primeiro SPS" COR_FIM "\n");
-                printf("  Quadros:   %s%.0f/s" COR_FIM "  %.1f Mbps  (%lu no total, %.1f MB)\n",
+                    tp("  Resolucao: " COR_FRACA "aguardando o primeiro SPS" COR_FIM "\n");
+                tp("  Quadros:   %s%.0f/s" COR_FIM "  %.1f Mbps  (%lu no total, %.1f MB)\n",
                        fps >= 50 ? COR_OK : fps >= 25 ? COR_DESTAQ : COR_ERRO, fps, mbps, e.quadros,
                        e.bytes_video / 1048576.0);
-                printf("  Chave:     %lu", e.quadros_chave);
+                tp("  Chave:     %lu", e.quadros_chave);
                 if (e.quadros_chave)
-                    printf("  (primeiro em %.1f s apos conectar)", e.t_primeiro_chave - e.t_conectado);
+                    tp("  (primeiro em %.1f s apos conectar)", e.t_primeiro_chave - e.t_conectado);
                 if (e.pedidos_quadro_chave)
-                    printf("  [%lu pedido(s)]", e.pedidos_quadro_chave);
-                printf("\n  Maior quadro: %.1f KB   Audio: %lu pacotes\n", e.maior_quadro / 1024.0,
+                    tp("  [%lu pedido(s)]", e.pedidos_quadro_chave);
+                tp("\n  Maior quadro: %.1f KB   Audio: %lu pacotes\n", e.maior_quadro / 1024.0,
                        e.pacotes_audio);
 
                 DecodEstado d;
                 decod_ler(&d);
-                printf("\nDecodificacao:\n");
+                tp("\nDecodificacao:\n");
                 if (!d.ativo && d.decodificados == 0) {
-                    printf("  " COR_ERRO "Decodificador nao iniciou" COR_FIM " (detalhes no log)\n");
+                    tp("  " COR_ERRO "Decodificador nao iniciou" COR_FIM " (detalhes no log)\n");
                 } else {
-                    printf("  %s%s" COR_FIM "\n", d.hardware ? COR_OK : COR_DESTAQ, d.descricao);
-                    printf("  Decodificados: %s%.0f/s" COR_FIM "  (%lu no total)",
+                    tp("  %s%s" COR_FIM "\n", d.hardware ? COR_OK : COR_DESTAQ, d.descricao);
+                    tp("  Decodificados: %s%.0f/s" COR_FIM "  (%lu no total)",
                            fps_decod >= 50 ? COR_OK : fps_decod >= 25 ? COR_DESTAQ : COR_ERRO, fps_decod,
                            d.decodificados);
                     if (d.largura)
-                        printf("  %dx%d %s", d.largura, d.altura, d.formato);
-                    printf("\n  Tempo:  %s%.1f ms" COR_FIM " medio, %.1f ms maximo  (limite p/ 60/s: 16,7 ms)\n",
+                        tp("  %dx%d %s", d.largura, d.altura, d.formato);
+                    tp("\n  Tempo:  %s%.1f ms" COR_FIM " medio, %.1f ms maximo  (limite p/ 60/s: 16,7 ms)\n",
                            d.ms_medio < 12 ? COR_OK : d.ms_medio < 16.7 ? COR_DESTAQ : COR_ERRO, d.ms_medio,
                            d.ms_maximo);
-                    printf("  Erros: %s%lu" COR_FIM "   Descartados: %lu   Fila: %d\n",
+                    tp("  Erros: %s%lu" COR_FIM "   Descartados: %lu   Fila: %d\n",
                            d.erros ? COR_ERRO : COR_OK, d.erros, d.descartados, d.fila);
                 }
-                printf("\n");
+                tp("\n");
                 if (status_keepalive < 0)
-                    printf("Keepalive: primeiro envio em %d s\n",
+                    tp("Keepalive: primeiro envio em %d s\n",
                            SESSAO_INTERVALO_KEEPALIVE_S - (int)segundos_desde(ultimo_keepalive));
                 else
-                    printf("Keepalive: %s (HTTP %ld) ha %d s  [%d ok, %d falhas]\n",
+                    tp("Keepalive: %s (HTTP %ld) ha %d s  [%d ok, %d falhas]\n",
                            (status_keepalive >= 200 && status_keepalive < 300) ? COR_OK "ok" COR_FIM
                                                                                 : COR_ERRO "falhou" COR_FIM,
                            status_keepalive, (int)segundos_desde(ultimo_keepalive), ka_ok, ka_falhas);
                 if (apos_sleep[0])
-                    printf("%s\n", apos_sleep);
-                printf(COR_FRACA "Fase 2c.2: os quadros sao decodificados pelo chip de video do\n"
-                       "Switch, mas ainda nao desenhados. A imagem aparece na fase 2c.3." COR_FIM "\n");
+                    tp("%s\n", apos_sleep);
+                if (video_erro[0])
+                    tp(COR_ERRO "Tela: %s" COR_FIM " (detalhes no log)\n", video_erro);
+                else if (!em_video)
+                    tp(COR_FRACA "O video aparece assim que o primeiro quadro for decodificado." COR_FIM "\n");
             }
-            printf("\nB = desconectar   + = desconectar e fechar\n");
+            if (em_video)
+                tp("\nSegure + e - por 1 s: menu   B = desconectar\n");
+            else
+                tp("\nB = desconectar   + = desconectar e fechar\n");
+        }
+        if (redesenhar && em_video) {
+            if (menu_aberto)
+                desenhar_menu(menu_item, mostrar_estatisticas);
+            else if (!mostrar_estatisticas && segundos_desde(inicio) - t_video < 6.0)
+                desenhar_aviso_menu();
+            g_capturando = false;
         }
 
-        u64 b = quadro(&fechar);
-        if (fechar || (b & HidNpadButton_Plus)) {
-            conexao_encerrar();
-            encerrar_sessao(streaming, sessao);
-            return PASSO_SAIR;
+        // --- Vídeo na tela (fase 2c.3) ------------------------------------------
+        // Assim que o primeiro quadro é decodificado, a GPU assume a tela.
+        if (etapa == ET_CONECTADO && !em_video && !video_tentou) {
+            DecodEstado d;
+            decod_ler(&d);
+            if (d.decodificados > 0) {
+                video_tentou = true;
+                consoleExit(NULL); // o console e a GPU usam a mesma janela
+                if (video_tela_iniciar()) {
+                    t_video = segundos_desde(inicio);
+                    LOG("main: video na tela %.1f s apos conectar", t_video - e.t_conectado);
+                    ultimo_quadro = -1; // monta a camada de texto já no próximo quadro
+                } else {
+                    consoleInit(NULL);
+                    snprintf(video_erro, sizeof video_erro, "%s", video_tela_erro());
+                    LOG("main: video: %s", video_erro);
+                }
+            }
         }
-        if (b & HidNpadButton_B) {
+        if (video_tela_ativa())
+            video_tela_desenhar(decod_pegar_quadro()); // espera o vsync
+
+        u64 b = quadro(&fechar);
+        u64 segurados = padGetButtons(&g_controle);
+        int acao = 0; // 1 = desconectar, 2 = fechar o app
+        if (fechar) {
+            acao = 2;
+        } else if (!video_tela_ativa()) {
+            if (b & HidNpadButton_Plus) acao = 2;
+            else if (b & HidNpadButton_B) acao = 1;
+        } else {
+            // + e - segurados juntos por 1 s abrem o menu (+ sozinho não fecha mais
+            // o app: na fase 3 os botões vão para o jogo)
+            double agora = segundos_desde(inicio);
+            bool combinacao = (segurados & HidNpadButton_Plus) && (segurados & HidNpadButton_Minus);
+            if (!combinacao) {
+                segurando_desde = -1;
+                esperar_soltar = false;
+            } else if (!menu_aberto && !esperar_soltar) {
+                if (segurando_desde < 0) {
+                    segurando_desde = agora;
+                } else if (agora - segurando_desde >= 1.0) {
+                    menu_aberto = true;
+                    menu_item = 0;
+                    menu_mudou = true;
+                    esperar_soltar = true;
+                }
+            }
+            if (menu_aberto && !esperar_soltar) {
+                if (b & (HidNpadButton_AnyUp)) {
+                    menu_item = (menu_item + MENU_ITENS - 1) % MENU_ITENS;
+                    menu_mudou = true;
+                } else if (b & (HidNpadButton_AnyDown)) {
+                    menu_item = (menu_item + 1) % MENU_ITENS;
+                    menu_mudou = true;
+                } else if (b & HidNpadButton_B) {
+                    menu_aberto = false;
+                    menu_mudou = true;
+                } else if (b & HidNpadButton_A) {
+                    menu_aberto = false;
+                    menu_mudou = true;
+                    if (menu_item == MENU_ESTATISTICAS) {
+                        mostrar_estatisticas = !mostrar_estatisticas;
+                        LOG("main: estatisticas %s", mostrar_estatisticas ? "ligadas" : "desligadas");
+                    } else if (menu_item == MENU_DESCONECTAR) {
+                        acao = 1;
+                    } else if (menu_item == MENU_FECHAR) {
+                        acao = 2;
+                    }
+                }
+            } else if (!menu_aberto && (b & HidNpadButton_B)) {
+                acao = 1; // nesta fase o B continua desconectando direto
+            }
+        }
+        if (acao) {
+            modo_texto(); // solta os quadros da tela antes de fechar o decodificador
             conexao_encerrar();
             encerrar_sessao(streaming, sessao);
-            return PASSO_LISTA;
+            return acao == 2 ? PASSO_SAIR : PASSO_LISTA;
         }
     }
 }

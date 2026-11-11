@@ -15,15 +15,17 @@ include $(DEVKITPRO)/libnx/switch_rules
 #---------------------------------------------------------------------------------
 TARGET      := nxstream
 BUILD       := build
-SOURCES     := source source/core source/auth source/api source/net source/media compat/src third_party/cjson
+SOURCES     := source source/core source/auth source/api source/net source/media source/ui compat/src third_party/cjson
 DATA        := data
+# Shaders GLSL da GPU (deko3d): compilados pelo uam e embutidos no executável
+SHADERS     := shaders
 # deps/prefix/include vem antes das portlibs: o mbedTLS 3 do projeto precisa
 # ter prioridade sobre o 2.28 que vem na imagem do devkitPro.
 INCLUDES    := source deps/prefix/include compat/include third_party/cjson
 
 APP_TITLE   := NXStream
 APP_AUTHOR  := gtvsrd
-APP_VERSION := 0.6.0
+APP_VERSION := 0.7.0
 
 #---------------------------------------------------------------------------------
 # Flags de compilação
@@ -49,7 +51,7 @@ endif
 LIBS     := -ldatachannel -lusrsctp -lsrtp2 -ljuice \
             -lmbedtls -lmbedx509 -lmbedcrypto \
             $(FFMPEG_LIBS) \
-            -lcurl -lz -lnx
+            -lcurl -lz -ldeko3d -lnx
 # deps/prefix primeiro, pelo mesmo motivo dos cabeçalhos (mbedTLS 3 antes do 2.28)
 LIBDIRS  := $(TOPDIR)/deps/prefix $(PORTLIBS) $(LIBNX)
 
@@ -60,21 +62,23 @@ ifneq ($(BUILD),$(notdir $(CURDIR)))
 export OUTPUT  := $(CURDIR)/$(TARGET)
 export TOPDIR  := $(CURDIR)
 export VPATH   := $(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
-                  $(foreach dir,$(DATA),$(CURDIR)/$(dir))
+                  $(foreach dir,$(DATA),$(CURDIR)/$(dir)) \
+                  $(foreach dir,$(SHADERS),$(CURDIR)/$(dir))
 export DEPSDIR := $(CURDIR)/$(BUILD)
 
 CFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
 CPPFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 SFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
 BINFILES := $(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
+GLSLFILES := $(foreach dir,$(SHADERS),$(notdir $(wildcard $(dir)/*.glsl)))
 
 # A libdatachannel é C++: o link sempre usa g++ (traz a libstdc++)
 export LD := $(CXX)
 
-export OFILES_BIN := $(addsuffix .o,$(BINFILES))
+export OFILES_BIN := $(addsuffix .o,$(BINFILES)) $(GLSLFILES:.glsl=.dksh.o)
 export OFILES_SRC := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
 export OFILES     := $(OFILES_BIN) $(OFILES_SRC)
-export HFILES_BIN := $(addsuffix .h,$(subst .,_,$(BINFILES)))
+export HFILES_BIN := $(addsuffix .h,$(subst .,_,$(BINFILES))) $(GLSLFILES:.glsl=_dksh.h)
 
 export INCLUDE  := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
                    $(foreach dir,$(LIBDIRS),-I$(dir)/include) \
@@ -117,6 +121,19 @@ $(OUTPUT).elf: $(OFILES)
 $(OFILES_SRC): $(HFILES_BIN)
 
 %.bin.o %_bin.h: %.bin
+	@echo $(notdir $<)
+	@$(bin2o)
+
+# Shaders: _vsh = vértice, _fsh = fragmento (convenção dos exemplos do deko3d)
+%_vsh.dksh: %_vsh.glsl
+	@echo $(notdir $<)
+	@$(DEVKITPRO)/tools/bin/uam -s vert -o $@ $<
+
+%_fsh.dksh: %_fsh.glsl
+	@echo $(notdir $<)
+	@$(DEVKITPRO)/tools/bin/uam -s frag -o $@ $<
+
+%.dksh.o %_dksh.h: %.dksh
 	@echo $(notdir $<)
 	@$(bin2o)
 

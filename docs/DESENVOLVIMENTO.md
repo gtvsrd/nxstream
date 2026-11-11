@@ -187,6 +187,26 @@ Conecte ao console. A tela de conectado ganha a seção **Decodificacao**.
 
 **v0.6.0:** a 10 min 10 s de conexão, o console enviou três vezes `TransactionStart /streaming/sessionLifetimeManagement/serverInitiatedDisconnect` (junto com `titleinfo` e `showlayoutv2`), mas o vídeo e os keepalives continuaram até o app ser fechado 41 s depois. O app ainda não responde a essas transações. Nada foi feito no console naquele momento, então a causa provável é **inatividade**: o app ainda não tem controle conectado ao stream (só avisa e retira o gamepad no início). A fase 3 (controle) deve evitar isso; responder a essas transações fica anotado para a fase 4 (estabilidade).
 
+### Fase 2c.3: imagem na tela (v0.7.0)
+
+Conecte ao console. Assim que o primeiro quadro é decodificado, a tela de texto dá lugar ao vídeo do Xbox em tela cheia (ainda sem controle e sem som). Nos primeiros segundos aparece o aviso "Segure + e - por 1 s para abrir o menu".
+
+| Teste | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Imagem | A tela do Xbox aparece em tela cheia, sem estar de cabeça para baixo ou espelhada | |
+| Cores | Naturais: preto bem preto, sem tons esverdeados ou rosados | |
+| Movimento | Mexendo no Xbox pelo controle dele, a imagem acompanha suave, sem travadas regulares | |
+| Menu (+ e - por 1 s) | Abre o menu; cima/baixo escolhe, A confirma, B volta | |
+| Estatísticas (pelo menu) | O texto da tela de conexão aparece por cima do vídeo, legível; some ao escolher de novo | |
+| Desconectar (menu ou B) | Volta para a lista de consoles, em texto normal | |
+| Fechar o app (menu) | Fecha sem travar; o log mostra "video: GPU encerrada" antes de "decod: encerrado" | |
+| Deixar 3+ minutos | Imagem estável | |
+| Modo dock (se possível) | A imagem aparece na TV (em 720p ampliado nesta etapa) | |
+
+O log registra quando a GPU assume a tela (`video: GPU pronta`, `main: video na tela`), o primeiro quadro mapeado na GPU e o padrão de cores detectado. Se a imagem não aparecer, a tela volta para o texto com a linha "Tela: ..." e o motivo fica no log.
+
+**Limitação conhecida desta etapa:** o keepalive (a cada 30 s) ainda é uma chamada HTTP na thread principal, então pode dar uma travadinha na imagem a cada 30 s. Se incomodar, ele passa para uma thread própria antes da fase 3.
+
 As próximas fases recebem seus checklists aqui quando começarem.
 
 ## Convenções

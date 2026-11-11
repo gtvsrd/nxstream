@@ -5,8 +5,8 @@
 // vídeo do Switch (NVDEC, via AV_HWDEVICE_TYPE_NVTEGRA). Assim um quadro mais
 // lento de decodificar não atrasa a recepção.
 //
-// Nesta etapa os quadros decodificados são só contados e medidos; o desenho
-// na tela é a fase 2c.3.
+// O quadro decodificado mais recente fica guardado para a tela (fase 2c.3),
+// que o busca com decod_pegar_quadro().
 #pragma once
 #include <stdbool.h>
 #include <stddef.h>
@@ -22,6 +22,7 @@ typedef struct {
     unsigned long erros;        // erros do decodificador
     unsigned long descartados;  // quadros jogados fora (fila cheia ou antes do 1º quadro-chave)
     unsigned long esperando_chave; // quadros descartados esperando quadro-chave
+    unsigned long nao_exibidos; // decodificados que um mais novo substituiu antes de irem à tela
 
     double ms_ultimo, ms_medio, ms_maximo; // tempo de decodificação (janela recente)
     int    largura, altura;     // do último quadro decodificado
@@ -35,4 +36,8 @@ bool decod_iniciar(void);
 void decod_enviar(const uint8_t *dados, size_t tamanho, bool quadro_chave);
 void decod_ler(DecodEstado *copia);
 void decod_limpar_pedido_chave(void);
+// Quadro decodificado mais recente (AV_PIX_FMT_NVTEGRA), ou NULL se não chegou
+// nenhum novo. Quem chama fica com ele (av_frame_free quando não precisar mais).
+struct AVFrame;
+struct AVFrame *decod_pegar_quadro(void);
 void decod_encerrar(void);
