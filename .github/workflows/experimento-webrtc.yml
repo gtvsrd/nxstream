@@ -50,7 +50,6 @@ jobs:
           python3 scripts/config.py set MBEDTLS_SSL_DTLS_SRTP
           python3 scripts/config.py unset MBEDTLS_NET_C
           python3 scripts/config.py unset MBEDTLS_TIMING_C
-          python3 scripts/config.py unset MBEDTLS_FS_IO
           python3 scripts/config.py unset MBEDTLS_PSA_ITS_FILE_C
           python3 scripts/config.py unset MBEDTLS_PSA_CRYPTO_STORAGE_C
           python3 scripts/config.py set MBEDTLS_NO_PLATFORM_ENTROPY
