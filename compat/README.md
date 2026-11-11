@@ -13,7 +13,7 @@ libSRTP) esperam encontrar num sistema POSIX e que a libnx não oferece.
 | `src/pipe.c` | libjuice | `pipe()` com um par de sockets UDP locais (a libnx não tem; mesma solução da libjuice no Windows) |
 | `include/errno.h` | usrsctp | Acrescenta `ERESTART` |
 | `include/sys/socket.h` | usrsctp | Acrescenta `CMSG_ALIGN` |
-| `patches/aplicar.py` | usrsctp | Gerador de números aleatórios do Switch (`randomGet`) em `user_environment.c` |
+| `patches/aplicar.py` | usrsctp, libjuice | Gerador de números aleatórios seguro do Switch (`randomGet`) em `user_environment.c` (usrsctp) e `random.c` (libjuice, que sem isso usaria `rand()`) |
 | `compat.cmake` | todas | Adiciona os cabeçalhos acima e `_DEFAULT_SOURCE` (tipos `u_int`, `u_long`) a todo projeto CMake |
 
 Uso com CMake: `-DCMAKE_PROJECT_INCLUDE=<caminho>/compat/compat.cmake`.

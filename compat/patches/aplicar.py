@@ -39,12 +39,31 @@ finish_random(void)
 }
 '''
 
+# libjuice: mesmo problema. Sem um ramo para o Switch, ela cai no rand()
+# semeado com o relógio para gerar credenciais ICE e IDs de transação STUN.
+LIBJUICE_RNG = '''#elif defined(__SWITCH__)
+/* NXStream: gerador aleatorio do sistema do Switch (libnx) */
+#include <switch/kernel/random.h>
+static int random_bytes(void *buf, size_t size) {
+	randomGet(buf, size);
+	return 0;
+}
+
+'''
+
 ALTERACOES = [
     (
         "deps/usrsctp/usrsctplib/user_environment.c",
         "#elif defined(_WIN32)\n",   # o ramo do Switch entra logo antes do ramo do Windows
         USRSCTP_RNG,
         "defined(__SWITCH__)",       # marca de que já foi aplicado
+    ),
+    (
+        "deps/libjuice/src/random.c",
+        # o ramo do Switch entra antes do ramo genérico que devolve -1
+        "#else\nstatic int random_bytes(void *buf, size_t size) {\n\t(void)buf;\n",
+        LIBJUICE_RNG,
+        "defined(__SWITCH__)",
     ),
 ]
 

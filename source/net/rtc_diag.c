@@ -14,6 +14,8 @@ static pthread_mutex_t g_trava = PTHREAD_MUTEX_INITIALIZER;
 static RtcDiagEstado g_estado;
 static u64 g_inicio;
 static int g_pc = -1;
+static int g_trilhas[2] = {-1, -1};
+static int g_canal = -1;
 
 static double agora_s(void) {
     return armTicksToNs(armGetSystemTick() - g_inicio) / 1e9;
@@ -33,7 +35,6 @@ static void ao_descricao(int pc, const char *sdp, const char *tipo, void *ptr) {
     int tam = g_estado.tamanho_oferta;
     pthread_mutex_unlock(&g_trava);
     LOG("rtc_diag: descricao local (%s) pronta em %.2f s, %d bytes", tipo, t, tam);
-    LOG("rtc_diag: SDP:\n%s", sdp); // SDP local não contém segredos de conta
 }
 
 // Extrai "IP porta tipo" de "candidate:1 1 UDP 2122317823 192.168.0.10 50000 typ host ..."
@@ -92,6 +93,8 @@ static bool adicionar_trilha(rtcDirection direcao, rtcCodec codec, int payload,
     t.ssrc = ssrc;
     t.mid = mid;
     int tr = rtcAddTrackEx(g_pc, &t);
+    if (tr >= 0)
+        g_trilhas[mid[0] == 'v' ? 0 : 1] = tr;
     if (tr < 0) {
         definir_erro(mid[0] == 'v' ? "Falha ao adicionar a trilha de video"
                                    : "Falha ao adicionar a trilha de audio", tr);
@@ -134,6 +137,7 @@ bool rtc_diag_iniciar(void) {
         return true; // a conexão existe; o erro aparece na tela
 
     int dc = rtcCreateDataChannel(g_pc, "input");
+    g_canal = dc;
     if (dc < 0) {
         definir_erro("Falha ao criar o canal de dados", dc);
         return true;
@@ -153,6 +157,14 @@ void rtc_diag_ler(RtcDiagEstado *copia) {
 }
 
 void rtc_diag_encerrar(void) {
+    // Canal e trilhas são objetos próprios na biblioteca: apagar antes da conexão,
+    // senão ficam para trás (a v0.3.0 deixava 3 por execução)
+    if (g_canal >= 0)
+        rtcDeleteDataChannel(g_canal);
+    for (int i = 0; i < 2; i++)
+        if (g_trilhas[i] >= 0)
+            rtcDeleteTrack(g_trilhas[i]);
+    g_canal = g_trilhas[0] = g_trilhas[1] = -1;
     if (g_pc >= 0) {
         rtcDeletePeerConnection(g_pc);
         LOG("rtc_diag: conexao encerrada");

@@ -100,11 +100,16 @@ Na lista de consoles, aperte **−** para abrir o diagnóstico. Ele não usa o X
 | Candidatos de rede | Pelo menos um com o IP do Switch (o mesmo da fase 0), "coleta completa" | ✅ Coleta completa em 0,05 s |
 | Resultado | "tudo funcionando no Switch!" | ✅ |
 | A (repetir) algumas vezes | Repete sem travar | ✅ Todas as vezes |
+
+Log da v0.3.0 (35 diagnósticos seguidos, todos ok) mostrou, corrigido na v0.4.1:
+- canal e trilhas do diagnóstico não eram apagados (105 objetos sobrando ao fechar, e o log terminava antes de "encerrado");
+- libjuice usava `rand()` para as credenciais ICE (agora usa o gerador seguro do Switch, via `compat/patches/aplicar.py`);
+- linhas de threads diferentes se misturavam no log; o log agora tem trava, linhas de até 8 KB e recomeça ao passar de 1 MB.
 | B e depois + (fechar o app) | Fecha normalmente, sem travar | |
 
 O log registra a oferta SDP completa e cada candidato, para comparar com o que o Xbox espera na parte 2.
 
-### Fase 2b, parte 2: conexão com o Xbox (v0.4.0)
+### Fase 2b, parte 2: conexão com o Xbox (v0.4.1)
 
 Na lista, escolha o console com **A**. Depois de "Sessao pronta", a tela mostra as etapas da conexão.
 
