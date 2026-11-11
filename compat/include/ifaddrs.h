@@ -1,6 +1,7 @@
 // Compatibilidade: getifaddrs() para o Switch (implementado em compat/src/ifaddrs.c)
 #ifndef NX_COMPAT_IFADDRS_H
 #define NX_COMPAT_IFADDRS_H
+#pragma GCC system_header
 #include <sys/socket.h>
 
 #ifdef __cplusplus
