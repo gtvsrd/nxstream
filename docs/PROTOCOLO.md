@@ -160,7 +160,13 @@ Depois de aplicar a resposta, `POST <sessionPath>/ice` com `{"candidates": [<tex
 
 O keepalive (seção 2) só é aceito com a conexão aberta.
 
-### 3.5 Primeiras mensagens do console (observado na v0.4.3)
+### 3.5 Resposta SDP do console (observado na v0.4.5)
+
+- Vídeo: o console escolhe H.264 **Main, nível 4.2** (`profile-level-id=4d002a`; alternativa Baseline `42e02a`), `sendonly`, com `a=imageattr:102 send [x=[0:2560],y=[0:1440],fps=[0:60]]` (até 2560×1440 a 60 fps).
+- Áudio: Opus 48 kHz, `sendrecv`, sem `stereo=1` no `fmtp` da resposta.
+- `a=ice-options:trickle renomination`, `a=setup:passive` (o Switch é o cliente DTLS).
+
+### 3.6 Primeiras mensagens do console (observado na v0.4.3)
 
 - `control`, ao abrir: `{"dataChannelOnlySessionCount":0,"message":"dataChannelOnlySessionCountChanged"}`
 - `chat`: abre e é fechado pelo console logo em seguida (voz não negociada).

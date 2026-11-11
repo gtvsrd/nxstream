@@ -132,7 +132,8 @@ Na lista, escolha o console com **A**. Depois de "Sessao pronta", a tela mostra 
 | Pacotes de vídeo | Contador subindo (o console está enviando imagem) | ✅ v0.4.4 |
 | Keepalive após 30 s | ok (HTTP 200): confirma a hipótese da fase 2a | ✅ v0.4.4: HTTP 200 `{"aliveSeconds":null,"reason":"None"}`; hipótese confirmada |
 | Deixar conectado 3+ minutos | Continua conectado, keepalives ok | ✅ v0.4.4: 3 min 16 s, 6 keepalives ok |
-| B | Desconecta e volta para a lista | ✅ v0.4.4 (com ~1000 avisos no log, corrigido na v0.4.5) |
+| B | Desconecta e volta para a lista | ✅ v0.4.5: sem avisos no log |
+| Fechar o app com + | Log termina com `encerrando (4/4...)` e `NXStream encerrado` | ✅ v0.4.5: sem `ERRO FATAL` |
 | Bloquear o Switch conectado | A conexão cai (reconexão é a fase 4) | v0.4.4: caiu após 282 s de sleep, mas **a sessão sobreviveu** (keepalive HTTP 200 ao acordar): na fase 4 basta refazer só a conexão WebRTC |
 
 **v0.4.1:** nas 3 tentativas, o `POST /sdp` falhou com "Couldn't connect to server" no mesmo instante, enquanto o mesmo servidor tinha respondido a `/play` e `/state` logo antes. Causa provável (hipótese): a libjuice pede 1 MB + 1 MB de buffer para o socket UDP e esgota o poço de memória de sockets da libnx (~2,25 MB por padrão), sem sobrar para o socket TCP do curl. **v0.4.2:** poço de sockets dobrado (`sb_efficiency` 8), 6 sessões BSD, buffers da libjuice reduzidos no Switch (512 KB + 128 KB) e o log das falhas do curl passa a trazer a causa do sistema.
