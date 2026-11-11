@@ -1,33 +1,18 @@
-name: Build .nro
+# Branch temporária: recompila exatamente a v0.4.2 (commit 2c800ea) e traduz o
+# crash report em crash/v0.4.2.log. Nenhuma linha de código foi alterada.
+name: Traduzir crash v0.4.2
 
 on:
   push:
-  pull_request:
   workflow_dispatch:
 
 jobs:
-  testes:
-    name: Testes (PC)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Baixar o código
-        uses: actions/checkout@v5
-
-      - name: Rodar testes
-        run: make -C tests
-
-  build:
-    name: Compilar .nro
+  traduzir:
     runs-on: ubuntu-latest
     container: devkitpro/devkita64:latest
-
     steps:
-      - name: Baixar o código
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
-      # As dependências do WebRTC (mbedTLS 3 + libdatachannel) levam alguns
-      # minutos para compilar e ficam em cache. Só o que entra na compilação
-      # delas define a chave (compat/src é compilado junto com o app).
       - name: Restaurar dependências do cache
         id: cache-deps
         uses: actions/cache/restore@v4
@@ -39,28 +24,8 @@ jobs:
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: sh scripts/compilar-deps.sh
 
-      # Salva logo em seguida: mesmo que o app falhe depois, as dependências
-      # já compiladas não precisam ser refeitas no próximo build.
-      - name: Salvar dependências no cache
-        if: steps.cache-deps.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: deps/prefix
-          key: ${{ steps.cache-deps.outputs.cache-primary-key }}
-
-      # A imagem oficial já inclui as portlibs (curl, zlib...).
-      # Downloads do pkg.devkitpro.org a partir do GitHub Actions são bloqueados.
-      - name: Conferir bibliotecas
-        run: |
-          ls -l $DEVKITPRO/portlibs/switch/lib/libcurl.a $DEVKITPRO/portlibs/switch/lib/libz.a
-          ls -l deps/prefix/lib/libdatachannel.a deps/prefix/lib/libmbedtls.a
-
       - name: Compilar
         run: make -j$(nproc)
 
-      - name: Publicar o .nro
-        uses: actions/upload-artifact@v5
-        with:
-          name: nxstream-nro
-          path: nxstream.nro
-          if-no-files-found: error
+      - name: Traduzir o crash report
+        run: sh scripts/traduzir-crash.sh nxstream.elf crash/v0.4.2.log
