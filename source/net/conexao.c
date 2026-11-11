@@ -319,19 +319,12 @@ static void ao_mensagem(int id, const char *dados, int tamanho, void *ptr) {
     int n = tamanho < 0 ? (int)strlen(dados) : tamanho;
 
     if (origem == ID_TRILHA_VIDEO || origem == ID_TRILHA_AUDIO) {
-        pthread_mutex_lock(&g_trava);
-        if (origem == ID_TRILHA_VIDEO) {
-            if (g_estado.pacotes_video == 0)
-                g_estado.t_primeiro_video = agora_s();
-            g_estado.pacotes_video++;
-            g_estado.bytes_video += (unsigned long)n;
-        } else {
+        // Vídeo chega montado em quadros por ao_quadro(); aqui só o áudio
+        if (origem == ID_TRILHA_AUDIO) {
+            pthread_mutex_lock(&g_trava);
             g_estado.pacotes_audio++;
+            pthread_mutex_unlock(&g_trava);
         }
-        unsigned long pv = g_estado.pacotes_video;
-        pthread_mutex_unlock(&g_trava);
-        if (origem == ID_TRILHA_VIDEO && pv == 1)
-            LOG("conexao: primeiro pacote de video recebido (%d bytes)", n);
         return;
     }
 
@@ -355,6 +348,61 @@ static void ao_mensagem(int id, const char *dados, int tamanho, void *ptr) {
             LOG("conexao: <- %s: %d bytes: %s", CANAIS[c].nome, n, hex);
         }
     }
+}
+
+// Quadro H.264 completo (Annex B), montado pelo depacketizer da libdatachannel
+static void ao_quadro(int tr, const char *dados, int tamanho, const rtcFrameInfo *info, void *ptr) {
+    (void)tr; (void)ptr;
+    if (tamanho <= 0)
+        return;
+    H264Quadro q;
+    h264_analisar_quadro((const uint8_t *)dados, (size_t)tamanho, &q);
+    double t = agora_s();
+
+    pthread_mutex_lock(&g_trava);
+    bool primeiro = g_estado.quadros == 0;
+    bool primeiro_chave = q.tem_idr && g_estado.quadros_chave == 0;
+    bool resolucao_mudou = q.sps_valido && (!g_estado.sps_valido ||
+                           g_estado.sps.largura != q.sps.largura || g_estado.sps.altura != q.sps.altura);
+    g_estado.quadros++;
+    g_estado.bytes_video += (unsigned long)tamanho;
+    g_estado.t_ultimo_quadro = t;
+    if (primeiro)
+        g_estado.t_primeiro_quadro = t;
+    if ((unsigned long)tamanho > g_estado.maior_quadro)
+        g_estado.maior_quadro = (unsigned long)tamanho;
+    if (q.tem_idr) {
+        g_estado.quadros_chave++;
+        if (primeiro_chave)
+            g_estado.t_primeiro_chave = t;
+    }
+    if (q.sps_valido) {
+        g_estado.sps_valido = true;
+        g_estado.sps = q.sps;
+    }
+    unsigned long chaves = g_estado.quadros_chave;
+    pthread_mutex_unlock(&g_trava);
+
+    if (primeiro)
+        LOG("conexao: primeiro quadro de video (%d bytes, %d NALs, payload %u)", tamanho, q.num_nals,
+            info ? info->payloadType : 0);
+    if (primeiro_chave)
+        LOG("conexao: primeiro quadro-chave em %.2f s", t);
+    else if (q.tem_idr && chaves <= 20)
+        LOG("conexao: quadro-chave #%lu (%d bytes)", chaves, tamanho);
+    if (resolucao_mudou)
+        LOG("conexao: video %dx%d, H.264 %s nivel %d.%d", q.sps.largura, q.sps.altura,
+            h264_nome_perfil(q.sps.perfil), q.sps.nivel / 10, q.sps.nivel % 10);
+}
+
+void conexao_pedir_quadro_chave(void) {
+    if (g_trilha_video < 0)
+        return;
+    int rc = rtcRequestKeyframe(g_trilha_video);
+    pthread_mutex_lock(&g_trava);
+    g_estado.pedidos_quadro_chave++;
+    pthread_mutex_unlock(&g_trava);
+    LOG("conexao: quadro-chave pedido ao console (%d)", rc);
 }
 
 // ---------------------------------------------------------------------------
@@ -391,8 +439,19 @@ bool conexao_criar(void) {
     }
     rtcSetUserPointer(g_trilha_video, (void *)(intptr_t)ID_TRILHA_VIDEO);
     rtcSetUserPointer(g_trilha_audio, (void *)(intptr_t)ID_TRILHA_AUDIO);
-    rtcSetMessageCallback(g_trilha_video, ao_mensagem);
     rtcSetMessageCallback(g_trilha_audio, ao_mensagem);
+
+    // Vídeo: junta os pacotes RTP em quadros H.264 com start codes (o formato
+    // que o decodificador da fase 2c.2 espera). A sessão RTCP vem depois na
+    // cadeia: ela vê os pacotes brutos antes do depacketizer (relatórios de
+    // recepção e pedido de quadro-chave).
+    int rc_v = rtcSetH264Depacketizer(g_trilha_video, RTC_NAL_SEPARATOR_LONG_START_SEQUENCE);
+    int rc_r = rtcChainRtcpReceivingSession(g_trilha_video);
+    int rc_q = rtcSetFrameCallback(g_trilha_video, ao_quadro);
+    if (rc_v < 0 || rc_r < 0 || rc_q < 0) {
+        definir_erro("Falha ao preparar a recepcao de video", rc_v < 0 ? rc_v : rc_r < 0 ? rc_r : rc_q);
+        return false;
+    }
 
     for (int c = 0; c < NUM_CANAIS; c++) {
         rtcDataChannelInit init;

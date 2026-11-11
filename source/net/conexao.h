@@ -9,6 +9,7 @@
 #pragma once
 #include <stdbool.h>
 #include "../api/xapi.h"
+#include "../media/h264_info.h"
 
 typedef enum { CANAL_CHAT, CANAL_CONTROL, CANAL_INPUT, CANAL_MESSAGE, NUM_CANAIS } Canal;
 
@@ -32,9 +33,15 @@ typedef struct {
     bool   handshake_ok;
     double t_handshake;
 
-    unsigned long pacotes_video, bytes_video;
     unsigned long pacotes_audio;
-    double t_primeiro_video;
+
+    // Vídeo (fase 2c.1): quadros H.264 montados pela libdatachannel
+    unsigned long quadros, quadros_chave, bytes_video;
+    double t_primeiro_quadro, t_primeiro_chave, t_ultimo_quadro;
+    unsigned long maior_quadro;          // bytes
+    bool   sps_valido;
+    H264Sps sps;                         // resolução, perfil e nível do último SPS
+    unsigned long pedidos_quadro_chave;
 
     char   erro[160];
 } ConexaoEstado;
@@ -45,6 +52,9 @@ bool  conexao_aplicar_resposta(const char *sdp);
 int   conexao_adicionar_remotos(const XCandidatos *remotos); // quantos foram aceitos
 void  conexao_ler(ConexaoEstado *copia);
 void  conexao_encerrar(void);
+
+// Pede ao console um quadro-chave (envia PLI). Use com moderação.
+void  conexao_pedir_quadro_chave(void);
 
 const char *conexao_nome_canal(Canal c);
 const char *conexao_nome_estado(int estado);

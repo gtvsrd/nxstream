@@ -145,6 +145,20 @@ Na lista, escolha o console com **A**. Depois de "Sessao pronta", a tela mostra 
 
 Se alguma etapa falhar, mande o `nxstream.log`: ele contém a oferta, a resposta SDP do console, todos os candidatos e as mensagens dos canais.
 
+### Fase 2c.1: quadros de vídeo (v0.5.0)
+
+Conecte ao console como na fase 2b. A tela de conectado agora mostra a seção **Video**.
+
+| Teste | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Resolução | Aparece em poucos segundos (provavelmente 1280x720) | |
+| Quadros por segundo | Estável, perto de 60/s (ou 30/s), mesmo com a tela do Xbox parada | |
+| Quadros-chave | Pelo menos 1, logo após conectar (sozinho ou depois de "pedido") | |
+| Mexer no Xbox pelo controle dele (menu, um jogo) | Mbps sobe quando a imagem muda muito | |
+| Deixar 3+ minutos | Quadros por segundo continuam estáveis | |
+
+O log registra uma linha de vídeo a cada 10 s, a resolução e os primeiros quadros-chave.
+
 As próximas fases recebem seus checklists aqui quando começarem.
 
 ## Convenções

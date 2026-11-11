@@ -15,7 +15,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 #---------------------------------------------------------------------------------
 TARGET      := nxstream
 BUILD       := build
-SOURCES     := source source/core source/auth source/api source/net compat/src third_party/cjson
+SOURCES     := source source/core source/auth source/api source/net source/media compat/src third_party/cjson
 DATA        := data
 # deps/prefix/include vem antes das portlibs: o mbedTLS 3 do projeto precisa
 # ter prioridade sobre o 2.28 que vem na imagem do devkitPro.
@@ -23,7 +23,7 @@ INCLUDES    := source deps/prefix/include compat/include third_party/cjson
 
 APP_TITLE   := NXStream
 APP_AUTHOR  := gtvsrd
-APP_VERSION := 0.4.5
+APP_VERSION := 0.5.0
 
 #---------------------------------------------------------------------------------
 # Flags de compilação

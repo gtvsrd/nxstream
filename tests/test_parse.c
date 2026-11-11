@@ -2,6 +2,7 @@
 // Rodam no PC e no CI:  make -C tests
 #include "auth/auth.h"
 #include "api/xapi.h"
+#include "media/h264_info.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -265,6 +266,60 @@ static void teste_filtro_rede_local(void) {
     CHECAR(strstr(f.cand[0], "10.0.0.5") && strstr(f.cand[1], "172.16.1.2") && strstr(f.cand[2], "169.254.3.4"));
 }
 
+static size_t hex_para_bytes(const char *hex, uint8_t *saida) {
+    size_t n = 0;
+    for (; hex[0] && hex[1]; hex += 2) {
+        unsigned v;
+        sscanf(hex, "%2x", &v);
+        saida[n++] = (uint8_t)v;
+    }
+    return n;
+}
+
+static void teste_h264(void) {
+    puts("H.264 (SPS reais gerados com x264)");
+    uint8_t b[128];
+    H264Sps s;
+    size_t n = hex_para_bytes("674d4020eca02802dd8088000003000800000303c078c18cb0", b);
+    CHECAR(h264_ler_sps(b, n, &s));
+    CHECAR(s.largura == 1280 && s.altura == 720 && s.perfil == 77 && s.nivel == 32);
+
+    n = hex_para_bytes("674d402aeca03c0113f2e022000003000200000300f01e30632c", b);
+    CHECAR(h264_ler_sps(b, n, &s)); // 1088 linhas codificadas, recorte para 1080
+    CHECAR(s.largura == 1920 && s.altura == 1080 && s.perfil == 77 && s.nivel == 42);
+
+    n = hex_para_bytes("6764002aacd9405005bb0110000003001000000780f1831960", b);
+    CHECAR(h264_ler_sps(b, n, &s)); // High: campos de croma e profundidade
+    CHECAR(s.largura == 1280 && s.altura == 720 && s.perfil == 100 && s.nivel == 42);
+    CHECAR(!strcmp(h264_nome_perfil(100), "High"));
+
+    CHECAR(!h264_ler_sps(b, 3, &s));              // curto demais
+    b[0] = 0x68;
+    CHECAR(!h264_ler_sps(b, n, &s));              // não é SPS (é PPS)
+
+    // Quadro com SPS + PPS + IDR (start codes longos e curtos misturados)
+    uint8_t q[256];
+    size_t t = 0;
+    const uint8_t longo[] = {0, 0, 0, 1}, curto[] = {0, 0, 1};
+    memcpy(q + t, longo, 4); t += 4;
+    t += hex_para_bytes("674d4020eca02802dd8088000003000800000303c078c18cb0", q + t);
+    memcpy(q + t, longo, 4); t += 4;
+    t += hex_para_bytes("68ebe3cb22c0", q + t);
+    memcpy(q + t, curto, 3); t += 3;
+    t += hex_para_bytes("6588840021ff", q + t);
+    H264Quadro info;
+    h264_analisar_quadro(q, t, &info);
+    CHECAR(info.num_nals == 3 && info.tem_sps && info.tem_pps && info.tem_idr);
+    CHECAR(info.sps_valido && info.sps.largura == 1280 && info.sps.altura == 720);
+
+    // Quadro comum (NAL 1): não é quadro-chave
+    uint8_t p_[] = {0, 0, 0, 1, 0x41, 0x9a, 0x02, 0x03};
+    h264_analisar_quadro(p_, sizeof p_, &info);
+    CHECAR(info.num_nals == 1 && !info.tem_idr && !info.tem_sps && !info.sps_valido);
+    h264_analisar_quadro(p_, 0, &info);
+    CHECAR(info.num_nals == 0);
+}
+
 static void teste_armazenamento(void) {
     puts("armazenamento do token");
     const char *arq = "teste_token.json";
@@ -291,6 +346,7 @@ int main(void) {
     teste_sessao();
     teste_negociacao();
     teste_filtro_rede_local();
+    teste_h264();
     teste_armazenamento();
     printf("\n%d de %d verificacoes passaram\n", g_total - g_falhas, g_total);
     return g_falhas ? 1 : 0;

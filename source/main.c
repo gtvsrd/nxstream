@@ -1,4 +1,4 @@
-// NXStream - Fase 2b: login, lista de consoles, sessão de streaming e diagnóstico WebRTC
+// NXStream - Fase 2c: login, lista de consoles, conexão com o console e vídeo
 //
 // Interface em texto simples (console do libnx). Fluxo:
 //   INICIO -> (sem token salvo) LOGIN -> STREAMING -> LISTA
@@ -439,6 +439,11 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
     int remotos_aceitos = 0;
 
     u64 ultimo_keepalive = 0;
+    // Estatísticas de vídeo por segundo (fase 2c.1)
+    double t_janela = 0, fps = 0, mbps = 0;
+    unsigned long quadros_janela = 0, bytes_janela = 0;
+    double ultimo_pedido_chave = -10;
+    double t_log_video = 0;
     long status_keepalive = -1;
     int ka_ok = 0, ka_falhas = 0;
     char apos_sleep[160] = "";
@@ -537,6 +542,31 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                 break;
 
             case ET_CONECTADO: {
+                // Quadros e taxa a cada segundo
+                double agora = segundos_desde(inicio);
+                if (agora - t_janela >= 1.0) {
+                    double dt = agora - t_janela;
+                    fps = (e.quadros - quadros_janela) / dt;
+                    mbps = (e.bytes_video - bytes_janela) * 8.0 / dt / 1e6;
+                    quadros_janela = e.quadros;
+                    bytes_janela = e.bytes_video;
+                    t_janela = agora;
+                    // Uma linha a cada 10 s no log, para comparar com o que a tela mostra
+                    if (agora - t_log_video >= 10.0) {
+                        t_log_video = agora;
+                        LOG("main: video %.0f fps, %.1f Mbps, %lu quadros, %lu chave, %dx%d",
+                            fps, mbps, e.quadros, e.quadros_chave,
+                            e.sps_valido ? e.sps.largura : 0, e.sps_valido ? e.sps.altura : 0);
+                    }
+                }
+                // Sem quadro-chave não há como começar a decodificar: pede ao console
+                // (a cada 2 s, no máximo 5 vezes) se ele não veio sozinho
+                double desde_conexao = agora - e.t_conectado;
+                if (e.quadros_chave == 0 && desde_conexao > 2.0 && agora - ultimo_pedido_chave >= 2.0 &&
+                    e.pedidos_quadro_chave < 5) {
+                    conexao_pedir_quadro_chave();
+                    ultimo_pedido_chave = agora;
+                }
                 if (e.caiu) {
                     // Reconexão automática é a fase 4; por ora mostra e registra o motivo
                     char det[96];
@@ -595,8 +625,23 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                 char t_con[16];
                 tempo_texto(t_con, sizeof t_con, (int)(segundos_desde(inicio) - e.t_conectado));
                 printf("\n" COR_OK "CONECTADO" COR_FIM " ha %s\n", t_con);
-                printf("Video: %lu pacotes (%.1f MB)   Audio: %lu pacotes\n", e.pacotes_video,
-                       e.bytes_video / 1048576.0, e.pacotes_audio);
+                printf("\nVideo:\n");
+                if (e.sps_valido)
+                    printf("  Resolucao: " COR_DESTAQ "%dx%d" COR_FIM "  (H.264 %s, nivel %d.%d)\n",
+                           e.sps.largura, e.sps.altura, h264_nome_perfil(e.sps.perfil),
+                           e.sps.nivel / 10, e.sps.nivel % 10);
+                else
+                    printf("  Resolucao: " COR_FRACA "aguardando o primeiro SPS" COR_FIM "\n");
+                printf("  Quadros:   %s%.0f/s" COR_FIM "  %.1f Mbps  (%lu no total, %.1f MB)\n",
+                       fps >= 50 ? COR_OK : fps >= 25 ? COR_DESTAQ : COR_ERRO, fps, mbps, e.quadros,
+                       e.bytes_video / 1048576.0);
+                printf("  Chave:     %lu", e.quadros_chave);
+                if (e.quadros_chave)
+                    printf("  (primeiro em %.1f s apos conectar)", e.t_primeiro_chave - e.t_conectado);
+                if (e.pedidos_quadro_chave)
+                    printf("  [%lu pedido(s)]", e.pedidos_quadro_chave);
+                printf("\n  Maior quadro: %.1f KB   Audio: %lu pacotes\n\n", e.maior_quadro / 1024.0,
+                       e.pacotes_audio);
                 if (status_keepalive < 0)
                     printf("Keepalive: primeiro envio em %d s\n",
                            SESSAO_INTERVALO_KEEPALIVE_S - (int)segundos_desde(ultimo_keepalive));
@@ -607,8 +652,8 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                            status_keepalive, (int)segundos_desde(ultimo_keepalive), ka_ok, ka_falhas);
                 if (apos_sleep[0])
                     printf("%s\n", apos_sleep);
-                printf("\n" COR_FRACA "Fase 2b: a imagem aparece na fase 2c. Aqui o teste e a\n"
-                       "conexao ficar de pe e os pacotes de video chegarem." COR_FIM "\n");
+                printf("\n" COR_FRACA "Fase 2c.1: os quadros sao montados e medidos, mas ainda nao\n"
+                       "decodificados. A imagem aparece na fase 2c.3." COR_FIM "\n");
             }
             printf("\nB = desconectar   + = desconectar e fechar\n");
         }

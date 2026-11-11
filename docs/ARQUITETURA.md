@@ -26,7 +26,7 @@ flowchart LR
 | `auth` | `source/auth/` | Login por código (device code), cadeia de tokens, renovação, armazenamento no SD |
 | `xbox_api` | `source/api/` | HTTPS para listar consoles, criar sessão, trocar SDP/ICE, keepalive, encerrar |
 | `webrtc` | `source/net/` | Conexão com o console, DTLS/SRTP, canais de dados |
-| `video` | `source/media/` | Decodificação H.264 por hardware e desenho na tela |
+| `video` | `source/media/` | `h264_info`: tipos de NAL, quadro-chave e resolução (SPS), sem dependências e testado no PC. Depois: decodificação por hardware e desenho na tela |
 | `audio` | `source/media/` | Decodificação Opus e saída de som |
 | `input` | `source/input/` | Leitura do controle, mapeamento, envio em ritmo fixo, vibração |
 | `session` | `source/session/` | Máquina de estados que coordena tudo, incluindo reconexão |
