@@ -177,13 +177,15 @@ Conecte ao console. A tela de conectado ganha a seção **Decodificacao**.
 
 | Teste | Resultado esperado | Resultado obtido |
 |---|---|---|
-| Decodificador | "h264 + nvtegra" em verde (chip de vídeo do Switch) | |
-| Decodificados por segundo | Igual aos recebidos (~60/s) | |
-| Tempo de decodificação | Médio bem abaixo de 16,7 ms (o limite para 60/s) | |
-| Erros e descartados | 0 erros; descartados só os poucos quadros antes do 1º quadro-chave | |
-| Imagem mudando muito (menu, jogo) | Continua ~60/s, sem erros | |
-| Deixar 3+ minutos | Estável | |
-| Fechar com + | Fecha sem travar (o log mostra "decod: encerrado") | |
+| Decodificador | "h264 + nvtegra" em verde (chip de vídeo do Switch) | ✅ v0.6.0: `h264 + nvtegra (FFmpeg 7.1)` |
+| Decodificados por segundo | Igual aos recebidos (~60/s) | ✅ v0.6.0: 59–61/s, sempre igual aos recebidos |
+| Tempo de decodificação | Médio bem abaixo de 16,7 ms (o limite para 60/s) | ✅ v0.6.0: médio 1,1–2,3 ms, máximo 6,3 ms |
+| Erros e descartados | 0 erros; descartados só os poucos quadros antes do 1º quadro-chave | ⚠️ v0.6.0: 1 descartado (o quadro que chegou antes do 1º quadro-chave) e **1 erro**, no 1º quadro-chave (`AVERROR_UNKNOWN`); a partir do quadro seguinte, nenhum erro em 11 min |
+| Imagem mudando muito (menu, jogo) | Continua ~60/s, sem erros | ✅ v0.6.0: 4,2–5,4 Mbps, quadros-chave de até ~127 KB, 60/s |
+| Deixar 3+ minutos | Estável | ✅ v0.6.0: 10 min 51 s, 38 994 quadros decodificados, todos os keepalives ok |
+| Fechar com + | Fecha sem travar (o log mostra "decod: encerrado") | ✅ v0.6.0: `decod: encerrado`, os 4 passos e `NXStream encerrado` |
+
+**v0.6.0:** a 10 min 10 s de conexão, o console enviou três vezes `TransactionStart /streaming/sessionLifetimeManagement/serverInitiatedDisconnect` (junto com `titleinfo` e `showlayoutv2`), mas o vídeo e os keepalives continuaram até o app ser fechado 41 s depois. O app ainda não responde a essas transações. Causa ainda não confirmada: pode ser inatividade (nenhum controle conectado no stream) ou algo feito no console naquele momento.
 
 As próximas fases recebem seus checklists aqui quando começarem.
 
