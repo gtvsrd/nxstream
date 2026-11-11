@@ -4,4 +4,8 @@
 #pragma GCC system_header
 #include <sys/types.h>
 #include <sys/_iovec.h>
+
+#ifndef UIO_MAXIOV
+#define UIO_MAXIOV 1024   // máximo de iovecs por chamada (valor do BSD/Linux)
+#endif
 #endif

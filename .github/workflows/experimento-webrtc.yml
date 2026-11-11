@@ -79,6 +79,7 @@ jobs:
           # Aponta os módulos de busca da libdatachannel (MbedTLS_*) e da libSRTP
           # (MBEDTLS_*) para o mbedTLS 3 compilado acima, e não para o 2.28 da imagem.
           P=$PWD/prefix
+          python3 compat/patches/aplicar.py ldc
           cd ldc
           cmake -B build -G "Unix Makefiles" \
             -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Switch.cmake \

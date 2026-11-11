@@ -5,14 +5,19 @@ libSRTP) esperam encontrar num sistema POSIX e que a libnx não oferece.
 
 | Arquivo | Para quem | O que faz |
 |---|---|---|
-| `include/sys/uio.h` | usrsctp | Expõe `struct iovec` (a libnx define em `sys/_iovec.h`) |
+| `include/sys/uio.h` | usrsctp | Expõe `struct iovec` (a libnx define em `sys/_iovec.h`) e `UIO_MAXIOV` |
 | `include/ifaddrs.h` + `src/ifaddrs.c` | libjuice | `getifaddrs()` que devolve a interface Wi-Fi do Switch com o IP atual |
 | `include/netinet/in.h` | libSRTP | Inclui também `arpa/inet.h` (`htons`, `ntohl`...) |
 | `include/netinet/in_systm.h` | usrsctp | Tipos BSD `n_short`, `n_long`, `n_time` |
 | `include/netinet/ip.h` | usrsctp | `struct ip` e constantes IPv4 no formato BSD |
+| `include/errno.h` | usrsctp | Acrescenta `ERESTART` |
+| `include/sys/socket.h` | usrsctp | Acrescenta `CMSG_ALIGN` |
+| `patches/aplicar.py` | usrsctp | Gerador de números aleatórios do Switch (`randomGet`) em `user_environment.c` |
 | `compat.cmake` | todas | Adiciona os cabeçalhos acima e `_DEFAULT_SOURCE` (tipos `u_int`, `u_long`) a todo projeto CMake |
 
 Uso com CMake: `-DCMAKE_PROJECT_INCLUDE=<caminho>/compat/compat.cmake`.
 O `src/ifaddrs.c` é compilado junto com o app.
 
 Todos os cabeçalhos usam `#pragma GCC system_header`: algumas dependências compilam com `-pedantic -Werror`, e o `#include_next` (extensão do GCC) seria tratado como erro.
+
+Alterações no código das dependências ficam em `patches/aplicar.py`, que para com erro se o trecho original mudar.
