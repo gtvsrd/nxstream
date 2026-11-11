@@ -880,11 +880,17 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        // Cada passo vai para o log: os logs da v0.3.0 e v0.4.1 terminavam antes
+        // de "encerrado" mesmo com o app fechando sem erro na tela.
+        LOG("main: encerrando (1/4: liberando a conta)");
         auth_streaming_liberar(&streaming);
         auth_conta_liberar(&conta);
+        LOG("main: encerrando (2/4: fechando conexoes WebRTC)");
         conexao_encerrar();
         rtc_diag_finalizar_biblioteca();
+        LOG("main: encerrando (3/4: finalizando a libdatachannel)");
         rtc_comum_finalizar();
+        LOG("main: encerrando (4/4: finalizando o HTTPS)");
         http_encerrar();
     }
 
