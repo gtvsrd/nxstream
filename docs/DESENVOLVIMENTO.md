@@ -71,7 +71,7 @@ Sleep/resume com o app na lista: retoma em ~0,5 s.
 
 Se algo falhar, mande o arquivo `/switch/nxstream/nxstream.log` (ele não contém tokens).
 
-### Fase 2a: sessão de streaming (v0.2.2)
+### Fase 2a: sessão de streaming (v0.2.3)
 
 | Teste | Resultado esperado | Resultado obtido |
 |---|---|---|
@@ -83,7 +83,7 @@ Se algo falhar, mande o arquivo `/switch/nxstream/nxstream.log` (ele não conté
 | Dormir o Switch 5+ minutos e acordar | Idem: descobre por quanto tempo a sessão sobrevive sem keepalive | |
 | B na sessão | Volta para a lista; a sessão é encerrada | |
 
-**v0.2.1 tem um bug:** chamadas HTTP lentas eram confundidas com suspensão. Corrigido na v0.2.2, que usa os avisos do sistema para detectar sleep/HOME.
+**v0.2.1 tem um bug:** chamadas HTTP lentas eram confundidas com suspensão. A v0.2.2 passou a depender só dos avisos do sistema, mas ao **bloquear** o Switch nenhum aviso foi detectado. A v0.2.3 usa os dois sinais: aviso do sistema e tempo parado entre quadros, descontando o tempo das chamadas de rede. O log registra qual sinal detectou cada suspensão.
 
 Os dois testes de sleep não têm resposta "certa": servem para medir quanto tempo o servidor mantém a sessão sem keepalive. Isso define a estratégia de reconexão da fase 4.
 

@@ -34,6 +34,7 @@ static double g_ultimo_congelamento = 0; // segundos suspenso no último sleep/H
 static bool g_retorno_pendente = false;   // sistema avisou que o app voltou a rodar
 static bool g_em_foco = true;             // último estado de foco conhecido
 static XConsole g_console;               // console escolhido na lista
+#define LIMITE_SUSPENSAO_S 1.5               // quadro parado por mais que isso = suspensão
 
 // ---------------------------------------------------------------------------
 // Sistema: eventos do applet e detector de congelamento
@@ -62,6 +63,11 @@ static void ao_evento_do_sistema(AppletHookType tipo, void *param) {
     }
 }
 
+// Ao fim de cada chamada HTTP: o tempo esperando a rede não é suspensão
+static void ao_terminar_http(void) {
+    g_tick_anterior = armGetSystemTick();
+}
+
 static double segundos_desde(u64 tick) {
     return armTicksToNs(armGetSystemTick() - tick) / 1e9;
 }
@@ -74,17 +80,19 @@ static u64 quadro(bool *fechar) {
         *fechar = true;
         return 0;
     }
-    // Os avisos do sistema chegam dentro do appletMainLoop() do primeiro quadro
-    // depois da suspensão, então o tempo parado medido agora é o tempo suspenso.
-    // Sem aviso, um quadro lento é só o app esperando a rede (chamada HTTP).
+    // Suspensão (sleep/HOME) é detectada por dois sinais:
+    //  1. aviso do sistema (hook), quando o Switch envia;
+    //  2. tempo parado entre quadros. O tempo das chamadas HTTP não conta:
+    //     ao fim de cada requisição, ao_terminar_http() reinicia a contagem.
     double parado = segundos_desde(g_tick_anterior);
     g_tick_anterior = armGetSystemTick();
-    if (g_retorno_pendente) {
-        g_retorno_pendente = false;
+    bool por_aviso = g_retorno_pendente;
+    bool por_tempo = parado > LIMITE_SUSPENSAO_S;
+    g_retorno_pendente = false;
+    if (por_aviso || por_tempo) {
         g_ultimo_congelamento = parado > 0.1 ? parado : 0.1;
-        LOG("sistema: app voltou depois de %.1f s suspenso", parado);
-    } else if (parado > 2.0) {
-        LOG("sistema: quadro demorou %.1f s (esperando a rede)", parado);
+        LOG("sistema: app voltou depois de %.1f s suspenso (detectado por %s)", parado,
+            por_aviso && por_tempo ? "aviso e tempo" : por_aviso ? "aviso" : "tempo");
     }
 
     padUpdate(&g_controle);
@@ -568,6 +576,8 @@ int main(int argc, char *argv[]) {
     AppletHookCookie cookie;
     appletHook(&cookie, ao_evento_do_sistema, NULL);
     appletSetFocusHandlingMode(AppletFocusHandlingMode_SuspendHomeSleepNotify);
+
+    http_definir_ao_terminar(ao_terminar_http);
 
     if (appletGetAppletType() != AppletType_Application) {
         cabecalho();

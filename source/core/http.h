@@ -24,5 +24,9 @@ bool http_requisicao(HttpMetodo metodo, const char *url, const char *const *head
 
 void http_resposta_liberar(HttpResposta *resposta);
 
+// Função chamada ao fim de cada requisição (com ou sem sucesso).
+// O app usa para descontar o tempo de rede do detector de suspensão.
+void http_definir_ao_terminar(void (*funcao)(void));
+
 // Codifica um texto para uso em formulário/URL. Liberar com free().
 char *http_codificar(const char *texto);

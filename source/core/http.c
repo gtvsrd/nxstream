@@ -8,6 +8,11 @@
 #include <string.h>
 
 static bool g_tem_certificados = false;
+static void (*g_ao_terminar)(void) = NULL;
+
+void http_definir_ao_terminar(void (*funcao)(void)) {
+    g_ao_terminar = funcao;
+}
 
 bool http_iniciar(void) {
     CURLcode rc = curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -94,6 +99,8 @@ bool http_requisicao(HttpMetodo metodo, const char *url, const char *const *head
 
     curl_slist_free_all(lista);
     curl_easy_cleanup(curl);
+    if (g_ao_terminar)
+        g_ao_terminar();
     return ok;
 }
 
