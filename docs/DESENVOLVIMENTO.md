@@ -185,7 +185,7 @@ Conecte ao console. A tela de conectado ganha a seção **Decodificacao**.
 | Deixar 3+ minutos | Estável | ✅ v0.6.0: 10 min 51 s, 38 994 quadros decodificados, todos os keepalives ok |
 | Fechar com + | Fecha sem travar (o log mostra "decod: encerrado") | ✅ v0.6.0: `decod: encerrado`, os 4 passos e `NXStream encerrado` |
 
-**v0.6.0:** a 10 min 10 s de conexão, o console enviou três vezes `TransactionStart /streaming/sessionLifetimeManagement/serverInitiatedDisconnect` (junto com `titleinfo` e `showlayoutv2`), mas o vídeo e os keepalives continuaram até o app ser fechado 41 s depois. O app ainda não responde a essas transações. Causa ainda não confirmada: pode ser inatividade (nenhum controle conectado no stream) ou algo feito no console naquele momento.
+**v0.6.0:** a 10 min 10 s de conexão, o console enviou três vezes `TransactionStart /streaming/sessionLifetimeManagement/serverInitiatedDisconnect` (junto com `titleinfo` e `showlayoutv2`), mas o vídeo e os keepalives continuaram até o app ser fechado 41 s depois. O app ainda não responde a essas transações. Nada foi feito no console naquele momento, então a causa provável é **inatividade**: o app ainda não tem controle conectado ao stream (só avisa e retira o gamepad no início). A fase 3 (controle) deve evitar isso; responder a essas transações fica anotado para a fase 4 (estabilidade).
 
 As próximas fases recebem seus checklists aqui quando começarem.
 
