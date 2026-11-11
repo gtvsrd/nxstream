@@ -101,24 +101,66 @@ Abrir uma sessão com o console em repouso o acorda apenas no modo de streaming:
 | `WaitingForResources` | Fila (mais comum no xCloud) | Consultar de novo |
 | `Failed` | Falhou | Mostrar `errorDetails` e voltar para a lista de consoles |
 
-## 3. WebRTC (fases 2 e 3)
+## 3. WebRTC (fase 2b)
 
-Conexão direta com o console, na rede local pela porta UDP 9002. Criptografia DTLS-SRTP.
+Fonte: pacote `player` do Greenlight (`packages/player/src/client/lib/` e `src/server/index.ts`), a versão mantida do cliente. Implementação: `source/net/conexao.c` e `source/api/xapi.c`.
 
-| Canal | Tipo | Conteúdo |
-|---|---|---|
-| Vídeo | Mídia (RTP) | H.264 |
-| Áudio | Mídia (RTP) | Opus, 48 kHz, estéreo |
-| `input` | Dados (SCTP) | Estado do gamepad (formato binário próprio) e vibração vinda do console **(a confirmar)** |
-| `control` | Dados | Pedido de quadro-chave, eventos de controle **(a confirmar)** |
-| `message` | Dados | Handshake inicial em JSON e eventos do sistema **(a confirmar)** |
-| `chat` | Dados | Voz (não será usado) |
+### 3.1 Oferta local
 
-O formato binário do input e a sequência de inicialização dos canais serão documentados aqui durante a fase 2, conferindo com `xbox-xcloud-player`.
+- Conexão **sem servidores ICE** (rede local: só candidatos `host`).
+- Mídias:
+  - **áudio** Opus, `sendrecv` (o canal de voz usa a mesma trilha); o player acrescenta `stereo=1` ao `fmtp`;
+  - **vídeo** H.264, `recvonly`, preferência pelo perfil Main (`profile-level-id=4d…`), depois Constrained Baseline (`42e…`).
+- **Canais de dados**, criados nesta ordem, todos ordenados (`ordered`):
+
+| Nome | Protocolo |
+|---|---|
+| `chat` | `chatV1` |
+| `control` | `controlV1` |
+| `input` | `1.0` |
+| `message` | `messageV1` |
+
+### 3.2 Troca de SDP
+
+`POST <sessionPath>/sdp`:
+
+```json
+{"messageType":"offer","sdp":"<oferta>","requestId":"1",
+ "configuration":{
+   "chatConfiguration":{"bytesPerSample":2,"expectedClipDurationMs":20,
+     "format":{"codec":"opus","container":"webm"},"numChannels":1,"sampleFrequencyHz":24000},
+   "chat":{"minVersion":1,"maxVersion":1},
+   "control":{"minVersion":1,"maxVersion":3},
+   "input":{"minVersion":1,"maxVersion":9},
+   "message":{"minVersion":1,"maxVersion":1},
+   "reliableinput":{"minVersion":9,"maxVersion":9},
+   "unreliableinput":{"minVersion":9,"maxVersion":9}}}
+```
+
+`GET <sessionPath>/sdp` até sair do HTTP 204. A resposta traz `exchangeResponse`, um **texto JSON dentro do JSON**, com `sdp` (a resposta do console) e eventualmente `errorDetails`.
+
+### 3.3 Troca de candidatos (ICE)
+
+Depois de aplicar a resposta, `POST <sessionPath>/ice` com `{"candidates": [<texto JSON>, ...]}`, em que cada item é o texto de `{"candidate":"candidate:…","sdpMid":"0","sdpMLineIndex":0,"usernameFragment":"<ice-ufrag>"}`.
+
+`GET <sessionPath>/ice` até sair do HTTP 204. `exchangeResponse` traz uma lista de `{candidate, sdpMid, sdpMLineIndex, messageType}`:
+- `a=end-of-candidates` é ignorado.
+- Endereço **Teredo** (IPv6 começando com `2001:`): o console anuncia assim. Extrair o IPv4 e a porta (os últimos 32 bits e os bits 80–95, invertidos) e adicionar dois candidatos `host` extras, com a **porta 9002** e com a porta extraída, além do original.
+
+### 3.4 Abertura dos canais (handshake)
+
+1. Canal `message` abre → cliente envia `{"type":"Handshake","version":"messageV1","id":"<uuid>","cv":"0"}`.
+2. Console responde `HandshakeAck` → cliente:
+   - envia no `control`: `{"message":"authorizationRequest","accessKey":"4BDB3609-C1F1-4195-9B37-FEFF45DA8B8E"}`, depois `{"message":"gamepadChanged","gamepadIndex":0,"wasAdded":true}` e `…"wasAdded":false}` (o player envia os dois);
+   - envia no `input` o **pacote de metadados do cliente** (15 bytes, little-endian): `u16 tipo=8`, `u32 sequência=0`, `f64 tempo em ms`, `u8 máximo de toques=1`;
+   - envia no `message` as configurações, cada uma como `{"type":"Message","content":"<JSON>","id":"<uuid>","target":"<caminho>","cv":""}`: `/streaming/systemUi/configuration`, `/streaming/properties/clientappinstallidchanged`, `/streaming/characteristics/orientationchanged`, `…/touchinputenabledchanged`, `…/clientdevicecapabilities` e `…/dimensionschanged` (o NXStream pede 1280×720).
+3. Mensagens de texto são enviadas como **binário** (UTF-8), não como mensagem de texto do WebRTC.
+
+O keepalive (seção 2) só é aceito com a conexão aberta.
 
 ## Referências
 
 - [unknownskl/xbox-xcloud-player](https://github.com/unknownskl/xbox-xcloud-player): cliente de referência do protocolo (TypeScript). Principal fonte para API e formato do input.
-- [unknownskl/greenlight](https://github.com/unknownskl/greenlight): cliente desktop completo e mantido. Referência para estados da sessão e autenticação.
+- [unknownskl/greenlight](https://github.com/unknownskl/greenlight): cliente desktop completo e mantido. Referência para estados da sessão, autenticação e, no pacote `player`, a negociação WebRTC e os canais.
 - [OpenXbox / xcloud-rs](https://github.com/OpenXbox): engenharia reversa do backend.
 - [XITRIX/Moonlight-Switch](https://github.com/XITRIX/Moonlight-Switch): decodificação por hardware e renderização no Switch.
