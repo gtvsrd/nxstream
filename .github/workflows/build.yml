@@ -79,6 +79,10 @@ jobs:
           ls -l deps/prefix/lib/libdatachannel.a deps/prefix/lib/libmbedtls.a
           echo "FFmpeg: $($DEVKITPRO/portlibs/switch/bin/aarch64-none-elf-pkg-config --modversion libavcodec 2>/dev/null || echo 'pkg-config indisponivel')"
           $DEVKITPRO/portlibs/switch/bin/aarch64-none-elf-pkg-config --libs --static libavcodec libavutil 2>/dev/null || true
+          ls -l $DEVKITPRO/libnx/lib/libdeko3d.a $DEVKITPRO/libnx/include/deko3d.h || echo "deko3d ausente"
+          ls -l $DEVKITPRO/tools/bin/uam || echo "uam ausente"
+          ls $DEVKITPRO/portlibs/switch/include/libavutil/ | grep -i nvtegra || true
+          sed -n '1,400p' $DEVKITPRO/portlibs/switch/include/libavutil/hwcontext_nvtegra.h 2>/dev/null | grep -n "av_nvtegra\|typedef\|struct" | head -60 || true
 
       - name: Compilar
         run: make -j$(nproc)
