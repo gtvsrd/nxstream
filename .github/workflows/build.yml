@@ -26,17 +26,27 @@ jobs:
         uses: actions/checkout@v5
 
       # As dependências do WebRTC (mbedTLS 3 + libdatachannel) levam alguns
-      # minutos para compilar. Ficam em cache até o script ou a camada compat/ mudar.
-      - name: Cache das dependências
+      # minutos para compilar e ficam em cache. Só o que entra na compilação
+      # delas define a chave (compat/src é compilado junto com o app).
+      - name: Restaurar dependências do cache
         id: cache-deps
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: deps/prefix
-          key: deps-switch-${{ hashFiles('scripts/compilar-deps.sh', 'compat/**') }}
+          key: deps-switch-${{ hashFiles('scripts/compilar-deps.sh', 'compat/include/**', 'compat/patches/**', 'compat/compat.cmake') }}
 
       - name: Compilar dependências (sem cache)
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: sh scripts/compilar-deps.sh
+
+      # Salva logo em seguida: mesmo que o app falhe depois, as dependências
+      # já compiladas não precisam ser refeitas no próximo build.
+      - name: Salvar dependências no cache
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: deps/prefix
+          key: ${{ steps.cache-deps.outputs.cache-primary-key }}
 
       # A imagem oficial já inclui as portlibs (curl, zlib...).
       # Downloads do pkg.devkitpro.org a partir do GitHub Actions são bloqueados.
