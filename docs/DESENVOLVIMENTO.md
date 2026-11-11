@@ -146,19 +146,21 @@ Na lista, escolha o console com **A**. Depois de "Sessao pronta", a tela mostra 
 
 Se alguma etapa falhar, mande o `nxstream.log`: ele contém a oferta, a resposta SDP do console, todos os candidatos e as mensagens dos canais.
 
-### Fase 2c.1: quadros de vídeo (v0.5.0)
+### Fase 2c.1: quadros de vídeo (v0.5.1)
 
 Conecte ao console como na fase 2b. A tela de conectado agora mostra a seção **Video**.
 
 | Teste | Resultado esperado | Resultado obtido |
 |---|---|---|
-| Resolução | Aparece em poucos segundos (provavelmente 1280x720) | |
-| Quadros por segundo | Estável, perto de 60/s (ou 30/s), mesmo com a tela do Xbox parada | |
-| Quadros-chave | Pelo menos 1, logo após conectar (sozinho ou depois de "pedido") | |
+| Resolução | Aparece em poucos segundos (provavelmente 1280x720) | v0.5.0: **2560x1440**, H.264 Main 5.1 (o pedido de 720p em `dimensionschanged` foi ignorado). v0.5.1 informa "android" no `X-MS-Device-Info` para pedir 720p |
+| Quadros por segundo | Estável, perto de 60/s (ou 30/s), mesmo com a tela do Xbox parada | ✅ v0.5.0: 59–61/s durante 2 min, 17–29 Mbps |
+| Quadros-chave | Pelo menos 1, logo após conectar (sozinho ou depois de "pedido") | ✅ v0.5.0: primeiro em 0,2 s após conectar, sem pedido; depois a cada 30 s |
 | Mexer no Xbox pelo controle dele (menu, um jogo) | Mbps sobe quando a imagem muda muito | |
 | Deixar 3+ minutos | Quadros por segundo continuam estáveis | |
 
 O log registra uma linha de vídeo a cada 10 s, a resolução e os primeiros quadros-chave.
+
+**v0.5.0:** fechar o app com **+** direto da tela conectada deu erro de sistema (o log terminou limpo, então o erro veio depois de fechar o log). Causa provável: sem `rtcCleanup()`, as threads da libdatachannel ainda fechavam a conexão usando sockets quando o app fechou a rede (`socketExit`). O `rtcCleanup()` tinha sido removido na v0.4.5 porque lançava `std::system_error`: o motivo é o `std::thread::detach()` da thread de limpeza, que falha na libnx. **v0.5.1:** patch na libdatachannel (`join()` no lugar de `detach()` no Switch) e `rtcCleanup()` de volta antes de fechar a rede; avisos "dropping incoming message" só contados.
 
 As próximas fases recebem seus checklists aqui quando começarem.
 

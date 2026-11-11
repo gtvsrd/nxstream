@@ -85,6 +85,20 @@ USRSCTP_SOCKADDR_SWITCH = """#if defined(__APPLE__) || defined(__Bitrig__) || de
     defined(__SWITCH__) /* NXStream: libnx usa sockaddr no formato BSD */
 struct sockaddr_conn {"""
 
+# libdatachannel: a limpeza final (rtcCleanup) roda numa thread que é
+# "destacada" com std::thread::detach(). Na libnx o detach falha e lança
+# std::system_error dentro de um destrutor -> std::terminate (log da v0.4.4).
+# No Switch a thread de limpeza é aguardada com join(). Isso só é seguro se
+# rtcCleanup() for chamada fora das threads da biblioteca e depois de apagar
+# todas as conexões, como o NXStream faz ao fechar.
+LDC_DETACH_ORIGINAL = "\t\tt.detach();\n"
+LDC_DETACH_SWITCH = """#ifdef __SWITCH__
+\t\tt.join(); /* NXStream: detach falha na libnx */
+#else
+\t\tt.detach();
+#endif
+"""
+
 ALTERACOES = [
     (
         "deps/usrsctp/usrsctplib/user_environment.c",
@@ -111,6 +125,13 @@ ALTERACOES = [
         USRSCTP_SOCKADDR_ORIGINAL,
         USRSCTP_SOCKADDR_SWITCH,
         "NXStream: libnx usa sockaddr no formato BSD",
+        "substituir",
+    ),
+    (
+        "src/impl/init.cpp",
+        LDC_DETACH_ORIGINAL,
+        LDC_DETACH_SWITCH,
+        "NXStream: detach falha na libnx",
         "substituir",
     ),
 ]

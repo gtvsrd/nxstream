@@ -166,7 +166,13 @@ O keepalive (seção 2) só é aceito com a conexão aberta.
 - Áudio: Opus 48 kHz, `sendrecv`, sem `stereo=1` no `fmtp` da resposta.
 - `a=ice-options:trickle renomination`, `a=setup:passive` (o Switch é o cliente DTLS).
 
-### 3.6 Primeiras mensagens do console (observado na v0.4.3)
+### 3.6 Resolução do vídeo
+
+- O console **ignora** o tamanho pedido em `/streaming/characteristics/dimensionschanged` para decidir a resolução.
+- Os clientes de referência escolhem a resolução pelo `dev.os.name` do `X-MS-Device-Info` enviado ao criar a sessão: `"android"` para 720p, `"windows"` para 1080p.
+- Observado (v0.5.0, Xbox Series X): com `"windows"`, o console enviou **2560×1440 a 60 fps**, H.264 Main nível 5.1, 17–29 Mbps, quadros-chave a cada 30 s (até ~450 KB). O NXStream passou a usar `"android"` (`NX_OS_RESOLUCAO` em `config.h`); resultado a confirmar.
+
+### 3.7 Primeiras mensagens do console (observado na v0.4.3)
 
 - `control`, ao abrir: `{"dataChannelOnlySessionCount":0,"message":"dataChannelOnlySessionCountChanged"}`
 - `chat`: abre e é fechado pelo console logo em seguida (voz não negociada).

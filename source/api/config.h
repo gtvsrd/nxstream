@@ -50,12 +50,18 @@
 #define MS_URL_LIVE_TOKEN   "https://login.live.com/oauth20_token.srf"
 #define MS_ESCOPO_CONSOLE   "service::http://Passport.NET/purpose::PURPOSE_XBOX_CLOUD_CONSOLE_TRANSFER_TOKEN"
 
+// Resolução do streaming: o console escolhe pelo nome do sistema informado em
+// X-MS-Device-Info ao criar a sessão. Nos clientes de referência, "android" pede
+// 720p e "windows" 1080p. Na fase 2c.1, com "windows", o Xbox Series X mandou
+// 2560x1440 (H.264 nível 5.1, ~25 Mbps): muito acima da tela do Switch.
+#define NX_OS_RESOLUCAO     "android"
+
 // Identificação do cliente enviada à API de streaming
 #define NX_DEVICE_INFO \
     "{\"appInfo\":{\"env\":{\"clientAppId\":\"www.xbox.com\",\"clientAppType\":\"browser\"," \
     "\"clientAppVersion\":\"21.1.98\",\"clientSdkVersion\":\"8.5.3\",\"httpEnvironment\":\"prod\"," \
     "\"sdkInstallId\":\"\"}},\"dev\":{\"hw\":{\"make\":\"Microsoft\",\"model\":\"unknown\"," \
-    "\"sdktype\":\"web\"},\"os\":{\"name\":\"windows\",\"ver\":\"22631.2715\",\"platform\":\"desktop\"}," \
+    "\"sdktype\":\"web\"},\"os\":{\"name\":\"" NX_OS_RESOLUCAO "\",\"ver\":\"22631.2715\",\"platform\":\"desktop\"}," \
     "\"displayInfo\":{\"dimensions\":{\"widthInPixels\":1920,\"heightInPixels\":1080}," \
     "\"pixelDensity\":{\"dpiX\":2,\"dpiY\":2}},\"browser\":{\"browserName\":\"chrome\",\"browserVersion\":\"131.0\"}}}"
 
