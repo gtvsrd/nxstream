@@ -104,6 +104,24 @@ Na lista de consoles, aperte **−** para abrir o diagnóstico. Ele não usa o X
 
 O log registra a oferta SDP completa e cada candidato, para comparar com o que o Xbox espera na parte 2.
 
+### Fase 2b, parte 2: conexão com o Xbox (v0.4.0)
+
+Na lista, escolha o console com **A**. Depois de "Sessao pronta", a tela mostra as etapas da conexão.
+
+| Teste | Resultado esperado | Resultado obtido |
+|---|---|---|
+| 1. Oferta local | ok, com 1 ou mais candidatos locais | |
+| 2. Resposta do console | ok | |
+| 3. Candidatos de rede | ok, com candidatos do console aceitos | |
+| 4. Conexão WebRTC | ok, "CONECTADO" | |
+| 5. Handshake dos canais | ok; os quatro canais "aberto" | |
+| Pacotes de vídeo | Contador subindo (o console está enviando imagem) | |
+| Keepalive após 30 s | ok (HTTP 200): confirma a hipótese da fase 2a | |
+| Deixar conectado 3+ minutos | Continua conectado, keepalives ok | |
+| B | Desconecta e volta para a lista | |
+
+Se alguma etapa falhar, mande o `nxstream.log`: ele contém a oferta, a resposta SDP do console, todos os candidatos e as mensagens dos canais.
+
 As próximas fases recebem seus checklists aqui quando começarem.
 
 ## Convenções
