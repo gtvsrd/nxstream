@@ -193,17 +193,19 @@ Conecte ao console. Assim que o primeiro quadro é decodificado, a tela de texto
 
 | Teste | Resultado esperado | Resultado obtido |
 |---|---|---|
-| Imagem | A tela do Xbox aparece em tela cheia, sem estar de cabeça para baixo ou espelhada | |
+| Imagem | A tela do Xbox aparece em tela cheia, sem estar de cabeça para baixo ou espelhada | ❌ v0.7.0: imagem aparece 0,6 s após conectar, mas **invertida na vertical** (letras de cabeça para baixo/espelhadas). Causa: no deko3d padrão o topo da tela é y = +1 (como nos exemplos oficiais), e o shader assumia y = -1. **v0.7.1:** coordenada v invertida no shader de vértice |
 | Cores | Naturais: preto bem preto, sem tons esverdeados ou rosados | |
-| Movimento | Mexendo no Xbox pelo controle dele, a imagem acompanha suave, sem travadas regulares | |
+| Movimento | Mexendo no Xbox pelo controle dele, a imagem acompanha suave, sem travadas regulares | ✅ v0.7.0: suave; 60 quadros/s recebidos e decodificados, 0 erros |
 | Menu (+ e - por 1 s) | Abre o menu; cima/baixo escolhe, A confirma, B volta | |
 | Estatísticas (pelo menu) | O texto da tela de conexão aparece por cima do vídeo, legível; some ao escolher de novo | |
-| Desconectar (menu ou B) | Volta para a lista de consoles, em texto normal | |
+| Desconectar (menu ou B) | Volta para a lista de consoles, em texto normal | ✅ v0.7.0 (B, duas vezes): `video: GPU encerrada` antes de fechar a conexão; reconectou em seguida sem problema |
 | Fechar o app (menu) | Fecha sem travar; o log mostra "video: GPU encerrada" antes de "decod: encerrado" | |
 | Deixar 3+ minutos | Imagem estável | |
 | Modo dock (se possível) | A imagem aparece na TV (em 720p ampliado nesta etapa) | |
 
 O log registra quando a GPU assume a tela (`video: GPU pronta`, `main: video na tela`), o primeiro quadro mapeado na GPU e o padrão de cores detectado. Se a imagem não aparecer, a tela volta para o texto com a linha "Tela: ..." e o motivo fica no log.
+
+Controle do Switch ainda não age no Xbox nesta etapa (é a fase 3).
 
 **Limitação conhecida desta etapa:** o keepalive (a cada 30 s) ainda é uma chamada HTTP na thread principal, então pode dar uma travadinha na imagem a cada 30 s. Se incomodar, ele passa para uma thread própria antes da fase 3.
 
