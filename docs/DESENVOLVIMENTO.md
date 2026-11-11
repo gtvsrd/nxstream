@@ -95,11 +95,11 @@ Na lista de consoles, aperte **−** para abrir o diagnóstico. Ele não usa o X
 
 | Teste | Resultado esperado | Resultado obtido |
 |---|---|---|
-| Abrir o diagnóstico | App não trava nem fecha | |
-| Certificado e oferta SDP | "ok em X s" com certificado, vídeo, áudio e dados = sim | |
-| Candidatos de rede | Pelo menos um com o IP do Switch (o mesmo da fase 0), "coleta completa" | |
-| Resultado | "tudo funcionando no Switch!" | |
-| A (repetir) algumas vezes | Repete sem travar | |
+| Abrir o diagnóstico | App não trava nem fecha | ✅ |
+| Certificado e oferta SDP | "ok em X s" com certificado, vídeo, áudio e dados = sim | ✅ 0,01 s, tudo "sim" |
+| Candidatos de rede | Pelo menos um com o IP do Switch (o mesmo da fase 0), "coleta completa" | ✅ Coleta completa em 0,05 s |
+| Resultado | "tudo funcionando no Switch!" | ✅ |
+| A (repetir) algumas vezes | Repete sem travar | ✅ Todas as vezes |
 | B e depois + (fechar o app) | Fecha normalmente, sem travar | |
 
 O log registra a oferta SDP completa e cada candidato, para comparar com o que o Xbox espera na parte 2.
