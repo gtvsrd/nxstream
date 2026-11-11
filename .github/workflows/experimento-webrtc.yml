@@ -66,11 +66,24 @@ jobs:
 
       - name: Compilar libdatachannel
         run: |
+          # Aponta os módulos de busca da libdatachannel (MbedTLS_*) e da libSRTP
+          # (MBEDTLS_*) para o mbedTLS 3 compilado acima, e não para o 2.28 da imagem.
+          P=$PWD/prefix
           cd ldc
           cmake -B build -G "Unix Makefiles" \
             -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Switch.cmake \
-            -DCMAKE_PREFIX_PATH=$PWD/../prefix \
+            -DMbedTLS_INCLUDE_DIR=$P/include \
+            -DMbedTLS_LIBRARY=$P/lib/libmbedtls.a \
+            -DMbedX509_LIBRARY=$P/lib/libmbedx509.a \
+            -DMbedCrypto_LIBRARY=$P/lib/libmbedcrypto.a \
+            -DMBEDTLS_INCLUDE_DIRS=$P/include \
+            -DMBEDTLS_LIBRARY=$P/lib/libmbedtls.a \
+            -DMBEDX509_LIBRARY=$P/lib/libmbedx509.a \
+            -DMBEDCRYPTO_LIBRARY=$P/lib/libmbedcrypto.a \
             -DBUILD_SHARED_LIBS=OFF -DUSE_MBEDTLS=ON -DNO_WEBSOCKET=ON \
             -DNO_EXAMPLES=ON -DNO_TESTS=ON
-          cmake --build build -j$(nproc) -k 2>&1 | grep -E "error|Error|undefined|warning: implicit" | sort | uniq | head -80
-          cmake --build build -j1 2>&1 | tail -30
+          echo "===== compilando (continua apos erros para listar todos) ====="
+          cmake --build build -j$(nproc) -k 2>&1 | tee build.log | grep -E "Built target|error|undefined" | sed 's|.*/ldc/||' | sort | uniq -c | sort -rn | head -80
+          echo "===== resultado ====="
+          ls -l build/*.a build/deps/*/*.a 2>/dev/null || true
+          ! grep -q "Error " build.log
