@@ -23,7 +23,7 @@ INCLUDES    := source deps/prefix/include compat/include third_party/cjson
 
 APP_TITLE   := NXStream
 APP_AUTHOR  := gtvsrd
-APP_VERSION := 0.4.3
+APP_VERSION := 0.4.4
 
 #---------------------------------------------------------------------------------
 # Flags de compilação
@@ -34,7 +34,9 @@ CFLAGS   := -g -Wall -O2 -ffunction-sections $(ARCH) $(DEFINES)
 CFLAGS   += $(INCLUDE) -D__SWITCH__ -DAPP_VERSION=\"$(APP_VERSION)\"
 CXXFLAGS := $(CFLAGS) -fno-rtti -fno-exceptions
 ASFLAGS  := -g $(ARCH)
-LDFLAGS   = -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
+# --wrap=getnameinfo: a libnx ignora NI_NUMERICHOST (ver compat/src/getnameinfo.c)
+LDFLAGS   = -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map) \
+            -Wl,--wrap=getnameinfo
 
 # WebRTC (deps/prefix, ver scripts/compilar-deps.sh): a ordem importa no link
 # estático, cada biblioteca antes das que ela usa.

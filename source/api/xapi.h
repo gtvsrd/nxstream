@@ -81,4 +81,9 @@ char *xapi_corpo_ice(const XCandidatos *locais, const char *ufrag); // liberar c
 int   xapi_parse_resposta_ice(const char *json, XCandidatos *remotos); // nº de candidatos ou -1
 // Endereço Teredo (IPv6 2001::/32) -> IPv4 e porta do cliente. false se não for Teredo.
 bool  xapi_teredo(const char *ipv6, char *ipv4, int tam_ipv4, int *porta);
+// Mantém só candidatos IPv4 de rede local (10/8, 172.16/12, 192.168/16, 169.254/16).
+// O NXStream conecta só ao Xbox da mesma rede: endereços públicos não servem e
+// IPv6 não é suportado pela libnx (processar um candidato IPv6 fechava o app).
+// Remove também duplicados. Retorna quantos ficaram.
+int   xapi_filtrar_rede_local(XCandidatos *candidatos);
 

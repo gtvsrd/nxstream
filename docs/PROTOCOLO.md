@@ -145,6 +145,7 @@ Depois de aplicar a resposta, `POST <sessionPath>/ice` com `{"candidates": [<tex
 
 `GET <sessionPath>/ice` até sair do HTTP 204. `exchangeResponse` traz uma lista de `{candidate, sdpMid, sdpMLineIndex, messageType}`:
 - `a=end-of-candidates` é ignorado.
+- **No NXStream (só rede local), apenas candidatos IPv4 de rede privada são usados** (10/8, 172.16/12, 192.168/16, 169.254/16). O Xbox também envia IPv6, o IP público (srflx) e os derivados de Teredo; na libnx, o IPv6 não é suportado e os públicos disparam DNS reverso. Observado (v0.4.3): a conexão costuma subir **antes** de os candidatos do console chegarem, porque o console alcança o Switch pelo candidato local que enviamos.
 - Endereço **Teredo** (IPv6 começando com `2001:`): o console anuncia assim. Extrair o IPv4 e a porta (os últimos 32 bits e os bits 80–95, invertidos) e adicionar dois candidatos `host` extras, com a **porta 9002** e com a porta extraída, além do original.
 
 ### 3.4 Abertura dos canais (handshake)
@@ -157,6 +158,14 @@ Depois de aplicar a resposta, `POST <sessionPath>/ice` com `{"candidates": [<tex
 3. Mensagens de texto são enviadas como **binário** (UTF-8), não como mensagem de texto do WebRTC.
 
 O keepalive (seção 2) só é aceito com a conexão aberta.
+
+### 3.5 Primeiras mensagens do console (observado na v0.4.3)
+
+- `control`, ao abrir: `{"dataChannelOnlySessionCount":0,"message":"dataChannelOnlySessionCountChanged"}`
+- `chat`: abre e é fechado pelo console logo em seguida (voz não negociada).
+- `input`, depois dos metadados do cliente: 10 bytes `10 00 70 08 00 00 00 0f 00 00`.
+- `message`: `HandshakeAck`, depois `Message` em `/streaming/properties/titleinfo` e `/streaming/touchcontrols/showlayoutv2`.
+- Vídeo: primeiro pacote RTP (44 bytes) logo após a conexão.
 
 ## Referências
 

@@ -118,17 +118,17 @@ Log da v0.3.0 (35 diagnósticos seguidos, todos ok) mostrou, corrigido na v0.4.1
 
 O log registra a oferta SDP completa e cada candidato, para comparar com o que o Xbox espera na parte 2.
 
-### Fase 2b, parte 2: conexão com o Xbox (v0.4.3)
+### Fase 2b, parte 2: conexão com o Xbox (v0.4.4)
 
 Na lista, escolha o console com **A**. Depois de "Sessao pronta", a tela mostra as etapas da conexão.
 
 | Teste | Resultado esperado | Resultado obtido |
 |---|---|---|
 | 1. Oferta local | ok, com 1 ou mais candidatos locais | v0.4.1: ✅ oferta e candidato gerados; ❌ envio ao servidor falhou (ver abaixo) |
-| 2. Resposta do console | ok | |
+| 2. Resposta do console | ok | ✅ v0.4.3 |
 | 3. Candidatos de rede | ok, com candidatos do console aceitos | |
-| 4. Conexão WebRTC | ok, "CONECTADO" | |
-| 5. Handshake dos canais | ok; os quatro canais "aberto" | |
+| 4. Conexão WebRTC | ok, "CONECTADO" | ✅ v0.4.3, ~2,6 s |
+| 5. Handshake dos canais | ok; os quatro canais "aberto" | ✅ v0.4.3 (o canal `chat` abre e o console fecha logo em seguida) |
 | Pacotes de vídeo | Contador subindo (o console está enviando imagem) | |
 | Keepalive após 30 s | ok (HTTP 200): confirma a hipótese da fase 2a | |
 | Deixar conectado 3+ minutos | Continua conectado, keepalives ok | |
@@ -137,6 +137,8 @@ Na lista, escolha o console com **A**. Depois de "Sessao pronta", a tela mostra 
 **v0.4.1:** nas 3 tentativas, o `POST /sdp` falhou com "Couldn't connect to server" no mesmo instante, enquanto o mesmo servidor tinha respondido a `/play` e `/state` logo antes. Causa provável (hipótese): a libjuice pede 1 MB + 1 MB de buffer para o socket UDP e esgota o poço de memória de sockets da libnx (~2,25 MB por padrão), sem sobrar para o socket TCP do curl. **v0.4.2:** poço de sockets dobrado (`sb_efficiency` 8), 6 sessões BSD, buffers da libjuice reduzidos no Switch (512 KB + 128 KB) e o log das falhas do curl passa a trazer a causa do sistema.
 
 **v0.4.2:** ✅ hipótese dos buffers confirmada: `/sdp` e `/ice` passaram (HTTP 202), o console respondeu com o SDP dele, anunciou o IP local (192.168.0.4:9002), e nas 3 tentativas **a conexão ICE e o handshake DTLS com o Xbox foram concluídos**. ❌ No passo seguinte, ao abrir o SCTP: erro `Could not bind usrsctp socket, errno=106` (EAFNOSUPPORT) numa tentativa, e o app fechou sozinho nas outras duas. Causa (confirmada pelo crash report do Atmosphère, traduzido com o `.elf` do mesmo build): a `struct sockaddr_conn` da usrsctp ficava no formato Linux enquanto a usrsctp (`HAVE_SA_LEN`) e a libnx usam o formato BSD, então AF_CONN (123) era lido como "tamanho 123, família 0". Em `usrsctp_register_address` → `sctp_add_addr_to_vrf`, o `memcpy(..., addr->sa_len)` copiava 123 bytes para um espaço de ~28: corrupção de memória, e o app caía na reserva de memória seguinte (`_malloc_r`, criando o `SctpTransport`). Quando não caía, o `bind` falhava com errno 106. **v0.4.3:** patch na `usrsctp.h` (formato BSD no Switch) e `HAVE_SCONN_LEN` em `compat.cmake`.
+
+**v0.4.3:** ✅ **primeira conexão completa com o Xbox**: CONECTADO em ~2,6 s, SCTP aberto, os 4 canais abertos, `HandshakeAck` do console, primeiro pacote de vídeo e mensagens `titleinfo` / `showlayoutv2`. A conexão subiu antes mesmo de os candidatos do console chegarem. ❌ Logo depois, ao adicionar os candidatos do console, o app fechou sem tela de erro: a libnx fez DNS reverso dos IPs públicos derivados do Teredo (ignorando `NI_NUMERICHOST`) e o candidato IPv6 encerrou o app (provável exceção C++ não tratada, que não gera crash report). **v0.4.4:** só candidatos IPv4 de rede local são usados (o filtro foi testado com os 11 candidatos reais: sobra só `192.168.0.4:9002`), `getnameinfo()` corrigido na camada compat e exceções C++ não tratadas passam a ser registradas no log.
 
 Se alguma etapa falhar, mande o `nxstream.log`: ele contém a oferta, a resposta SDP do console, todos os candidatos e as mensagens dos canais.
 

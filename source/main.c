@@ -18,6 +18,7 @@
 #include "auth/auth.h"
 #include "core/http.h"
 #include "core/log.h"
+#include "core/terminar.h"
 #include "net/conexao.h"
 #include "net/rtc_comum.h"
 #include "net/rtc_diag.h"
@@ -505,7 +506,11 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                         return falha_conexao(streaming, sessao, "Falha ao receber os candidatos do console.",
                                              xapi_ultimo_erro());
                     if (st == 1) {
-                        remotos_aceitos = conexao_adicionar_remotos(&remotos);
+                        // Só IPv4 da rede local: público/IPv6 não servem e IPv6 fechava o app
+                        int recebidos = remotos.total;
+                        xapi_filtrar_rede_local(&remotos);
+                        LOG("main: %d candidato(s) do console, %d da rede local usado(s)", recebidos, remotos.total);
+                        remotos_aceitos = remotos.total > 0 ? conexao_adicionar_remotos(&remotos) : 0;
                         t_etapa[ET_CANDIDATOS] = segundos_desde(inicio);
                         etapa = ET_CONECTANDO;
                         inicio_etapa = armGetSystemTick();
@@ -822,6 +827,7 @@ int main(int argc, char *argv[]) {
     mkdir(NX_PASTA_APP, 0777);
     log_iniciar(NX_ARQ_LOG, nxlink);
     LOG("main: versao %s, nxlink %s", APP_VERSION, nxlink ? "ativo" : "inativo");
+    terminar_instalar();
 
     AppletHookCookie cookie;
     appletHook(&cookie, ao_evento_do_sistema, NULL);

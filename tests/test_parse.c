@@ -220,6 +220,51 @@ static void teste_negociacao(void) {
     CHECAR(xapi_parse_resposta_ice("{\"exchangeResponse\":\"{}\"}", &r) == -1);
 }
 
+static void teste_filtro_rede_local(void) {
+    puts("filtro de candidatos (rede local)");
+    // Os 11 candidatos reais que o Xbox enviou no teste da v0.4.3
+    static const char *reais[] = {
+        "candidate:3765941840 1 udp 2122129151 192.168.0.4 9002 typ host generation 0 ufrag 5MQy network-id 1",
+        "a=candidate:10 1 UDP 1 203.0.113.64 9002 typ host",
+        "a=candidate:11 1 UDP 1 203.0.113.64 37843 typ host",
+        "candidate:3697761578 1 udp 2122255103 2001::14c9:dc0a:140a:6c2c:34ff:8ebf 9002 typ host generation 0 ufrag 5MQy network-id 5 network-cost 50",
+        "candidate:1914173063 1 udp 2122197247 2804:6140:2002:5851:8b2e:934d:b2f4:2b61 9002 typ host generation 0 ufrag 5MQy network-id 2",
+        "candidate:3306060218 1 udp 1685921535 203.0.113.64 37641 typ srflx raddr 192.168.0.4 rport 9002 generation 0 ufrag 5MQy network-id 1",
+        "a=candidate:1 1 UDP 100 192.168.0.4 9002 typ host ",
+        "a=candidate:2 1 UDP 1 2804:6140:2002:5851:8b2e:934d:b2f4:2b61 9002 typ host ",
+        "a=candidate:10 1 UDP 1 203.0.113.64 9002 typ host",
+        "a=candidate:11 1 UDP 1 203.0.113.64 37843 typ host",
+        "a=candidate:3 1 UDP 1 2001:0:14c9:dc0a:140a:6c2c:34ff:8ebf 9002 typ host ",
+    };
+    XCandidatos r = {0};
+    for (size_t i = 0; i < sizeof reais / sizeof reais[0]; i++) {
+        snprintf(r.cand[r.total], sizeof r.cand[0], "%s", reais[i]);
+        strcpy(r.mid[r.total], "0");
+        r.total++;
+    }
+    CHECAR(xapi_filtrar_rede_local(&r) == 1); // só 192.168.0.4:9002, sem o duplicado
+    CHECAR(strstr(r.cand[0], "192.168.0.4 9002") != NULL && !strcmp(r.mid[0], "0"));
+
+    XCandidatos f = {0};
+    const char *outros[] = {
+        "candidate:1 1 UDP 1 10.0.0.5 9002 typ host",
+        "candidate:1 1 UDP 1 172.16.1.2 9002 typ host",
+        "candidate:1 1 UDP 1 172.32.1.2 9002 typ host",      // fora de 172.16/12
+        "candidate:1 1 UDP 1 192.169.0.1 9002 typ host",     // fora de 192.168/16
+        "candidate:1 1 UDP 1 169.254.3.4 9002 typ host",
+        "candidate:1 1 UDP 1 meu-xbox.local 9002 typ host",  // nome (mDNS)
+        "candidate:1 1 UDP 1 192.168.0.300 9002 typ host",   // inválido
+        "lixo",
+    };
+    for (size_t i = 0; i < sizeof outros / sizeof outros[0]; i++) {
+        snprintf(f.cand[f.total], sizeof f.cand[0], "%s", outros[i]);
+        strcpy(f.mid[f.total], "0");
+        f.total++;
+    }
+    CHECAR(xapi_filtrar_rede_local(&f) == 3);
+    CHECAR(strstr(f.cand[0], "10.0.0.5") && strstr(f.cand[1], "172.16.1.2") && strstr(f.cand[2], "169.254.3.4"));
+}
+
 static void teste_armazenamento(void) {
     puts("armazenamento do token");
     const char *arq = "teste_token.json";
@@ -245,6 +290,7 @@ int main(void) {
     teste_consoles();
     teste_sessao();
     teste_negociacao();
+    teste_filtro_rede_local();
     teste_armazenamento();
     printf("\n%d de %d verificacoes passaram\n", g_total - g_falhas, g_total);
     return g_falhas ? 1 : 0;

@@ -357,3 +357,51 @@ int xapi_parse_resposta_ice(const char *json, XCandidatos *r) {
     cJSON_Delete(interno);
     return r->total;
 }
+
+// Extrai o endereço (5º campo) de "[a=]candidate:<fund> <comp> <proto> <prio> <endereço> <porta> typ ..."
+static bool campo_endereco(const char *cand, char *endereco, size_t tam, int *porta) {
+    const char *c = strncmp(cand, "a=", 2) == 0 ? cand + 2 : cand;
+    char fundacao[64], proto[16], end[128];
+    unsigned componente;
+    unsigned long prioridade;
+    int p;
+    if (sscanf(c, "candidate:%63s %u %15s %lu %127s %d", fundacao, &componente, proto, &prioridade, end, &p) != 6)
+        return false;
+    snprintf(endereco, tam, "%s", end);
+    *porta = p;
+    return true;
+}
+
+static bool ipv4_rede_local(const char *texto) {
+    unsigned a, b, c, d;
+    char sobra;
+    if (sscanf(texto, "%u.%u.%u.%u%c", &a, &b, &c, &d, &sobra) != 4 || a > 255 || b > 255 || c > 255 || d > 255)
+        return false; // não é IPv4 numérico (IPv6, nome, lixo)
+    return a == 10 || (a == 172 && b >= 16 && b <= 31) || (a == 192 && b == 168) || (a == 169 && b == 254);
+}
+
+int xapi_filtrar_rede_local(XCandidatos *r) {
+    XCandidatos filtrado;
+    memset(&filtrado, 0, sizeof filtrado);
+    char vistos[XAPI_MAX_CAND][160];
+    for (int i = 0; i < r->total; i++) {
+        char endereco[128];
+        int porta;
+        if (!campo_endereco(r->cand[i], endereco, sizeof endereco, &porta) || !ipv4_rede_local(endereco))
+            continue;
+        char chave[160]; // endereço (até 127) + ":" + porta
+        snprintf(chave, sizeof chave, "%s:%d", endereco, porta);
+        bool repetido = false;
+        for (int j = 0; j < filtrado.total; j++)
+            if (!strcmp(vistos[j], chave))
+                repetido = true;
+        if (repetido)
+            continue;
+        snprintf(vistos[filtrado.total], sizeof vistos[0], "%s", chave);
+        snprintf(filtrado.cand[filtrado.total], sizeof filtrado.cand[0], "%s", r->cand[i]);
+        snprintf(filtrado.mid[filtrado.total], sizeof filtrado.mid[0], "%s", r->mid[i]);
+        filtrado.total++;
+    }
+    *r = filtrado;
+    return r->total;
+}

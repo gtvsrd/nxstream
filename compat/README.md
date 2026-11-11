@@ -10,6 +10,7 @@ libSRTP) esperam encontrar num sistema POSIX e que a libnx não oferece.
 | `include/netinet/in.h` | libSRTP | Inclui também `arpa/inet.h` (`htons`, `ntohl`...) |
 | `include/netinet/in_systm.h` | usrsctp | Tipos BSD `n_short`, `n_long`, `n_time` |
 | `include/netinet/ip.h` | usrsctp | `struct ip` e constantes IPv4 no formato BSD |
+| `src/getnameinfo.c` | libdatachannel | `getnameinfo()` que respeita `NI_NUMERICHOST` (a libnx faz DNS reverso mesmo assim); ligado com `-Wl,--wrap=getnameinfo` no Makefile |
 | `src/pipe.c` | libjuice | `pipe()` com um par de sockets UDP locais (a libnx não tem; mesma solução da libjuice no Windows) |
 | `include/errno.h` | usrsctp | Acrescenta `ERESTART` |
 | `include/sys/socket.h` | usrsctp | Acrescenta `CMSG_ALIGN` |
