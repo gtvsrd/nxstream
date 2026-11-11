@@ -69,7 +69,7 @@ jobs:
 
       - name: Compilar a camada compat (ifaddrs.c)
         run: |
-          aarch64-none-elf-gcc -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE \
+          $DEVKITPRO/devkitA64/bin/aarch64-none-elf-gcc -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE \
             -D__SWITCH__ -Wall -Wextra -Werror -Icompat/include \
             -I$DEVKITPRO/libnx/include -I$DEVKITPRO/portlibs/switch/include \
             -c compat/src/ifaddrs.c -o /tmp/ifaddrs.o && echo "ifaddrs.c compila"
