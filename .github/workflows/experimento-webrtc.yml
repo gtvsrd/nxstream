@@ -9,6 +9,7 @@ on:
 
 jobs:
   inventario:
+    if: false  # já feito: ver docs/ARQUITETURA.md
     name: Inventario da imagem
     runs-on: ubuntu-latest
     container: devkitpro/devkita64:latest
@@ -50,6 +51,9 @@ jobs:
           python3 scripts/config.py unset MBEDTLS_PSA_ITS_FILE_C
           python3 scripts/config.py unset MBEDTLS_PSA_CRYPTO_STORAGE_C
           python3 scripts/config.py set MBEDTLS_NO_PLATFORM_ENTROPY
+          # O app fornece: mbedtls_ms_time() (relógio) e mbedtls_hardware_poll() (entropia do Switch)
+          python3 scripts/config.py set MBEDTLS_PLATFORM_MS_TIME_ALT
+          python3 scripts/config.py set MBEDTLS_ENTROPY_HARDWARE_ALT
           cmake -B build -G "Unix Makefiles" \
             -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Switch.cmake \
             -DCMAKE_INSTALL_PREFIX=$PWD/../prefix \
