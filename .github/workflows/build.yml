@@ -1,33 +1,18 @@
-name: Build .nro
+# Branch de análise: recompila exatamente o commit do .nro que travou e traduz
+# o crash report em crash/relatorio.log. Nenhuma linha de código foi alterada.
+name: Analise de crash
 
 on:
   push:
-  pull_request:
   workflow_dispatch:
 
 jobs:
-  testes:
-    name: Testes (PC)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Baixar o código
-        uses: actions/checkout@v5
-
-      - name: Rodar testes
-        run: make -C tests
-
-  build:
-    name: Compilar .nro
+  traduzir:
     runs-on: ubuntu-latest
     container: devkitpro/devkita64:latest
-
     steps:
-      - name: Baixar o código
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
-      # As dependências do WebRTC (mbedTLS 3 + libdatachannel) levam alguns
-      # minutos para compilar e ficam em cache. Só o que entra na compilação
-      # delas define a chave (compat/src é compilado junto com o app).
       - name: Restaurar dependências do cache
         id: cache-deps
         uses: actions/cache/restore@v4
@@ -39,39 +24,19 @@ jobs:
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: sh scripts/compilar-deps.sh
 
-      # Salva logo em seguida: mesmo que o app falhe depois, as dependências
-      # já compiladas não precisam ser refeitas no próximo build.
-      - name: Salvar dependências no cache
-        if: steps.cache-deps.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: deps/prefix
-          key: ${{ steps.cache-deps.outputs.cache-primary-key }}
-
-      # A imagem oficial já inclui as portlibs (curl, zlib...).
-      # Downloads do pkg.devkitpro.org a partir do GitHub Actions são bloqueados.
-      - name: Conferir bibliotecas
-        run: |
-          ls -l $DEVKITPRO/portlibs/switch/lib/libcurl.a $DEVKITPRO/portlibs/switch/lib/libz.a
-          ls -l deps/prefix/lib/libdatachannel.a deps/prefix/lib/libmbedtls.a
-
       - name: Compilar
         run: make -j$(nproc)
 
-      - name: Publicar o .nro
-        uses: actions/upload-artifact@v5
-        with:
-          name: nxstream-nro
-          path: nxstream.nro
-          if-no-files-found: error
-
-      # O .elf tem os símbolos: serve para traduzir os endereços de um crash
-      # report do Atmosphère (/atmosphere/crash_reports) em funções e linhas,
-      # com scripts/traduzir-crash.sh. Não é para instalar no Switch.
-      - name: Publicar o .elf (análise de crash)
-        uses: actions/upload-artifact@v5
-        with:
-          name: nxstream-elf-para-crash-reports
-          path: nxstream.elf
-          if-no-files-found: error
-          retention-days: 90
+      - name: Traduzir o crash report (todas as threads)
+        run: |
+          sh scripts/traduzir-crash.sh nxstream.elf crash/relatorio.log
+          echo
+          echo "== Todas as threads =="
+          BIN=$DEVKITPRO/devkitA64/bin
+          awk '/^Threads\[/{print} /\(nxstream \+ 0x/{match($0,/nxstream \+ 0x[0-9a-f]+/); print substr($0,RSTART+11,RLENGTH-11)}' crash/relatorio.log \
+            | while read -r linha; do
+                case "$linha" in
+                  Threads*) echo; echo "$linha" ;;
+                  *) printf '  %-10s ' "$linha"; $BIN/aarch64-none-elf-addr2line -f -C -p -e nxstream.elf "$linha" | cut -c1-200 ;;
+                esac
+              done
