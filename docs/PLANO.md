@@ -46,7 +46,7 @@ A fase 2 é a mais pesada e arriscada, porque junta WebRTC, criptografia e decod
 | Risco | Impacto | Mitigação |
 |---|---|---|
 | Microsoft muda endpoints ou formatos da API | App para de conectar | Endereços e versões isolados em um único arquivo (`source/api/config.h`). Respostas inesperadas vão para o log. |
-| Portar a biblioteca WebRTC para o Switch | Atraso na fase 2 | Testar libdatachannel primeiro; libpeer como alternativa. Ver [ARQUITETURA.md](ARQUITETURA.md#webrtc). |
+| ~~Portar a biblioteca WebRTC para o Switch~~ | ~~Atraso na fase 2~~ | ✅ **Resolvido na 2b:** libdatachannel portada (camada `compat/`) e validada em execução no Switch. Ver [ARQUITETURA.md](ARQUITETURA.md#webrtc). |
 | Sleep do Switch derruba todos os sockets | Conexão morre ao dormir | Máquina de estados recria WebRTC/sessão ao acordar (fase 4). O app detecta a volta pelo tempo parado entre quadros (no sleep o sistema não envia aviso) e o Wi-Fi volta na hora. A sessão no servidor sobrevive ao sleep (testado até 190 s, no sleep e no HOME), então ao acordar deve bastar refazer a conexão com o console. |
 | Token de renovação dá acesso à conta Xbox | Segurança da conta | Fica só no cartão SD, nunca é enviado a outro lugar além dos servidores da Microsoft. Nunca é escrito no log. |
 | Build do FFmpeg é demorado | Builds lentos no CI | Cache do FFmpeg compilado no GitHub Actions. |

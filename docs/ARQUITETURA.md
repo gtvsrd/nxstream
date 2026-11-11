@@ -118,7 +118,7 @@ Resultado: ✅ **a libdatachannel compila inteira para o Switch**, com as três 
 3. **Camada `compat/`** (ver `compat/README.md`): `sys/uio.h`, `sys/socket.h` (`CMSG_ALIGN`), `errno.h` (`ERESTART`), `netinet/in.h`, `netinet/in_systm.h`, `netinet/ip.h`, `ifaddrs.h` + `getifaddrs()` com o IP do Switch, e `_DEFAULT_SOURCE` para os tipos BSD.
 4. **Um patch na usrsctp** (`compat/patches/aplicar.py`): gerador aleatório do Switch (`randomGet`).
 
-Próximo risco: compilar não garante funcionar. Threads, sockets e `poll()` da libnx ainda precisam ser testados em execução no console.
+**Validado em execução no Switch (v0.3.0, diagnóstico sem o Xbox):** certificado DTLS + oferta SDP (vídeo H.264, áudio Opus, canal de dados) em 0,01 s; coleta de candidatos completa em 0,05 s com o IP do Switch; criar e destruir conexões repetidas vezes sem travar. Isso exercita threads, sockets, `poll()`, o `pipe()` e a `getifaddrs()` da camada compat, e a entropia do Switch no mbedTLS 3.
 
 Essas três dependências (usrsctp e libSRTP, além do mbedTLS) também são usadas pela libpeer, então a camada de compatibilidade serve aos dois caminhos.
 
