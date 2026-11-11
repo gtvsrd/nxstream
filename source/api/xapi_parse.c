@@ -142,3 +142,165 @@ const char *xapi_sessao_estado_texto(XSessaoEstado e) {
         default:                    return "Sem resposta";
     }
 }
+
+// ---------------------------------------------------------------------------
+// Negociação WebRTC (docs/PROTOCOLO.md, seção 3)
+// ---------------------------------------------------------------------------
+#include <arpa/inet.h>
+#include <stdlib.h>
+
+char *xapi_corpo_sdp(const char *oferta) {
+    cJSON *raiz = cJSON_CreateObject();
+    cJSON_AddStringToObject(raiz, "messageType", "offer");
+    cJSON_AddStringToObject(raiz, "sdp", oferta);
+    cJSON_AddStringToObject(raiz, "requestId", "1");
+    cJSON *cfg = cJSON_AddObjectToObject(raiz, "configuration");
+
+    cJSON *chat_cfg = cJSON_AddObjectToObject(cfg, "chatConfiguration");
+    cJSON_AddNumberToObject(chat_cfg, "bytesPerSample", 2);
+    cJSON_AddNumberToObject(chat_cfg, "expectedClipDurationMs", 20);
+    cJSON *formato = cJSON_AddObjectToObject(chat_cfg, "format");
+    cJSON_AddStringToObject(formato, "codec", "opus");
+    cJSON_AddStringToObject(formato, "container", "webm");
+    cJSON_AddNumberToObject(chat_cfg, "numChannels", 1);
+    cJSON_AddNumberToObject(chat_cfg, "sampleFrequencyHz", 24000);
+
+    static const struct { const char *nome; int min, max; } versoes[] = {
+        {"chat", 1, 1}, {"control", 1, 3}, {"input", 1, 9}, {"message", 1, 1},
+        {"reliableinput", 9, 9}, {"unreliableinput", 9, 9},
+    };
+    for (size_t i = 0; i < sizeof versoes / sizeof versoes[0]; i++) {
+        cJSON *v = cJSON_AddObjectToObject(cfg, versoes[i].nome);
+        cJSON_AddNumberToObject(v, "minVersion", versoes[i].min);
+        cJSON_AddNumberToObject(v, "maxVersion", versoes[i].max);
+    }
+    char *json = cJSON_PrintUnformatted(raiz);
+    cJSON_Delete(raiz);
+    return json;
+}
+
+// exchangeResponse é um texto JSON dentro do JSON da resposta
+static cJSON *ler_exchange(const char *json, char *erro, int tam_erro) {
+    if (erro && tam_erro > 0)
+        erro[0] = '\0';
+    cJSON *raiz = json ? cJSON_Parse(json) : NULL;
+    if (!raiz) {
+        if (erro) snprintf(erro, (size_t)tam_erro, "resposta nao e JSON");
+        return NULL;
+    }
+    const cJSON *det = cJSON_GetObjectItemCaseSensitive(raiz, "errorDetails");
+    const cJSON *msg = cJSON_GetObjectItemCaseSensitive(det, "message");
+    const cJSON *cod = cJSON_GetObjectItemCaseSensitive(det, "code");
+    if (cJSON_IsString(msg) || cJSON_IsString(cod)) {
+        if (erro)
+            snprintf(erro, (size_t)tam_erro, "%s%s%s", cJSON_IsString(cod) ? cod->valuestring : "",
+                     cJSON_IsString(cod) && cJSON_IsString(msg) ? ": " : "",
+                     cJSON_IsString(msg) ? msg->valuestring : "");
+        cJSON_Delete(raiz);
+        return NULL;
+    }
+    const cJSON *troca = cJSON_GetObjectItemCaseSensitive(raiz, "exchangeResponse");
+    cJSON *interno = cJSON_IsString(troca) ? cJSON_Parse(troca->valuestring) : NULL;
+    if (!interno && erro)
+        snprintf(erro, (size_t)tam_erro, "sem exchangeResponse valido");
+    cJSON_Delete(raiz);
+    return interno;
+}
+
+int xapi_parse_resposta_sdp(const char *json, char **sdp, char *erro, int tam_erro) {
+    *sdp = NULL;
+    cJSON *interno = ler_exchange(json, erro, tam_erro);
+    if (!interno)
+        return -1;
+    const cJSON *texto = cJSON_GetObjectItemCaseSensitive(interno, "sdp");
+    const cJSON *status = cJSON_GetObjectItemCaseSensitive(interno, "status");
+    if (cJSON_IsString(texto) && texto->valuestring[0]) {
+        *sdp = strdup(texto->valuestring);
+    } else if (erro) {
+        snprintf(erro, (size_t)tam_erro, "resposta sem SDP (status %s)",
+                 cJSON_IsString(status) ? status->valuestring : "?");
+    }
+    cJSON_Delete(interno);
+    return *sdp ? 1 : -1;
+}
+
+char *xapi_corpo_ice(const XCandidatos *locais, const char *ufrag) {
+    cJSON *raiz = cJSON_CreateObject();
+    cJSON *lista = cJSON_AddArrayToObject(raiz, "candidates");
+    for (int i = 0; i < locais->total; i++) {
+        // O navegador envia "candidate:..." sem o "a="
+        const char *c = locais->cand[i];
+        if (!strncmp(c, "a=", 2))
+            c += 2;
+        cJSON *item = cJSON_CreateObject();
+        cJSON_AddStringToObject(item, "candidate", c);
+        cJSON_AddStringToObject(item, "sdpMid", locais->mid[i][0] ? locais->mid[i] : "0");
+        cJSON_AddNumberToObject(item, "sdpMLineIndex", atoi(locais->mid[i]));
+        cJSON_AddStringToObject(item, "usernameFragment", ufrag ? ufrag : "");
+        char *texto = cJSON_PrintUnformatted(item);
+        cJSON_Delete(item);
+        cJSON_AddItemToArray(lista, cJSON_CreateString(texto ? texto : "{}"));
+        free(texto);
+    }
+    char *json = cJSON_PrintUnformatted(raiz);
+    cJSON_Delete(raiz);
+    return json;
+}
+
+bool xapi_teredo(const char *ipv6, char *ipv4, int tam_ipv4, int *porta) {
+    unsigned char b[16];
+    if (strncmp(ipv6, "2001:", 5) != 0 || inet_pton(AF_INET6, ipv6, b) != 1)
+        return false;
+    if (b[0] != 0x20 || b[1] != 0x01 || b[2] != 0x00 || b[3] != 0x00)
+        return false; // Teredo é 2001:0000::/32
+    // Porta e IPv4 do cliente vêm invertidos bit a bit (RFC 4380)
+    *porta = (~((b[10] << 8) | b[11])) & 0xFFFF;
+    snprintf(ipv4, (size_t)tam_ipv4, "%u.%u.%u.%u", (unsigned)(~b[12] & 0xFF),
+             (unsigned)(~b[13] & 0xFF), (unsigned)(~b[14] & 0xFF), (unsigned)(~b[15] & 0xFF));
+    return true;
+}
+
+static void adicionar(XCandidatos *r, const char *cand, const char *mid) {
+    if (r->total >= XAPI_MAX_CAND)
+        return;
+    snprintf(r->cand[r->total], sizeof r->cand[0], "%s", cand);
+    snprintf(r->mid[r->total], sizeof r->mid[0], "%s", mid ? mid : "0");
+    r->total++;
+}
+
+int xapi_parse_resposta_ice(const char *json, XCandidatos *r) {
+    memset(r, 0, sizeof *r);
+    cJSON *interno = ler_exchange(json, NULL, 0);
+    if (!cJSON_IsArray(interno)) {
+        cJSON_Delete(interno);
+        return -1;
+    }
+    const cJSON *item;
+    cJSON_ArrayForEach(item, interno) {
+        const cJSON *c = cJSON_GetObjectItemCaseSensitive(item, "candidate");
+        const cJSON *m = cJSON_GetObjectItemCaseSensitive(item, "sdpMid");
+        if (!cJSON_IsString(c) || strstr(c->valuestring, "end-of-candidates"))
+            continue;
+        const char *mid = cJSON_IsString(m) ? m->valuestring : "0";
+
+        // Campo 5 (índice 4) do candidato é o endereço
+        char copia[256], *campos[8] = {0};
+        snprintf(copia, sizeof copia, "%s", c->valuestring);
+        int n = 0;
+        for (char *t = strtok(copia, " "); t && n < 8; t = strtok(NULL, " "))
+            campos[n++] = t;
+
+        char ipv4[16];
+        int porta;
+        if (n > 4 && xapi_teredo(campos[4], ipv4, sizeof ipv4, &porta)) {
+            char extra[256];
+            snprintf(extra, sizeof extra, "a=candidate:10 1 UDP 1 %s 9002 typ host", ipv4);
+            adicionar(r, extra, mid);
+            snprintf(extra, sizeof extra, "a=candidate:11 1 UDP 1 %s %d typ host", ipv4, porta);
+            adicionar(r, extra, mid);
+        }
+        adicionar(r, c->valuestring, mid);
+    }
+    cJSON_Delete(interno);
+    return r->total;
+}

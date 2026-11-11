@@ -1,5 +1,6 @@
 #include "rtc_diag.h"
 #include "../core/log.h"
+#include "rtc_comum.h"
 
 #include <pthread.h>
 #include <stdio.h>
@@ -13,15 +14,9 @@ static pthread_mutex_t g_trava = PTHREAD_MUTEX_INITIALIZER;
 static RtcDiagEstado g_estado;
 static u64 g_inicio;
 static int g_pc = -1;
-static bool g_biblioteca_usada = false;
 
 static double agora_s(void) {
     return armTicksToNs(armGetSystemTick() - g_inicio) / 1e9;
-}
-
-static void ao_log(rtcLogLevel nivel, const char *mensagem) {
-    static const char *nomes[] = {"-", "FATAL", "ERRO", "AVISO", "INFO", "DEBUG", "VERBOSE"};
-    LOG("rtc[%s]: %s", (nivel >= 0 && nivel <= 6) ? nomes[nivel] : "?", mensagem);
 }
 
 static void ao_descricao(int pc, const char *sdp, const char *tipo, void *ptr) {
@@ -112,10 +107,7 @@ bool rtc_diag_iniciar(void) {
     pthread_mutex_unlock(&g_trava);
     g_inicio = armGetSystemTick();
 
-    if (!g_biblioteca_usada) {
-        rtcInitLogger(RTC_LOG_INFO, ao_log);
-        g_biblioteca_usada = true;
-    }
+    rtc_comum_iniciar();
     LOG("rtc_diag: iniciando");
 
     rtcConfiguration cfg;
@@ -170,8 +162,4 @@ void rtc_diag_encerrar(void) {
 
 void rtc_diag_finalizar_biblioteca(void) {
     rtc_diag_encerrar();
-    if (g_biblioteca_usada) {
-        rtcCleanup(); // encerra as threads internas da libdatachannel
-        g_biblioteca_usada = false;
-    }
 }

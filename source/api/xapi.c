@@ -187,3 +187,106 @@ bool xapi_sessao_encerrar(const AuthStreaming *s, const XSessao *sessao) {
     http_resposta_liberar(&r);
     return ok;
 }
+
+// ---------------------------------------------------------------------------
+// Negociação WebRTC (fase 2b)
+// ---------------------------------------------------------------------------
+static bool post_sessao(const AuthStreaming *s, const XSessao *sessao, const char *sufixo,
+                        const char *corpo, const char *etapa) {
+    char *caminho = caminho_sessao(sessao, sufixo);
+    HttpResposta r;
+    bool ok = xapi_requisicao(s, HTTP_POST, caminho, corpo, &r);
+    free(caminho);
+    if (!ok)
+        return false;
+    ok = r.status >= 200 && r.status < 300;
+    if (ok)
+        LOG("xapi: %s enviado (HTTP %ld)", etapa, r.status);
+    else
+        log_erro(etapa, &r);
+    http_resposta_liberar(&r);
+    return ok;
+}
+
+// GET em /sdp ou /ice: HTTP 204 = o console ainda não respondeu
+static int get_troca(const AuthStreaming *s, const XSessao *sessao, const char *sufixo,
+                     const char *etapa, HttpResposta *r) {
+    char *caminho = caminho_sessao(sessao, sufixo);
+    bool ok = xapi_requisicao(s, HTTP_GET, caminho, NULL, r);
+    free(caminho);
+    if (!ok)
+        return -1;
+    if (r->status == 204 || (r->status == 200 && (!r->corpo || !r->corpo[0]))) {
+        http_resposta_liberar(r);
+        return 0;
+    }
+    if (r->status != 200) {
+        log_erro(etapa, r);
+        http_resposta_liberar(r);
+        return -1;
+    }
+    return 1;
+}
+
+bool xapi_sessao_enviar_sdp(const AuthStreaming *s, const XSessao *sessao, const char *oferta) {
+    g_erro[0] = '\0';
+    char *corpo = xapi_corpo_sdp(oferta);
+    if (!corpo)
+        return false;
+    bool ok = post_sessao(s, sessao, "/sdp", corpo, "oferta SDP");
+    free(corpo);
+    return ok;
+}
+
+int xapi_sessao_receber_sdp(const AuthStreaming *s, const XSessao *sessao, char **resposta) {
+    g_erro[0] = '\0';
+    *resposta = NULL;
+    HttpResposta r;
+    int st = get_troca(s, sessao, "/sdp", "resposta SDP", &r);
+    if (st != 1)
+        return st;
+    char erro[160];
+    st = xapi_parse_resposta_sdp(r.corpo, resposta, erro, sizeof erro);
+    if (st == 1) {
+        LOG("xapi: resposta SDP do console recebida (%d bytes)", (int)strlen(*resposta));
+        LOG("xapi: SDP do console:\n%s", *resposta);
+    } else {
+        LOG("xapi: resposta SDP invalida (%s): %.400s", erro, r.corpo);
+        snprintf(g_erro, sizeof g_erro, "O console recusou a oferta (%s).", erro);
+    }
+    http_resposta_liberar(&r);
+    return st;
+}
+
+bool xapi_sessao_enviar_ice(const AuthStreaming *s, const XSessao *sessao,
+                            const XCandidatos *locais, const char *ufrag) {
+    g_erro[0] = '\0';
+    char *corpo = xapi_corpo_ice(locais, ufrag);
+    if (!corpo)
+        return false;
+    LOG("xapi: enviando %d candidato(s) local(is)", locais->total);
+    bool ok = post_sessao(s, sessao, "/ice", corpo, "candidatos ICE");
+    free(corpo);
+    return ok;
+}
+
+int xapi_sessao_receber_ice(const AuthStreaming *s, const XSessao *sessao, XCandidatos *remotos) {
+    g_erro[0] = '\0';
+    HttpResposta r;
+    int st = get_troca(s, sessao, "/ice", "candidatos do console", &r);
+    if (st != 1)
+        return st;
+    int n = xapi_parse_resposta_ice(r.corpo, remotos);
+    if (n >= 0) {
+        LOG("xapi: %d candidato(s) do console (ja com os derivados de Teredo)", n);
+        for (int i = 0; i < n; i++)
+            LOG("xapi:   [%s] %s", remotos->mid[i], remotos->cand[i]);
+        st = 1;
+    } else {
+        LOG("xapi: candidatos do console invalidos: %.400s", r.corpo);
+        snprintf(g_erro, sizeof g_erro, "Resposta invalida do console aos candidatos de rede.");
+        st = -1;
+    }
+    http_resposta_liberar(&r);
+    return st;
+}

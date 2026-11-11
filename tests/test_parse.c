@@ -149,6 +149,67 @@ static void teste_sessao(void) {
     CHECAR(auth_parse_token_console(400, "{\"error\":\"invalid_grant\"}") == NULL);
 }
 
+static void teste_negociacao(void) {
+    puts("negociacao WebRTC");
+
+    // Corpo do /sdp
+    char *corpo = xapi_corpo_sdp("v=0\r\no=- 1 2 IN IP4 0.0.0.0\r\n");
+    CHECAR(corpo && strstr(corpo, "\"messageType\":\"offer\""));
+    CHECAR(corpo && strstr(corpo, "\"sdp\":\"v=0\\r\\no=- 1 2 IN IP4 0.0.0.0\\r\\n\""));
+    CHECAR(corpo && strstr(corpo, "\"input\":{\"minVersion\":1,\"maxVersion\":9}"));
+    CHECAR(corpo && strstr(corpo, "\"unreliableinput\":{\"minVersion\":9,\"maxVersion\":9}"));
+    CHECAR(corpo && strstr(corpo, "\"sampleFrequencyHz\":24000"));
+    free(corpo);
+
+    // Resposta do /sdp: exchangeResponse é JSON dentro de texto
+    char *sdp = NULL, erro[128];
+    CHECAR(xapi_parse_resposta_sdp(
+        "{\"exchangeResponse\":\"{\\\"messageType\\\":\\\"answer\\\",\\\"sdp\\\":\\\"v=0\\\\r\\\\na=x\\\\r\\\\n\\\",\\\"status\\\":\\\"success\\\"}\",\"errorDetails\":null}",
+        &sdp, erro, sizeof erro) == 1);
+    CHECAR(sdp && !strcmp(sdp, "v=0\r\na=x\r\n"));
+    free(sdp);
+    CHECAR(xapi_parse_resposta_sdp("{\"exchangeResponse\":null,\"errorDetails\":{\"code\":\"SdpFailed\",\"message\":\"x\"}}",
+                                   &sdp, erro, sizeof erro) == -1);
+    CHECAR(!strcmp(erro, "SdpFailed: x") && sdp == NULL);
+    CHECAR(xapi_parse_resposta_sdp("{\"exchangeResponse\":\"{\\\"status\\\":\\\"failed\\\"}\"}", &sdp, erro, sizeof erro) == -1);
+
+    // Corpo do /ice: lista de textos JSON, sem o "a=" do candidato
+    XCandidatos locais = {0};
+    locais.total = 2;
+    strcpy(locais.cand[0], "a=candidate:1 1 UDP 2122317823 192.168.0.20 50000 typ host");
+    strcpy(locais.mid[0], "0");
+    strcpy(locais.cand[1], "candidate:2 1 UDP 2122317822 192.168.0.20 50001 typ host");
+    strcpy(locais.mid[1], "0");
+    char *ice = xapi_corpo_ice(&locais, "abcd");
+    CHECAR(ice && strstr(ice, "{\"candidates\":[\"{\\\"candidate\\\":\\\"candidate:1 1 UDP"));
+    CHECAR(ice && strstr(ice, "\\\"usernameFragment\\\":\\\"abcd\\\""));
+    CHECAR(ice && strstr(ice, "\\\"sdpMLineIndex\\\":0"));
+    CHECAR(ice && !strstr(ice, "a=candidate"));
+    free(ice);
+
+    // Teredo: exemplo da RFC 4380
+    char ipv4[16];
+    int porta = 0;
+    CHECAR(xapi_teredo("2001:0:4136:e378:8000:63bf:3fff:fdd2", ipv4, sizeof ipv4, &porta));
+    CHECAR(!strcmp(ipv4, "192.0.2.45") && porta == 40000);
+    CHECAR(!xapi_teredo("fe80::1", ipv4, sizeof ipv4, &porta));
+    CHECAR(!xapi_teredo("2001:db8::1", ipv4, sizeof ipv4, &porta)); // 2001:db8 não é Teredo
+
+    // Resposta do /ice: Teredo vira 2 candidatos extras + o original; end-of-candidates é ignorado
+    XCandidatos r;
+    int n = xapi_parse_resposta_ice(
+        "{\"exchangeResponse\":\"["
+        "{\\\"candidate\\\":\\\"a=candidate:1 1 UDP 100 2001:0:4136:e378:8000:63bf:3fff:fdd2 9002 typ host \\\",\\\"sdpMid\\\":\\\"0\\\",\\\"sdpMLineIndex\\\":\\\"0\\\",\\\"messageType\\\":\\\"iceCandidate\\\"},"
+        "{\\\"candidate\\\":\\\"a=candidate:2 1 UDP 90 192.168.0.30 9002 typ host \\\",\\\"sdpMid\\\":\\\"0\\\"},"
+        "{\\\"candidate\\\":\\\"a=end-of-candidates\\\",\\\"sdpMid\\\":\\\"0\\\"}]\"}", &r);
+    CHECAR(n == 4 && r.total == 4);
+    CHECAR(!strcmp(r.cand[0], "a=candidate:10 1 UDP 1 192.0.2.45 9002 typ host"));
+    CHECAR(!strcmp(r.cand[1], "a=candidate:11 1 UDP 1 192.0.2.45 40000 typ host"));
+    CHECAR(strstr(r.cand[2], "2001:0:4136") != NULL);
+    CHECAR(strstr(r.cand[3], "192.168.0.30 9002") != NULL && !strcmp(r.mid[3], "0"));
+    CHECAR(xapi_parse_resposta_ice("{\"exchangeResponse\":\"{}\"}", &r) == -1);
+}
+
 static void teste_armazenamento(void) {
     puts("armazenamento do token");
     const char *arq = "teste_token.json";
@@ -173,6 +234,7 @@ int main(void) {
     teste_streaming();
     teste_consoles();
     teste_sessao();
+    teste_negociacao();
     teste_armazenamento();
     printf("\n%d de %d verificacoes passaram\n", g_total - g_falhas, g_total);
     return g_falhas ? 1 : 0;

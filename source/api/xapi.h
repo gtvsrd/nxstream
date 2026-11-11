@@ -33,6 +33,14 @@ typedef enum {
     XSESSAO_ERRO,         // a consulta em si falhou (rede/HTTP)
 } XSessaoEstado;
 
+// Candidatos ICE (locais ou do console)
+#define XAPI_MAX_CAND 16
+typedef struct {
+    int  total;
+    char cand[XAPI_MAX_CAND][256];  // "a=candidate:..." ou "candidate:..."
+    char mid[XAPI_MAX_CAND][16];
+} XCandidatos;
+
 // --- Consoles ---------------------------------------------------------------
 bool xapi_listar_consoles(const AuthStreaming *streaming, XConsoles *consoles);
 
@@ -46,6 +54,15 @@ bool xapi_sessao_conectar(const AuthStreaming *s, const XSessao *sessao, const c
 long xapi_sessao_keepalive(const AuthStreaming *s, const XSessao *sessao);
 bool xapi_sessao_encerrar(const AuthStreaming *s, const XSessao *sessao);
 
+// --- Negociação WebRTC (fase 2b) --------------------------------------------
+bool xapi_sessao_enviar_sdp(const AuthStreaming *s, const XSessao *sessao, const char *oferta);
+// 1 = resposta pronta (*resposta alocada, liberar com free), 0 = ainda não, -1 = erro
+int  xapi_sessao_receber_sdp(const AuthStreaming *s, const XSessao *sessao, char **resposta);
+bool xapi_sessao_enviar_ice(const AuthStreaming *s, const XSessao *sessao,
+                            const XCandidatos *locais, const char *ufrag);
+// 1 = candidatos prontos, 0 = ainda não, -1 = erro
+int  xapi_sessao_receber_ice(const AuthStreaming *s, const XSessao *sessao, XCandidatos *remotos);
+
 const char *xapi_ultimo_erro(void);
 
 // Textos amigáveis para a tela
@@ -58,3 +75,10 @@ bool xapi_parse_consoles(const char *json, XConsoles *consoles);
 bool xapi_parse_sessao(const char *json, XSessao *sessao);
 XSessaoEstado xapi_parse_estado(const char *json, char *detalhe, int tam_detalhe);
 char *xapi_corpo_play(const char *server_id);   // JSON do /play; liberar com free()
+char *xapi_corpo_sdp(const char *oferta);                         // liberar com free()
+int   xapi_parse_resposta_sdp(const char *json, char **sdp, char *erro, int tam_erro);
+char *xapi_corpo_ice(const XCandidatos *locais, const char *ufrag); // liberar com free()
+int   xapi_parse_resposta_ice(const char *json, XCandidatos *remotos); // nº de candidatos ou -1
+// Endereço Teredo (IPv6 2001::/32) -> IPv4 e porta do cliente. false se não for Teredo.
+bool  xapi_teredo(const char *ipv6, char *ipv4, int tam_ipv4, int *porta);
+

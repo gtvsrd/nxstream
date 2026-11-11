@@ -18,6 +18,8 @@
 #include "auth/auth.h"
 #include "core/http.h"
 #include "core/log.h"
+#include "net/conexao.h"
+#include "net/rtc_comum.h"
 #include "net/rtc_diag.h"
 
 #define COR_TITULO  "\x1b[36;1m"
@@ -391,6 +393,235 @@ static void tempo_texto(char *buf, size_t tam, int s) {
         snprintf(buf, tam, "%d:%02d", s / 60, s % 60);
 }
 
+// ---------------------------------------------------------------------------
+// Conexão WebRTC com o console (fase 2b, parte 2)
+// docs/PROTOCOLO.md, seção 3: oferta -> resposta -> candidatos -> conexão -> handshake
+// ---------------------------------------------------------------------------
+typedef enum { ET_OFERTA, ET_RESPOSTA, ET_CANDIDATOS, ET_CONECTANDO, ET_CONECTADO } EtapaConexao;
+
+#define CONEXAO_LIMITE_OFERTA_S     10
+#define CONEXAO_LIMITE_TROCA_S      30   // resposta SDP e candidatos
+#define CONEXAO_LIMITE_CONECTAR_S   20
+#define CONEXAO_INTERVALO_CONSULTA  0.5
+
+static Passo falha_conexao(const AuthStreaming *s, const XSessao *sessao,
+                           const char *titulo, const char *detalhe) {
+    LOG("main: conexao: %s %s", titulo, detalhe ? detalhe : "");
+    conexao_encerrar();
+    encerrar_sessao(s, sessao);
+    return erro_sessao(titulo, detalhe);
+}
+
+static void linha_etapa(const char *nome, EtapaConexao atual, EtapaConexao esta, double t, const char *extra) {
+    if (atual > esta)
+        printf("  %-26s " COR_OK "ok" COR_FIM " %5.1f s  %s\n", nome, t, extra ? extra : "");
+    else if (atual == esta)
+        printf("  %-26s " COR_DESTAQ "..." COR_FIM "\n", nome);
+    else
+        printf("  %-26s " COR_FRACA "-" COR_FIM "\n", nome);
+}
+
+static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double tempo_preparo) {
+    mostrar_aguarde("Montando a conexao com o console...");
+    if (!conexao_criar()) {
+        ConexaoEstado e;
+        conexao_ler(&e);
+        return falha_conexao(streaming, sessao, "Nao foi possivel montar a conexao WebRTC.", e.erro);
+    }
+    g_tick_anterior = armGetSystemTick();
+
+    EtapaConexao etapa = ET_OFERTA;
+    u64 inicio = armGetSystemTick(), inicio_etapa = inicio;
+    double t_etapa[ET_CONECTADO + 1] = {0}; // quando cada etapa terminou (desde o início)
+    double proxima_consulta = 0;
+    XCandidatos remotos = {0};
+    int remotos_aceitos = 0;
+
+    u64 ultimo_keepalive = 0;
+    long status_keepalive = -1;
+    int ka_ok = 0, ka_falhas = 0;
+    char apos_sleep[160] = "";
+    int ultimo_quadro = -1;
+    bool fechar = false;
+    g_ultimo_congelamento = 0;
+
+    for (;;) {
+        ConexaoEstado e;
+        conexao_ler(&e);
+        double na_etapa = segundos_desde(inicio_etapa);
+
+        if (e.erro[0])
+            return falha_conexao(streaming, sessao, "Erro na conexao WebRTC.", e.erro);
+
+        switch (etapa) {
+            case ET_OFERTA:
+                if (e.oferta_pronta && e.coleta_completa) {
+                    char *oferta = conexao_oferta();
+                    bool ok = oferta && xapi_sessao_enviar_sdp(streaming, sessao, oferta);
+                    free(oferta);
+                    if (!ok)
+                        return falha_conexao(streaming, sessao, "O console nao recebeu a oferta.", xapi_ultimo_erro());
+                    t_etapa[ET_OFERTA] = segundos_desde(inicio);
+                    etapa = ET_RESPOSTA;
+                    inicio_etapa = armGetSystemTick();
+                    proxima_consulta = 0;
+                } else if (na_etapa > CONEXAO_LIMITE_OFERTA_S) {
+                    return falha_conexao(streaming, sessao, "A oferta local nao ficou pronta.", NULL);
+                }
+                break;
+
+            case ET_RESPOSTA:
+                if (na_etapa >= proxima_consulta) {
+                    char *resposta = NULL;
+                    int st = xapi_sessao_receber_sdp(streaming, sessao, &resposta);
+                    proxima_consulta = segundos_desde(inicio_etapa) + CONEXAO_INTERVALO_CONSULTA;
+                    if (st < 0)
+                        return falha_conexao(streaming, sessao, "O console nao aceitou a oferta.", xapi_ultimo_erro());
+                    if (st == 1) {
+                        bool ok = conexao_aplicar_resposta(resposta);
+                        free(resposta);
+                        if (!ok) {
+                            conexao_ler(&e);
+                            return falha_conexao(streaming, sessao, "A resposta do console nao foi aceita.", e.erro);
+                        }
+                        if (!xapi_sessao_enviar_ice(streaming, sessao, &e.locais, e.ufrag))
+                            return falha_conexao(streaming, sessao, "O console nao recebeu os candidatos de rede.",
+                                                 xapi_ultimo_erro());
+                        t_etapa[ET_RESPOSTA] = segundos_desde(inicio);
+                        etapa = ET_CANDIDATOS;
+                        inicio_etapa = armGetSystemTick();
+                        proxima_consulta = 0;
+                    }
+                }
+                if (etapa == ET_RESPOSTA && segundos_desde(inicio_etapa) > CONEXAO_LIMITE_TROCA_S)
+                    return falha_conexao(streaming, sessao, "O console nao respondeu a oferta.", NULL);
+                break;
+
+            case ET_CANDIDATOS:
+                if (na_etapa >= proxima_consulta) {
+                    int st = xapi_sessao_receber_ice(streaming, sessao, &remotos);
+                    proxima_consulta = segundos_desde(inicio_etapa) + CONEXAO_INTERVALO_CONSULTA;
+                    if (st < 0)
+                        return falha_conexao(streaming, sessao, "Falha ao receber os candidatos do console.",
+                                             xapi_ultimo_erro());
+                    if (st == 1) {
+                        remotos_aceitos = conexao_adicionar_remotos(&remotos);
+                        t_etapa[ET_CANDIDATOS] = segundos_desde(inicio);
+                        etapa = ET_CONECTANDO;
+                        inicio_etapa = armGetSystemTick();
+                    }
+                }
+                if (etapa == ET_CANDIDATOS && segundos_desde(inicio_etapa) > CONEXAO_LIMITE_TROCA_S)
+                    return falha_conexao(streaming, sessao, "O console nao enviou os candidatos de rede.", NULL);
+                break;
+
+            case ET_CONECTANDO:
+                if (e.conectado) {
+                    t_etapa[ET_CONECTANDO] = e.t_conectado;
+                    etapa = ET_CONECTADO;
+                    ultimo_keepalive = armGetSystemTick();
+                    g_ultimo_congelamento = 0;
+                    LOG("main: conectado ao console em %.2f s", e.t_conectado);
+                } else if (e.falhou) {
+                    return falha_conexao(streaming, sessao, "A conexao com o console falhou.",
+                                         "Confira se o Switch e o Xbox estao na mesma rede.");
+                } else if (na_etapa > CONEXAO_LIMITE_CONECTAR_S) {
+                    return falha_conexao(streaming, sessao, "O console nao completou a conexao.",
+                                         "Confira se o Switch e o Xbox estao na mesma rede.");
+                }
+                break;
+
+            case ET_CONECTADO: {
+                if (e.caiu) {
+                    // Reconexão automática é a fase 4; por ora mostra e registra o motivo
+                    char det[96];
+                    snprintf(det, sizeof det, "Estado: %s. A reconexao automatica chega na fase 4.",
+                             conexao_nome_estado(e.estado));
+                    return falha_conexao(streaming, sessao, "A conexao com o console caiu.", det);
+                }
+                bool forcar = false;
+                if (g_ultimo_congelamento > 0) {
+                    snprintf(apos_sleep, sizeof apos_sleep, "Voltou de %.0f s suspenso", g_ultimo_congelamento);
+                    g_ultimo_congelamento = 0;
+                    forcar = true;
+                }
+                if (forcar || segundos_desde(ultimo_keepalive) >= SESSAO_INTERVALO_KEEPALIVE_S) {
+                    status_keepalive = xapi_sessao_keepalive(streaming, sessao);
+                    ultimo_keepalive = armGetSystemTick();
+                    if (status_keepalive >= 200 && status_keepalive < 300) ka_ok++; else ka_falhas++;
+                    if (forcar) {
+                        size_t n = strlen(apos_sleep);
+                        snprintf(apos_sleep + n, sizeof apos_sleep - n, ": keepalive HTTP %ld", status_keepalive);
+                        LOG("main: %s", apos_sleep);
+                    }
+                    ultimo_quadro = -1;
+                }
+                break;
+            }
+        }
+
+        // --- Tela (4 vezes por segundo) ----------------------------------------
+        int marca = (int)(segundos_desde(inicio) * 4);
+        if (marca != ultimo_quadro) {
+            ultimo_quadro = marca;
+            char extra[64];
+            cabecalho();
+            printf("Console: " COR_DESTAQ "%s" COR_FIM " (%s)   sessao pronta em %.0f s\n\n", g_console.nome,
+                   xapi_tipo_amigavel(g_console.tipo), tempo_preparo);
+            printf("Conectando ao console:\n");
+            snprintf(extra, sizeof extra, "(%d candidatos locais)", e.locais.total);
+            linha_etapa("1. Oferta local", etapa, ET_OFERTA, t_etapa[ET_OFERTA], extra);
+            linha_etapa("2. Resposta do console", etapa, ET_RESPOSTA, t_etapa[ET_RESPOSTA], NULL);
+            snprintf(extra, sizeof extra, "(%d do console, %d aceitos)", remotos.total, remotos_aceitos);
+            linha_etapa("3. Candidatos de rede", etapa, ET_CANDIDATOS, t_etapa[ET_CANDIDATOS], extra);
+            linha_etapa("4. Conexao WebRTC", etapa, ET_CONECTANDO, t_etapa[ET_CONECTANDO], NULL);
+            if (e.handshake_ok)
+                printf("  %-26s " COR_OK "ok" COR_FIM " %5.1f s\n", "5. Handshake dos canais", e.t_handshake);
+            else
+                printf("  %-26s %s\n", "5. Handshake dos canais",
+                       etapa == ET_CONECTADO ? COR_DESTAQ "..." COR_FIM : COR_FRACA "-" COR_FIM);
+            printf("\nCanais:");
+            for (int c = 0; c < NUM_CANAIS; c++)
+                printf("  %s %s", conexao_nome_canal((Canal)c),
+                       e.canal_aberto[c] ? COR_OK "aberto" COR_FIM : COR_FRACA "-" COR_FIM);
+            printf("\n");
+
+            if (etapa == ET_CONECTADO) {
+                char t_con[16];
+                tempo_texto(t_con, sizeof t_con, (int)(segundos_desde(inicio) - e.t_conectado));
+                printf("\n" COR_OK "CONECTADO" COR_FIM " ha %s\n", t_con);
+                printf("Video: %lu pacotes (%.1f MB)   Audio: %lu pacotes\n", e.pacotes_video,
+                       e.bytes_video / 1048576.0, e.pacotes_audio);
+                if (status_keepalive < 0)
+                    printf("Keepalive: primeiro envio em %d s\n",
+                           SESSAO_INTERVALO_KEEPALIVE_S - (int)segundos_desde(ultimo_keepalive));
+                else
+                    printf("Keepalive: %s (HTTP %ld) ha %d s  [%d ok, %d falhas]\n",
+                           (status_keepalive >= 200 && status_keepalive < 300) ? COR_OK "ok" COR_FIM
+                                                                                : COR_ERRO "falhou" COR_FIM,
+                           status_keepalive, (int)segundos_desde(ultimo_keepalive), ka_ok, ka_falhas);
+                if (apos_sleep[0])
+                    printf("%s\n", apos_sleep);
+                printf("\n" COR_FRACA "Fase 2b: a imagem aparece na fase 2c. Aqui o teste e a\n"
+                       "conexao ficar de pe e os pacotes de video chegarem." COR_FIM "\n");
+            }
+            printf("\nB = desconectar   + = desconectar e fechar\n");
+        }
+
+        u64 b = quadro(&fechar);
+        if (fechar || (b & HidNpadButton_Plus)) {
+            conexao_encerrar();
+            encerrar_sessao(streaming, sessao);
+            return PASSO_SAIR;
+        }
+        if (b & HidNpadButton_B) {
+            conexao_encerrar();
+            encerrar_sessao(streaming, sessao);
+            return PASSO_LISTA;
+        }
+    }
+}
+
 static Passo passo_sessao(AuthConta *conta, AuthStreaming *streaming) {
     char texto[160];
     snprintf(texto, sizeof texto, "Abrindo sessao com %s...", g_console.nome);
@@ -483,82 +714,8 @@ static Passo passo_sessao(AuthConta *conta, AuthStreaming *streaming) {
     double tempo_preparo = segundos_desde(inicio);
     LOG("main: sessao pronta em %.1f s", tempo_preparo);
 
-    // --- 2. Sessão pronta: acompanha se continua viva ----------------------
-    // O keepalive só é aceito depois que a conexão WebRTC com o console está
-    // aberta (fase 2b): antes disso o servidor responde HTTP 400. Por isso,
-    // nesta etapa, a sessão é acompanhada consultando o estado a cada 30 s.
-    u64 pronta_desde = armGetSystemTick();
-    u64 ultima_verif = armGetSystemTick();
-    XSessaoEstado estado_verif = XSESSAO_PRONTA;
-    int verif_ok = 0, verif_falhas = 0;
-    char apos_sleep[128] = "";
-    ultimo_segundo = -1;
-    g_ultimo_congelamento = 0; // ignora suspensões anteriores à sessão ficar pronta
-
-    for (;;) {
-        bool forcar = false;
-        if (g_ultimo_congelamento > 0) {
-            // Acabou de voltar do sleep/HOME: testa na hora se a sessão sobreviveu
-            snprintf(apos_sleep, sizeof apos_sleep, "Voltou de %.0f s suspenso", g_ultimo_congelamento);
-            g_ultimo_congelamento = 0;
-            forcar = true;
-        }
-
-        if (forcar || segundos_desde(ultima_verif) >= SESSAO_INTERVALO_KEEPALIVE_S) {
-            estado_verif = xapi_sessao_estado(streaming, &sessao, detalhe, sizeof detalhe);
-            ultima_verif = armGetSystemTick();
-            bool viva = (estado_verif == XSESSAO_PRONTA);
-            if (viva) verif_ok++; else verif_falhas++;
-            LOG("main: verificacao da sessao: %s", detalhe[0] ? detalhe : xapi_sessao_estado_texto(estado_verif));
-            if (forcar) {
-                size_t n = strlen(apos_sleep);
-                snprintf(apos_sleep + n, sizeof apos_sleep - n, ": sessao %s (%s)",
-                         viva ? "continua viva" : "caiu",
-                         detalhe[0] ? detalhe : xapi_sessao_estado_texto(estado_verif));
-                LOG("main: %s", apos_sleep);
-            }
-            ultimo_segundo = -1; // redesenha
-        }
-
-        int pronta = (int)segundos_desde(pronta_desde);
-        if (pronta != ultimo_segundo) {
-            ultimo_segundo = pronta;
-            char t_pronta[16];
-            tempo_texto(t_pronta, sizeof t_pronta, pronta);
-            int desde_verif = (int)segundos_desde(ultima_verif);
-
-            cabecalho();
-            printf("Console: " COR_DESTAQ "%s" COR_FIM " (%s)\n\n", g_console.nome,
-                   xapi_tipo_amigavel(g_console.tipo));
-            printf(COR_OK "Sessao pronta!" COR_FIM " (preparada em %.0f s)\n\n", tempo_preparo);
-            printf("Pronta ha: %s\n", t_pronta);
-            if (verif_ok + verif_falhas == 0)
-                printf("Verificacao: primeira em %d s\n", SESSAO_INTERVALO_KEEPALIVE_S - desde_verif);
-            else
-                printf("Verificacao: %s ha %d s  [%d ok, %d falhas]\n",
-                       estado_verif == XSESSAO_PRONTA ? COR_OK "viva" COR_FIM
-                                                      : COR_ERRO "nao esta pronta" COR_FIM,
-                       desde_verif, verif_ok, verif_falhas);
-            if (estado_verif != XSESSAO_PRONTA && detalhe[0])
-                printf("Estado: %s\n", detalhe);
-            if (apos_sleep[0])
-                printf("%s\n", apos_sleep);
-            printf("\n" COR_FRACA "Fase 2a: a sessao existe no servidor, mas o app ainda nao\n"
-                   "se conecta ao console. Isso (e o keepalive) chega na fase 2b." COR_FIM "\n\n");
-            printf("Teste: deixe aberta alguns minutos, ou durma o Switch e volte.\n\n");
-            printf("B = encerrar a sessao   + = encerrar e fechar\n");
-        }
-
-        u64 b = quadro(&fechar);
-        if (fechar || (b & HidNpadButton_Plus)) {
-            encerrar_sessao(streaming, &sessao);
-            return PASSO_SAIR;
-        }
-        if (b & HidNpadButton_B) {
-            encerrar_sessao(streaming, &sessao);
-            return PASSO_LISTA;
-        }
-    }
+    // --- 2. Sessão pronta: conecta ao console (fase 2b) ---------------------
+    return passo_conectar(streaming, &sessao, tempo_preparo);
 }
 
 // ---------------------------------------------------------------------------
@@ -717,7 +874,9 @@ int main(int argc, char *argv[]) {
 
         auth_streaming_liberar(&streaming);
         auth_conta_liberar(&conta);
+        conexao_encerrar();
         rtc_diag_finalizar_biblioteca();
+        rtc_comum_finalizar();
         http_encerrar();
     }
 
