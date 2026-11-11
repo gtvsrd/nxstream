@@ -15,13 +15,15 @@ include $(DEVKITPRO)/libnx/switch_rules
 #---------------------------------------------------------------------------------
 TARGET      := nxstream
 BUILD       := build
-SOURCES     := source source/core source/auth source/api third_party/cjson
+SOURCES     := source source/core source/auth source/api source/net compat/src third_party/cjson
 DATA        := data
-INCLUDES    := source third_party/cjson
+# deps/prefix/include vem antes das portlibs: o mbedTLS 3 do projeto precisa
+# ter prioridade sobre o 2.28 que vem na imagem do devkitPro.
+INCLUDES    := source deps/prefix/include compat/include third_party/cjson
 
 APP_TITLE   := NXStream
 APP_AUTHOR  := gtvsrd
-APP_VERSION := 0.2.3
+APP_VERSION := 0.3.0
 
 #---------------------------------------------------------------------------------
 # Flags de compilação
@@ -34,9 +36,14 @@ CXXFLAGS := $(CFLAGS) -fno-rtti -fno-exceptions
 ASFLAGS  := -g $(ARCH)
 LDFLAGS   = -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-# libcurl do devkitPro usa o TLS nativo do Switch (backend libnx)
-LIBS     := -lcurl -lz -lnx
-LIBDIRS  := $(PORTLIBS) $(LIBNX)
+# WebRTC (deps/prefix, ver scripts/compilar-deps.sh): a ordem importa no link
+# estático, cada biblioteca antes das que ela usa.
+# libcurl do devkitPro usa o TLS nativo do Switch (backend libnx), não o mbedTLS.
+LIBS     := -ldatachannel -lusrsctp -lsrtp2 -ljuice \
+            -lmbedtls -lmbedx509 -lmbedcrypto \
+            -lcurl -lz -lnx
+# deps/prefix primeiro, pelo mesmo motivo dos cabeçalhos (mbedTLS 3 antes do 2.28)
+LIBDIRS  := $(TOPDIR)/deps/prefix $(PORTLIBS) $(LIBNX)
 
 #---------------------------------------------------------------------------------
 ifneq ($(BUILD),$(notdir $(CURDIR)))
@@ -53,11 +60,8 @@ CPPFILES := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 SFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
 BINFILES := $(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
 
-ifeq ($(strip $(CPPFILES)),)
-	export LD := $(CC)
-else
-	export LD := $(CXX)
-endif
+# A libdatachannel é C++: o link sempre usa g++ (traz a libstdc++)
+export LD := $(CXX)
 
 export OFILES_BIN := $(addsuffix .o,$(BINFILES))
 export OFILES_SRC := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)

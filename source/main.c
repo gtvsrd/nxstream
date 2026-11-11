@@ -1,4 +1,4 @@
-// NXStream - Fase 2a: login, lista de consoles e sessão de streaming
+// NXStream - Fase 2b: login, lista de consoles, sessão de streaming e diagnóstico WebRTC
 //
 // Interface em texto simples (console do libnx). Fluxo:
 //   INICIO -> (sem token salvo) LOGIN -> STREAMING -> LISTA
@@ -18,6 +18,7 @@
 #include "auth/auth.h"
 #include "core/http.h"
 #include "core/log.h"
+#include "net/rtc_diag.h"
 
 #define COR_TITULO  "\x1b[36;1m"
 #define COR_DESTAQ  "\x1b[33;1m"
@@ -26,7 +27,7 @@
 #define COR_FRACA   "\x1b[37m"
 #define COR_FIM     "\x1b[0m"
 
-typedef enum { PASSO_INICIO, PASSO_LOGIN, PASSO_STREAMING, PASSO_LISTA, PASSO_SESSAO, PASSO_SAIR } Passo;
+typedef enum { PASSO_INICIO, PASSO_LOGIN, PASSO_STREAMING, PASSO_LISTA, PASSO_SESSAO, PASSO_DIAG, PASSO_SAIR } Passo;
 
 static PadState g_controle;
 static u64 g_tick_anterior;
@@ -332,14 +333,17 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming, time_t stre
         if (consoles.total > 0)
             printf("A = conectar   ");
         printf("Y = atualizar   X = sair da conta   + = fechar\n");
+        printf(COR_FRACA "- = diagnostico WebRTC" COR_FIM "\n");
 
         u64 b = esperar_botao(HidNpadButton_A | HidNpadButton_Y | HidNpadButton_X | HidNpadButton_Plus |
-                              HidNpadButton_AnyUp | HidNpadButton_AnyDown);
+                              HidNpadButton_Minus | HidNpadButton_AnyUp | HidNpadButton_AnyDown);
         mensagem = NULL;
         if (b == 0 || (b & HidNpadButton_Plus))
             return PASSO_SAIR;
         if (b & HidNpadButton_Y)
             return PASSO_LISTA;
+        if (b & HidNpadButton_Minus)
+            return PASSO_DIAG;
         if ((b & HidNpadButton_X) && confirmar_sair_da_conta()) {
             auth_apagar(NX_ARQ_TOKEN);
             auth_conta_liberar(conta);
@@ -558,6 +562,87 @@ static Passo passo_sessao(AuthConta *conta, AuthStreaming *streaming) {
 }
 
 // ---------------------------------------------------------------------------
+// Passo: diagnóstico WebRTC (fase 2b, parte 1) - sem o Xbox
+// ---------------------------------------------------------------------------
+#define DIAG_TEMPO_LIMITE_S 30
+
+static const char *sim_nao(bool v) {
+    return v ? COR_OK "sim" COR_FIM : COR_ERRO "nao" COR_FIM;
+}
+
+static Passo passo_diag(void) {
+    mostrar_aguarde("Iniciando o diagnostico WebRTC...");
+    rtc_diag_iniciar();
+    g_tick_anterior = armGetSystemTick(); // o início pode demorar; não é suspensão
+
+    int ultimo_quadro = -1;
+    bool fechar = false;
+    for (;;) {
+        RtcDiagEstado e;
+        rtc_diag_ler(&e);
+
+        int marca = (int)(e.segundos * 4); // redesenha 4 vezes por segundo
+        if (marca != ultimo_quadro) {
+            ultimo_quadro = marca;
+            cabecalho();
+            printf(COR_TITULO "Diagnostico WebRTC" COR_FIM " (sem o Xbox)\n\n");
+            printf(COR_FRACA "Monta uma conexao WebRTC local com video, audio e canal de\n"
+                   "dados, para testar a biblioteca no Switch." COR_FIM "\n\n");
+
+            printf("1. Certificado e oferta SDP: ");
+            if (e.oferta_pronta)
+                printf(COR_OK "ok" COR_FIM " em %.2f s (%d bytes)\n", e.t_oferta, e.tamanho_oferta);
+            else
+                printf("gerando... %.0f s\n", e.segundos);
+            if (e.oferta_pronta)
+                printf("   certificado DTLS: %s   video: %s   audio: %s   dados: %s\n",
+                       sim_nao(e.tem_fingerprint), sim_nao(e.tem_video),
+                       sim_nao(e.tem_audio), sim_nao(e.tem_dados));
+            printf("\n");
+
+            printf("2. Candidatos de rede: %d", e.num_candidatos);
+            if (e.coleta_completa)
+                printf("  (coleta " COR_OK "completa" COR_FIM " em %.2f s)\n", e.t_coleta);
+            else
+                printf("  (coletando...)\n");
+            for (int i = 0; i < e.num_candidatos; i++)
+                printf("   - %s\n", e.candidatos[i]);
+            printf("\n");
+
+            bool tudo_ok = e.oferta_pronta && e.tem_fingerprint && e.tem_video && e.tem_audio &&
+                           e.tem_dados && e.coleta_completa && e.num_candidatos > 0 && !e.erro[0];
+            if (e.erro[0])
+                printf(COR_ERRO "Erro: %s" COR_FIM "\n\n", e.erro);
+            if (tudo_ok)
+                printf(COR_OK "Resultado: tudo funcionando no Switch!" COR_FIM "\n\n");
+            else if (e.coleta_completa && e.num_candidatos == 0)
+                printf(COR_ERRO "Resultado: nenhum candidato de rede (o Wi-Fi esta conectado?)" COR_FIM "\n\n");
+            else if (e.segundos > DIAG_TEMPO_LIMITE_S && !e.oferta_pronta)
+                printf(COR_ERRO "Resultado: a biblioteca nao respondeu em %d s" COR_FIM "\n\n",
+                       DIAG_TEMPO_LIMITE_S);
+
+            printf("A = repetir   B = voltar\n");
+        }
+
+        u64 b = quadro(&fechar);
+        if (fechar) {
+            rtc_diag_encerrar();
+            return PASSO_SAIR;
+        }
+        if (b & HidNpadButton_B) {
+            rtc_diag_encerrar();
+            return PASSO_LISTA;
+        }
+        if (b & HidNpadButton_A) {
+            mostrar_aguarde("Repetindo o diagnostico...");
+            rtc_diag_iniciar();
+            g_tick_anterior = armGetSystemTick();
+            ultimo_quadro = -1;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 int main(int argc, char *argv[]) {
     (void)argc; (void)argv;
 
@@ -621,6 +706,9 @@ int main(int argc, char *argv[]) {
                 case PASSO_SESSAO:
                     passo = passo_sessao(&conta, &streaming);
                     break;
+                case PASSO_DIAG:
+                    passo = passo_diag();
+                    break;
                 default:
                     passo = PASSO_SAIR;
                     break;
@@ -629,6 +717,7 @@ int main(int argc, char *argv[]) {
 
         auth_streaming_liberar(&streaming);
         auth_conta_liberar(&conta);
+        rtc_diag_finalizar_biblioteca();
         http_encerrar();
     }
 

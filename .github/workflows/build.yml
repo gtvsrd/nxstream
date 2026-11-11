@@ -25,10 +25,25 @@ jobs:
       - name: Baixar o código
         uses: actions/checkout@v5
 
+      # As dependências do WebRTC (mbedTLS 3 + libdatachannel) levam alguns
+      # minutos para compilar. Ficam em cache até o script ou a camada compat/ mudar.
+      - name: Cache das dependências
+        id: cache-deps
+        uses: actions/cache@v4
+        with:
+          path: deps/prefix
+          key: deps-switch-${{ hashFiles('scripts/compilar-deps.sh', 'compat/**') }}
+
+      - name: Compilar dependências (sem cache)
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: sh scripts/compilar-deps.sh
+
       # A imagem oficial já inclui as portlibs (curl, zlib...).
       # Downloads do pkg.devkitpro.org a partir do GitHub Actions são bloqueados.
       - name: Conferir bibliotecas
-        run: ls -l $DEVKITPRO/portlibs/switch/lib/libcurl.a $DEVKITPRO/portlibs/switch/lib/libz.a
+        run: |
+          ls -l $DEVKITPRO/portlibs/switch/lib/libcurl.a $DEVKITPRO/portlibs/switch/lib/libz.a
+          ls -l deps/prefix/lib/libdatachannel.a deps/prefix/lib/libmbedtls.a
 
       - name: Compilar
         run: make -j$(nproc)
