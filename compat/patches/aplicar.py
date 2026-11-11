@@ -88,12 +88,20 @@ struct sockaddr_conn {"""
 # libdatachannel: a limpeza final (rtcCleanup) roda numa thread que é
 # "destacada" com std::thread::detach(). Na libnx o detach falha e lança
 # std::system_error dentro de um destrutor -> std::terminate (log da v0.4.4).
-# No Switch a thread de limpeza é aguardada com join(). Isso só é seguro se
-# rtcCleanup() for chamada fora das threads da biblioteca e depois de apagar
-# todas as conexões, como o NXStream faz ao fechar.
+#
+# A v0.5.1 trocou por join(), e isso travou o fechamento: o destrutor que cria
+# a thread roda segurando a trava (ou dentro de uma thread do pool) de que a
+# própria limpeza precisa. Agora o objeto std::thread é criado no heap e nunca
+# destruído: a thread roda até o fim sem detach() e sem join(), e rtcCleanup()
+# espera o resultado dela normalmente. Custo: uma estrutura de thread não
+# liberada por execução do app.
+#
+# NXSTREAM_TESTE_PC liga a mesma alteração no PC para o teste automático
+# tests/limpeza (reproduz o travamento da v0.5.1 e confirma a correção).
 LDC_DETACH_ORIGINAL = "\t\tt.detach();\n"
-LDC_DETACH_SWITCH = """#ifdef __SWITCH__
-\t\tt.join(); /* NXStream: detach falha na libnx */
+LDC_DETACH_SWITCH = """#if defined(__SWITCH__) || defined(NXSTREAM_TESTE_PC)
+\t\t/* NXStream: thread de limpeza mantida viva (detach falha na libnx, join trava) */
+\t\t(void)new std::thread(std::move(t));
 #else
 \t\tt.detach();
 #endif
@@ -131,7 +139,7 @@ ALTERACOES = [
         "src/impl/init.cpp",
         LDC_DETACH_ORIGINAL,
         LDC_DETACH_SWITCH,
-        "NXStream: detach falha na libnx",
+        "NXStream: thread de limpeza mantida viva",
         "substituir",
     ),
 ]

@@ -43,6 +43,12 @@ O script confere se o `Module Id` do relatório bate com o `.elf` antes de tradu
 
 ## Testes no PC
 
+### Teste de limpeza da libdatachannel
+
+`sh tests/limpeza/rodar.sh` (precisa de git, cmake, g++ e libssl-dev): compila a libdatachannel no mesmo commit do Switch, com os patches de `compat/patches/aplicar.py`, e verifica que `rtcCleanup()` termina depois de uma conexão igual à do app. Pegou o travamento da v0.5.1 antes do Switch. Roda no GitHub Actions quando os patches mudam.
+
+### Interpretação de respostas
+
 As partes sem rede (interpretação das respostas da Microsoft e armazenamento do token) têm testes que rodam em qualquer PC com `gcc`, e também automaticamente no GitHub Actions:
 
 ```sh
@@ -146,13 +152,13 @@ Na lista, escolha o console com **A**. Depois de "Sessao pronta", a tela mostra 
 
 Se alguma etapa falhar, mande o `nxstream.log`: ele contém a oferta, a resposta SDP do console, todos os candidatos e as mensagens dos canais.
 
-### Fase 2c.1: quadros de vídeo (v0.5.1)
+### Fase 2c.1: quadros de vídeo (v0.5.2)
 
 Conecte ao console como na fase 2b. A tela de conectado agora mostra a seção **Video**.
 
 | Teste | Resultado esperado | Resultado obtido |
 |---|---|---|
-| Resolução | Aparece em poucos segundos (provavelmente 1280x720) | v0.5.0: **2560x1440**, H.264 Main 5.1 (o pedido de 720p em `dimensionschanged` foi ignorado). v0.5.1 informa "android" no `X-MS-Device-Info` para pedir 720p |
+| Resolução | Aparece em poucos segundos (provavelmente 1280x720) | v0.5.0: 2560x1440 (o pedido de 720p em `dimensionschanged` foi ignorado). ✅ v0.5.1: **1280x720**, H.264 Main 3.2, ~4,5 Mbps, informando "android" no `X-MS-Device-Info` |
 | Quadros por segundo | Estável, perto de 60/s (ou 30/s), mesmo com a tela do Xbox parada | ✅ v0.5.0: 59–61/s durante 2 min, 17–29 Mbps |
 | Quadros-chave | Pelo menos 1, logo após conectar (sozinho ou depois de "pedido") | ✅ v0.5.0: primeiro em 0,2 s após conectar, sem pedido; depois a cada 30 s |
 | Mexer no Xbox pelo controle dele (menu, um jogo) | Mbps sobe quando a imagem muda muito | |
@@ -161,6 +167,8 @@ Conecte ao console como na fase 2b. A tela de conectado agora mostra a seção *
 O log registra uma linha de vídeo a cada 10 s, a resolução e os primeiros quadros-chave.
 
 **v0.5.0:** fechar o app com **+** direto da tela conectada deu erro de sistema (o log terminou limpo, então o erro veio depois de fechar o log). Causa **confirmada pelo crash report** (traduzido com o `.elf` do mesmo build): a thread principal estava em `socketExit()` (`main.c`) enquanto uma thread da libjuice ainda estava em `recvfrom()` (falha ao acessar a tabela de sockets já liberada: `_socketGetFd`) e uma thread da libdatachannel ainda destruía a conexão ICE (`agent_destroy` → `conn_destroy`). Ou seja: sem `rtcCleanup()`, as threads da biblioteca ainda fechavam a conexão usando sockets quando o app fechou a rede. O `rtcCleanup()` tinha sido removido na v0.4.5 porque lançava `std::system_error`: o motivo é o `std::thread::detach()` da thread de limpeza, que falha na libnx. **v0.5.1:** patch na libdatachannel (`join()` no lugar de `detach()` no Switch) e `rtcCleanup()` de volta antes de fechar a rede; avisos "dropping incoming message" só contados.
+
+**v0.5.1:** ❌ o app travou em "3/4: liberando a libdatachannel" e precisou ser fechado por fora. O `join()` causa um impasse: a thread de limpeza é criada dentro de um destrutor que segura a trava (ou roda numa thread do pool) de que a própria limpeza precisa. **Reproduzido no PC** com `tests/limpeza` (compila a libdatachannel com os mesmos patches): com `join()`, `rtcCleanup()` trava. **v0.5.2:** a thread de limpeza é mantida viva (objeto `std::thread` no heap, sem `detach()` nem `join()`); no mesmo teste, `rtcCleanup()` volta em 0,01 s em 3 de 3 rodadas. O teste roda no GitHub Actions sempre que os patches mudam.
 
 As próximas fases recebem seus checklists aqui quando começarem.
 

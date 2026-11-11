@@ -23,7 +23,7 @@ INCLUDES    := source deps/prefix/include compat/include third_party/cjson
 
 APP_TITLE   := NXStream
 APP_AUTHOR  := gtvsrd
-APP_VERSION := 0.5.1
+APP_VERSION := 0.5.2
 
 #---------------------------------------------------------------------------------
 # Flags de compilação

@@ -16,6 +16,29 @@ jobs:
       - name: Rodar testes
         run: make -C tests
 
+  limpeza:
+    name: Teste de limpeza da libdatachannel (PC)
+    runs-on: ubuntu-latest
+    # Só quando muda algo que afeta a libdatachannel (leva ~2 min)
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+
+      - name: Ver se precisa rodar
+        id: mudou
+        run: |
+          if git diff --quiet HEAD~1 HEAD -- compat/patches scripts/compilar-deps.sh tests/limpeza 2>/dev/null; then
+            echo "rodar=nao" >> $GITHUB_OUTPUT; echo "Nada mudou nos patches: teste pulado"
+          else
+            echo "rodar=sim" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Rodar teste de limpeza
+        if: steps.mudou.outputs.rodar == 'sim' || github.event_name == 'workflow_dispatch'
+        run: sh tests/limpeza/rodar.sh
+
   build:
     name: Compilar .nro
     runs-on: ubuntu-latest
