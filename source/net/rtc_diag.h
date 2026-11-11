@@ -21,7 +21,7 @@ typedef struct {
     bool   tem_video, tem_audio, tem_dados;
 
     int    num_candidatos;
-    char   candidatos[RTC_DIAG_MAX_CANDIDATOS][80]; // "IP porta tipo"
+    char   candidatos[RTC_DIAG_MAX_CANDIDATOS][128]; // "IP porta tipo"
     bool   coleta_completa;
     double t_coleta;
 

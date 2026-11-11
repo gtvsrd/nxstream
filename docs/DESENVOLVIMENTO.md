@@ -4,15 +4,16 @@
 
 ### Automático (GitHub Actions)
 
-Todo push dispara o workflow [`build.yml`](../.github/workflows/build.yml), que compila dentro do container oficial `devkitpro/devkita64` e publica o `.nro`.
+Todo push dispara o workflow [`build.yml`](../.github/workflows/build.yml), que compila dentro do container oficial `devkitpro/devkita64` e publica o `.nro`. As dependências do WebRTC (`scripts/compilar-deps.sh`) ficam em cache e só são recompiladas quando o script ou a camada `compat/` mudam.
 
 Para baixar: aba **Actions** → execução mais recente → seção **Artifacts** → `nxstream-nro` (um `.zip` com o `nxstream.nro`). É preciso estar logado no GitHub.
 
 ### Local (opcional)
 
 1. Instale o [devkitPro](https://devkitpro.org/wiki/Getting_Started) com o grupo `switch-dev`.
-2. Na pasta do projeto: `make`
-3. Para limpar: `make clean`
+2. Uma vez, compile as dependências do WebRTC (mbedTLS 3 e libdatachannel, alguns minutos): `sh scripts/compilar-deps.sh`. Elas ficam em `deps/prefix/` (fora do Git).
+3. Na pasta do projeto: `make`
+4. Para limpar: `make clean`
 
 ## Testar no Switch
 
@@ -87,6 +88,21 @@ Se algo falhar, mande o arquivo `/switch/nxstream/nxstream.log` (ele não conté
 **v0.2.1 tem um bug:** chamadas HTTP lentas eram confundidas com suspensão. A v0.2.2 passou a depender só dos avisos do sistema, mas ao **bloquear** o Switch nenhum aviso foi detectado. A v0.2.3 usa os dois sinais: aviso do sistema e tempo parado entre quadros, descontando o tempo das chamadas de rede. O log registra qual sinal detectou cada suspensão.
 
 Os dois testes de sleep não têm resposta "certa": servem para medir quanto tempo o servidor mantém a sessão sem keepalive. Isso define a estratégia de reconexão da fase 4.
+
+### Fase 2b, parte 1: diagnóstico WebRTC (v0.3.0)
+
+Na lista de consoles, aperte **−** para abrir o diagnóstico. Ele não usa o Xbox.
+
+| Teste | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Abrir o diagnóstico | App não trava nem fecha | |
+| Certificado e oferta SDP | "ok em X s" com certificado, vídeo, áudio e dados = sim | |
+| Candidatos de rede | Pelo menos um com o IP do Switch (o mesmo da fase 0), "coleta completa" | |
+| Resultado | "tudo funcionando no Switch!" | |
+| A (repetir) algumas vezes | Repete sem travar | |
+| B e depois + (fechar o app) | Fecha normalmente, sem travar | |
+
+O log registra a oferta SDP completa e cada candidato, para comparar com o que o Xbox espera na parte 2.
 
 As próximas fases recebem seus checklists aqui quando começarem.
 

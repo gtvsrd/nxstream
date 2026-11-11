@@ -47,6 +47,7 @@ Every push is built automatically by GitHub Actions. Open the latest run under t
 Requires [devkitPro](https://devkitpro.org/wiki/Getting_Started) with `switch-dev` installed.
 
 ```sh
+sh scripts/compilar-deps.sh   # once: builds mbedTLS 3 + libdatachannel into deps/prefix
 make
 ```
 
