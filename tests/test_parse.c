@@ -194,6 +194,16 @@ static void teste_negociacao(void) {
     CHECAR(!strcmp(ipv4, "192.0.2.45") && porta == 40000);
     CHECAR(!xapi_teredo("fe80::1", ipv4, sizeof ipv4, &porta));
     CHECAR(!xapi_teredo("2001:db8::1", ipv4, sizeof ipv4, &porta)); // 2001:db8 não é Teredo
+    // Mesmo endereço por extenso e com "::" no meio
+    CHECAR(xapi_teredo("2001:0000:4136:e378:8000:63bf:3fff:fdd2", ipv4, sizeof ipv4, &porta));
+    CHECAR(!strcmp(ipv4, "192.0.2.45") && porta == 40000);
+    CHECAR(xapi_teredo("2001::63bf:3fff:fdd2", ipv4, sizeof ipv4, &porta)); // bytes 4..9 zerados
+    CHECAR(!strcmp(ipv4, "192.0.2.45") && porta == 40000);
+    // Entradas inválidas
+    CHECAR(!xapi_teredo("2001:0:1:2:3:4:5:6:7", ipv4, sizeof ipv4, &porta));   // 9 grupos
+    CHECAR(!xapi_teredo("2001::1::2", ipv4, sizeof ipv4, &porta));             // "::" duas vezes
+    CHECAR(!xapi_teredo("2001:0:4136:e378:8000:63bf:3fff:fdd2x", ipv4, sizeof ipv4, &porta));
+    CHECAR(!xapi_teredo("2001:0:4136:e378:12345:63bf:3fff:fdd2", ipv4, sizeof ipv4, &porta));
 
     // Resposta do /ice: Teredo vira 2 candidatos extras + o original; end-of-candidates é ignorado
     XCandidatos r;

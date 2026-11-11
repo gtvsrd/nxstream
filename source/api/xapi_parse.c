@@ -146,7 +146,6 @@ const char *xapi_sessao_estado_texto(XSessaoEstado e) {
 // ---------------------------------------------------------------------------
 // Negociação WebRTC (docs/PROTOCOLO.md, seção 3)
 // ---------------------------------------------------------------------------
-#include <arpa/inet.h>
 #include <stdlib.h>
 
 char *xapi_corpo_sdp(const char *oferta) {
@@ -247,9 +246,63 @@ char *xapi_corpo_ice(const XCandidatos *locais, const char *ufrag) {
     return json;
 }
 
+// Lê um endereço IPv6 em texto (com ou sem "::") para 16 bytes.
+// Implementação própria: não depende do inet_pton da plataforma (a libnx pode
+// não suportar IPv6 nele) e roda igual no PC e no Switch.
+static bool ler_ipv6(const char *texto, unsigned char b[16]) {
+    unsigned grupos[8];
+    int antes = 0, depois = 0, pos_compressao = -1;
+    unsigned grupos_depois[8];
+    const char *p = texto;
+
+    if (p[0] == ':' && p[1] == ':') {
+        pos_compressao = 0;
+        p += 2;
+    }
+    while (*p) {
+        char *fim;
+        unsigned long v = strtoul(p, &fim, 16);
+        if (fim == p || fim - p > 4 || v > 0xFFFF)
+            return false;
+        if (pos_compressao >= 0) {
+            if (depois >= 8) return false;
+            grupos_depois[depois++] = (unsigned)v;
+        } else {
+            if (antes >= 8) return false;
+            grupos[antes++] = (unsigned)v;
+        }
+        p = fim;
+        if (*p == ':') {
+            if (p[1] == ':') {
+                if (pos_compressao >= 0) return false; // "::" só uma vez
+                pos_compressao = antes;
+                p += 2;
+            } else {
+                p++;
+                if (!*p) return false;
+            }
+        } else if (*p) {
+            return false;
+        }
+    }
+    int total = antes + depois;
+    if (pos_compressao < 0 ? total != 8 : total > 7)
+        return false;
+    int zeros = 8 - total;
+    for (int i = 0; i < zeros; i++)
+        grupos[antes + i] = 0;
+    for (int i = 0; i < depois; i++)
+        grupos[antes + zeros + i] = grupos_depois[i];
+    for (int i = 0; i < 8; i++) {
+        b[2 * i] = (unsigned char)(grupos[i] >> 8);
+        b[2 * i + 1] = (unsigned char)(grupos[i] & 0xFF);
+    }
+    return true;
+}
+
 bool xapi_teredo(const char *ipv6, char *ipv4, int tam_ipv4, int *porta) {
     unsigned char b[16];
-    if (strncmp(ipv6, "2001:", 5) != 0 || inet_pton(AF_INET6, ipv6, b) != 1)
+    if (strncmp(ipv6, "2001:", 5) != 0 || !ler_ipv6(ipv6, b))
         return false;
     if (b[0] != 0x20 || b[1] != 0x01 || b[2] != 0x00 || b[3] != 0x00)
         return false; // Teredo é 2001:0000::/32
