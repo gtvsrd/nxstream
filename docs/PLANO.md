@@ -21,6 +21,8 @@ O projeto nasceu da experiência com o LibNXbox (ursusworks), que funcionava mas
 | Fase 2 em três etapas | 2a sessão → 2b WebRTC → 2c vídeo, cada uma testada no Switch | Isola problemas: falha de WebRTC não se mistura com falha de vídeo. |
 | Console em repouso | Conectar normalmente: a sessão acorda o console só no modo de streaming | Mesmo comportamento do app oficial, sem ligar a TV. |
 | Resolução inicial | 720p | Nativa da tela portátil, mais leve. 1080p como opção na fase 5. |
+| Biblioteca WebRTC | libdatachannel (com camada de compatibilidade para o Switch) | Mais robusta. O trabalho de compatibilidade nas dependências seria o mesmo com a libpeer. |
+| Botão HOME | **Streaming continua rodando** em segundo plano (objetivo da fase 4, se o Switch permitir) | O HOME é fácil de apertar sem querer; o streaming não deve cair por isso. O bloqueio (sleep) continua pausando e reconectando. |
 
 ## Fases
 
@@ -34,7 +36,7 @@ Cada fase termina com um `.nro` testado no Switch antes de seguir para a próxim
 | **2b** | Conexão WebRTC com o console (biblioteca portada, SDP/ICE, DTLS, canais de dados) | "Conectado ao console" com os canais abertos | ⏳ Próxima (investigando a biblioteca) |
 | **2c** | Vídeo: FFmpeg com NVDEC + desenho com deko3d | A tela do Xbox aparece no Switch (sem controle e sem som) | — |
 | **3** | Controle + áudio | Jogar normalmente; teste de rajada de botões sem queda | — |
-| **4** | Reconexão completa | Sleep/resume, queda do Wi-Fi por alguns segundos e sessão longa (1h+) sem fechar o app | — |
+| **4** | Reconexão completa + HOME sem pausar | Sleep/resume, queda do Wi-Fi por alguns segundos e sessão longa (1h+) sem fechar o app; apertar HOME e voltar sem perder a conexão | — |
 | **5** | Vibração, configurações (qualidade, deadzone, mapeamento), acabamento | Uso normal do dia a dia | — |
 
 A fase 2 é a mais pesada e arriscada, porque junta WebRTC, criptografia e decodificação de vídeo. Por isso foi dividida em 2a, 2b e 2c.
