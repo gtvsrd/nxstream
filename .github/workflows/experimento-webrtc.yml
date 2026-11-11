@@ -1,0 +1,69 @@
+# Experimento da fase 2b: o que a imagem do devkitPro oferece e até onde
+# a libdatachannel compila para o Switch. Não gera .nro.
+name: Experimento WebRTC
+
+on:
+  push:
+    branches: [fase-2b]
+  workflow_dispatch:
+
+jobs:
+  inventario:
+    name: Inventario da imagem
+    runs-on: ubuntu-latest
+    container: devkitpro/devkita64:latest
+    steps:
+      - name: Bibliotecas disponiveis
+        run: |
+          echo "== portlibs/switch/lib =="
+          ls $DEVKITPRO/portlibs/switch/lib | sort
+          echo "== pkgconfig =="
+          ls $DEVKITPRO/portlibs/switch/lib/pkgconfig | sort
+          echo "== versao mbedtls =="
+          grep -h "define MBEDTLS_VERSION_STRING " $DEVKITPRO/portlibs/switch/include/mbedtls/*.h || true
+          echo "== ffmpeg (nvtegra?) =="
+          grep -o "CONFIG_NVTEGRA [01]" $DEVKITPRO/portlibs/switch/include/libavutil/../config.h 2>/dev/null || true
+          ls $DEVKITPRO/portlibs/switch/include/libavutil/hwcontext_nvtegra.h 2>/dev/null || echo "sem hwcontext_nvtegra.h"
+          echo "== ferramentas =="
+          cmake --version | head -1 || echo "sem cmake"
+          ls $DEVKITPRO/cmake/ 2>/dev/null || true
+          ls $DEVKITPRO/portlibs/switch/bin/ | head -20
+
+  libdatachannel:
+    name: Compilar libdatachannel (tentativa)
+    runs-on: ubuntu-latest
+    container: devkitpro/devkita64:latest
+    steps:
+      - name: Baixar fontes
+        run: |
+          git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/paullouisageneau/libdatachannel ldc
+          git clone --depth 1 --branch v3.6.2 https://github.com/Mbed-TLS/mbedtls mbedtls
+          cd mbedtls && git submodule update --init --depth 1 || true
+
+      - name: Compilar mbedTLS 3 (com DTLS-SRTP)
+        run: |
+          cd mbedtls
+          python3 scripts/config.py set MBEDTLS_SSL_DTLS_SRTP
+          python3 scripts/config.py unset MBEDTLS_NET_C
+          python3 scripts/config.py unset MBEDTLS_TIMING_C
+          python3 scripts/config.py unset MBEDTLS_FS_IO
+          python3 scripts/config.py unset MBEDTLS_PSA_ITS_FILE_C
+          python3 scripts/config.py unset MBEDTLS_PSA_CRYPTO_STORAGE_C
+          python3 scripts/config.py set MBEDTLS_NO_PLATFORM_ENTROPY
+          cmake -B build -G "Unix Makefiles" \
+            -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Switch.cmake \
+            -DCMAKE_INSTALL_PREFIX=$PWD/../prefix \
+            -DENABLE_PROGRAMS=OFF -DENABLE_TESTING=OFF -DUSE_SHARED_MBEDTLS_LIBRARY=OFF
+          cmake --build build -j$(nproc) 2>&1 | tail -40
+          cmake --install build
+
+      - name: Compilar libdatachannel
+        run: |
+          cd ldc
+          cmake -B build -G "Unix Makefiles" \
+            -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Switch.cmake \
+            -DCMAKE_PREFIX_PATH=$PWD/../prefix \
+            -DBUILD_SHARED_LIBS=OFF -DUSE_MBEDTLS=ON -DNO_WEBSOCKET=ON \
+            -DNO_EXAMPLES=ON -DNO_TESTS=ON
+          cmake --build build -j$(nproc) -k 2>&1 | grep -E "error|Error|undefined|warning: implicit" | sort | uniq | head -80
+          cmake --build build -j1 2>&1 | tail -30
