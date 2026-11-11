@@ -109,13 +109,13 @@ Log da v0.3.0 (35 diagnósticos seguidos, todos ok) mostrou, corrigido na v0.4.1
 
 O log registra a oferta SDP completa e cada candidato, para comparar com o que o Xbox espera na parte 2.
 
-### Fase 2b, parte 2: conexão com o Xbox (v0.4.1)
+### Fase 2b, parte 2: conexão com o Xbox (v0.4.2)
 
 Na lista, escolha o console com **A**. Depois de "Sessao pronta", a tela mostra as etapas da conexão.
 
 | Teste | Resultado esperado | Resultado obtido |
 |---|---|---|
-| 1. Oferta local | ok, com 1 ou mais candidatos locais | |
+| 1. Oferta local | ok, com 1 ou mais candidatos locais | v0.4.1: ✅ oferta e candidato gerados; ❌ envio ao servidor falhou (ver abaixo) |
 | 2. Resposta do console | ok | |
 | 3. Candidatos de rede | ok, com candidatos do console aceitos | |
 | 4. Conexão WebRTC | ok, "CONECTADO" | |
@@ -124,6 +124,8 @@ Na lista, escolha o console com **A**. Depois de "Sessao pronta", a tela mostra 
 | Keepalive após 30 s | ok (HTTP 200): confirma a hipótese da fase 2a | |
 | Deixar conectado 3+ minutos | Continua conectado, keepalives ok | |
 | B | Desconecta e volta para a lista | |
+
+**v0.4.1:** nas 3 tentativas, o `POST /sdp` falhou com "Couldn't connect to server" no mesmo instante, enquanto o mesmo servidor tinha respondido a `/play` e `/state` logo antes. Causa provável (hipótese): a libjuice pede 1 MB + 1 MB de buffer para o socket UDP e esgota o poço de memória de sockets da libnx (~2,25 MB por padrão), sem sobrar para o socket TCP do curl. **v0.4.2:** poço de sockets dobrado (`sb_efficiency` 8), 6 sessões BSD, buffers da libjuice reduzidos no Switch (512 KB + 128 KB) e o log das falhas do curl passa a trazer a causa do sistema.
 
 Se alguma etapa falhar, mande o `nxstream.log`: ele contém a oferta, a resposta SDP do console, todos os candidatos e as mensagens dos canais.
 

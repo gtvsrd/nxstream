@@ -14,6 +14,7 @@ libSRTP) esperam encontrar num sistema POSIX e que a libnx não oferece.
 | `include/errno.h` | usrsctp | Acrescenta `ERESTART` |
 | `include/sys/socket.h` | usrsctp | Acrescenta `CMSG_ALIGN` |
 | `patches/aplicar.py` | usrsctp, libjuice | Gerador de números aleatórios seguro do Switch (`randomGet`) em `user_environment.c` (usrsctp) e `random.c` (libjuice, que sem isso usaria `rand()`) |
+| `patches/aplicar.py` | libjuice | Buffers do socket UDP menores no Switch (512 KB recepção, 128 KB envio, em vez de 1 MB + 1 MB), para não esgotar o poço de memória de sockets da libnx |
 | `compat.cmake` | todas | Adiciona os cabeçalhos acima e `_DEFAULT_SOURCE` (tipos `u_int`, `u_long`) a todo projeto CMake |
 
 Uso com CMake: `-DCMAKE_PROJECT_INCLUDE=<caminho>/compat/compat.cmake`.

@@ -808,7 +808,15 @@ int main(int argc, char *argv[]) {
     padInitializeDefault(&g_controle);
     g_tick_anterior = armGetSystemTick();
 
-    Result rc_rede = socketInitializeDefault();
+    // Rede com mais memória que o padrão: todos os sockets do app (HTTPS do curl,
+    // UDP do WebRTC, pipe da compat) dividem um poço de buffers. Com o padrão
+    // (~2,25 MB) o socket da libjuice esgotava o poço e o HTTPS falhava durante
+    // a conexão com o console. Mais sessões BSD evitam que chamadas bloqueantes
+    // de threads diferentes (poll da libjuice, connect do curl) esperem umas pelas outras.
+    SocketInitConfig rede = *socketGetDefaultInitConfig();
+    rede.sb_efficiency = 8;      // padrão 4: dobra o poço de buffers
+    rede.num_bsd_sessions = 6;   // padrão 3
+    Result rc_rede = socketInitialize(&rede);
     bool nxlink = R_SUCCEEDED(rc_rede) && nxlinkStdioForDebug() >= 0;
 
     mkdir(NX_PASTA_APP, 0777);

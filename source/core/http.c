@@ -64,6 +64,8 @@ bool http_requisicao(HttpMetodo metodo, const char *url, const char *const *head
     for (const char *const *h = headers; h && *h; h++)
         lista = curl_slist_append(lista, *h);
 
+    char detalhe[CURL_ERROR_SIZE] = "";
+    curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, detalhe);
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, lista);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, NX_USER_AGENT);
@@ -94,7 +96,9 @@ bool http_requisicao(HttpMetodo metodo, const char *url, const char *const *head
         inicio = inicio ? inicio + 3 : url;
         const char *fim = strchr(inicio, '/');
         int tam = fim ? (int)(fim - inicio) : (int)strlen(inicio);
-        LOG("http: falha ao acessar %.*s: %s (curl %d)", tam, inicio, r->erro, (int)rc);
+        // detalhe traz a causa do sistema (ex.: "No buffer space available")
+        LOG("http: falha ao acessar %.*s: %s (curl %d) [%s]", tam, inicio, r->erro, (int)rc,
+            detalhe[0] ? detalhe : "sem detalhe");
     }
 
     curl_slist_free_all(lista);
