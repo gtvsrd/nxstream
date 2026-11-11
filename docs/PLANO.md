@@ -30,8 +30,8 @@ Cada fase termina com um `.nro` testado no Switch antes de seguir para a próxim
 |---|---|---|---|
 | **0** | Build automático + app de diagnóstico | Abre em title mode, mostra IP, registra eventos de sleep/resume | ✅ Concluída (v0.0.2 validada no Switch) |
 | **1** | Login por código + lista de consoles | Logar uma vez; reabrir o app sem pedir login; seu Xbox aparece listado com estado | ✅ Concluída (v0.1.0 validada no Switch) |
-| **2a** | Sessão: criar, acompanhar estados, autorizar, keepalive, encerrar | Sessão fica "pronta" e permanece viva por minutos; comportamento após sleep observado | 🧪 v0.2.0 em teste (branch `fase-2a`) |
-| **2b** | Conexão WebRTC com o console (biblioteca portada, SDP/ICE, DTLS, canais de dados) | "Conectado ao console" com os canais abertos | — |
+| **2a** | Sessão: criar, acompanhar estados, autorizar, keepalive, encerrar | Sessão fica "pronta" e permanece viva por minutos; comportamento após sleep observado | ✅ Concluída (v0.2.3 validada no Switch) |
+| **2b** | Conexão WebRTC com o console (biblioteca portada, SDP/ICE, DTLS, canais de dados) | "Conectado ao console" com os canais abertos | ⏳ Próxima (investigando a biblioteca) |
 | **2c** | Vídeo: FFmpeg com NVDEC + desenho com deko3d | A tela do Xbox aparece no Switch (sem controle e sem som) | — |
 | **3** | Controle + áudio | Jogar normalmente; teste de rajada de botões sem queda | — |
 | **4** | Reconexão completa | Sleep/resume, queda do Wi-Fi por alguns segundos e sessão longa (1h+) sem fechar o app | — |
@@ -45,7 +45,7 @@ A fase 2 é a mais pesada e arriscada, porque junta WebRTC, criptografia e decod
 |---|---|---|
 | Microsoft muda endpoints ou formatos da API | App para de conectar | Endereços e versões isolados em um único arquivo (`source/api/config.h`). Respostas inesperadas vão para o log. |
 | Portar a biblioteca WebRTC para o Switch | Atraso na fase 2 | Testar libdatachannel primeiro; libpeer como alternativa. Ver [ARQUITETURA.md](ARQUITETURA.md#webrtc). |
-| Sleep do Switch derruba todos os sockets | Conexão morre ao dormir | Máquina de estados recria WebRTC/sessão ao acordar (fase 4). O app detecta a volta pelo tempo parado entre quadros (no sleep o sistema não envia aviso) e o Wi-Fi volta na hora. A sessão no servidor sobrevive ao sleep (testado até 63 s), então ao acordar deve bastar refazer a conexão com o console. |
+| Sleep do Switch derruba todos os sockets | Conexão morre ao dormir | Máquina de estados recria WebRTC/sessão ao acordar (fase 4). O app detecta a volta pelo tempo parado entre quadros (no sleep o sistema não envia aviso) e o Wi-Fi volta na hora. A sessão no servidor sobrevive ao sleep (testado até 190 s, no sleep e no HOME), então ao acordar deve bastar refazer a conexão com o console. |
 | Token de renovação dá acesso à conta Xbox | Segurança da conta | Fica só no cartão SD, nunca é enviado a outro lugar além dos servidores da Microsoft. Nunca é escrito no log. |
 | Build do FFmpeg é demorado | Builds lentos no CI | Cache do FFmpeg compilado no GitHub Actions. |
 

@@ -75,13 +75,14 @@ Se algo falhar, mande o arquivo `/switch/nxstream/nxstream.log` (ele não conté
 
 | Teste | Resultado esperado | Resultado obtido |
 |---|---|---|
-| A em um console **ligado** | Estados passam por "Preparando..." até "Sessao pronta!" | |
+| A em um console **ligado** | Estados passam por "Preparando..." até "Sessao pronta!" | ✅ Pronta em ~5 s |
 | A em um console **em repouso** | Mesmo resultado; o console acorda só no modo de streaming | ✅ Pronta em ~11 s |
 | Tempo até ficar pronta | Mostrado na tela ("preparada em X s") | ✅ ~11 s a partir do repouso |
 | Deixar a sessão aberta 3+ minutos | Verificações com "viva" e nenhuma falha (v0.2.2: ✅ ~6 min) | v0.2.0: keepalive HTTP 400 a cada envio (~30–40 s). Servidor: `KeepAlive : ServerStreamingStarted` (keepalive não aceito antes do cliente conectar). v0.2.1 troca por consulta de estado. Sessão continuou existindo por 4+ min |
-| Dormir o Switch 30 s com a sessão aberta e acordar | Linha "Voltou de X s suspenso: sessao continua viva" (ou "caiu") | v0.2.2: sessão viva após 18, 23 e 63 s (pelo log), mas a tela não mostrou: nenhum aviso do sistema no bloqueio. Corrigido na v0.2.3 (a confirmar) |
-| Dormir o Switch 5+ minutos e acordar | Idem: descobre por quanto tempo a sessão sobrevive sem keepalive | |
-| B na sessão | Volta para a lista; a sessão é encerrada | |
+| Dormir o Switch 30 s com a sessão aberta e acordar | Linha "Voltou de X s suspenso: sessao continua viva" (ou "caiu") | ✅ v0.2.3: detectado e mostrado na tela; sessão viva após 37 s e 98 s |
+| Dormir o Switch 5+ minutos e acordar | Idem: descobre por quanto tempo a sessão sobrevive sem keepalive | ✅ Viva após 190 s (3 min 10 s). Limite máximo ainda não medido |
+| HOME com a sessão aberta | Detectado como suspensão | ✅ Detectado por tempo (sem aviso do sistema) |
+| B na sessão | Volta para a lista; a sessão é encerrada | ✅ `DELETE` HTTP 202 |
 
 **v0.2.1 tem um bug:** chamadas HTTP lentas eram confundidas com suspensão. A v0.2.2 passou a depender só dos avisos do sistema, mas ao **bloquear** o Switch nenhum aviso foi detectado. A v0.2.3 usa os dois sinais: aviso do sistema e tempo parado entre quadros, descontando o tempo das chamadas de rede. O log registra qual sinal detectou cada suspensão.
 

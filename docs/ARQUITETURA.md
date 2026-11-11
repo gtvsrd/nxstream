@@ -76,7 +76,7 @@ stateDiagram-v2
 ```
 
 Detalhes:
-- **Detectar sleep/HOME:** o app usa `AppletFocusHandlingMode_SuspendHomeSleepNotify` e registra os avisos de foco/retomada que o sistema enviar. **Porém, ao bloquear o Switch (sleep), nenhum aviso chega** (log da v0.2.2, três bloqueios de 18 a 63 s). Por isso o sinal principal compara o tempo entre quadros: mais de 1,5 s parado significa suspensão. O tempo gasto em chamadas HTTP é descontado (o módulo `http` avisa ao fim de cada requisição), senão uma resposta lenta da rede seria confundida com sleep. Ao acordar, a rede já está disponível de imediato, então a reconexão pode começar sem espera.
+- **Detectar sleep/HOME:** o app usa `AppletFocusHandlingMode_SuspendHomeSleepNotify` e registra os avisos de foco/retomada que o sistema enviar. **Porém, nenhum aviso chega nem no bloqueio (sleep) nem no HOME** (logs da v0.2.2 e v0.2.3). Por isso o sinal principal compara o tempo entre quadros: mais de 1,5 s parado significa suspensão. O tempo gasto em chamadas HTTP é descontado (o módulo `http` avisa ao fim de cada requisição), senão uma resposta lenta da rede seria confundida com sleep. Ao acordar, a rede já está disponível de imediato, então a reconexão pode começar sem espera.
 - **Reconectando** usa espera crescente entre tentativas (1 s, 2 s, 4 s… até um limite) e mostra na tela o que está acontecendo.
 - **Keepalive** roda numa rotina própria enquanto a sessão existe, inclusive durante a reconexão, para o servidor não encerrar a sessão.
 - Os tempos (intervalo do keepalive, número de tentativas, tempo de espera da rede) ficam em constantes ajustáveis, calibradas com os testes no Switch.
