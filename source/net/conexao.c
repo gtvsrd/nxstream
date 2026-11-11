@@ -456,7 +456,12 @@ void conexao_ler(ConexaoEstado *copia) {
 }
 
 void conexao_encerrar(void) {
-    // Canais e trilhas primeiro: cada um é um identificador próprio na biblioteca
+    // Fecha a conexão antes de apagar canais e trilhas: senão os pacotes de
+    // vídeo que ainda chegam não têm para onde ir (v0.4.4: ~1000 avisos
+    // "dropping incoming message" no log a cada desconexão).
+    if (g_pc >= 0)
+        rtcClosePeerConnection(g_pc);
+    // Canais e trilhas: cada um é um identificador próprio na biblioteca
     for (int c = 0; c < NUM_CANAIS; c++) {
         int dc = g_canais[c];
         g_canais[c] = -1; // enviar() para de usar antes de apagar

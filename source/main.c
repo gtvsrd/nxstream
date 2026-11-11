@@ -894,7 +894,7 @@ int main(int argc, char *argv[]) {
         LOG("main: encerrando (2/4: fechando conexoes WebRTC)");
         conexao_encerrar();
         rtc_diag_finalizar_biblioteca();
-        LOG("main: encerrando (3/4: finalizando a libdatachannel)");
+        LOG("main: encerrando (3/4: liberando a libdatachannel)");
         rtc_comum_finalizar();
         LOG("main: encerrando (4/4: finalizando o HTTPS)");
         http_encerrar();

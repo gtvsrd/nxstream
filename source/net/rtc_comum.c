@@ -19,8 +19,9 @@ void rtc_comum_iniciar(void) {
 }
 
 void rtc_comum_finalizar(void) {
-    if (!g_iniciada)
-        return;
-    rtcCleanup();
+    // Não chama rtcCleanup(): no Switch ele lança std::system_error ao encerrar
+    // as threads internas (log da v0.4.4), e o app fechava por exceção não
+    // tratada no último passo. As conexões já foram apagadas antes daqui, e a
+    // memória e as threads do processo são liberadas pelo sistema ao sair.
     g_iniciada = false;
 }

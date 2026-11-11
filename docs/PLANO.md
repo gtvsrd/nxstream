@@ -33,8 +33,8 @@ Cada fase termina com um `.nro` testado no Switch antes de seguir para a próxim
 | **0** | Build automático + app de diagnóstico | Abre em title mode, mostra IP, registra eventos de sleep/resume | ✅ Concluída (v0.0.2 validada no Switch) |
 | **1** | Login por código + lista de consoles | Logar uma vez; reabrir o app sem pedir login; seu Xbox aparece listado com estado | ✅ Concluída (v0.1.0 validada no Switch) |
 | **2a** | Sessão: criar, acompanhar estados, autorizar, keepalive, encerrar | Sessão fica "pronta" e permanece viva por minutos; comportamento após sleep observado | ✅ Concluída (v0.2.3 validada no Switch) |
-| **2b** | Conexão WebRTC com o console (biblioteca portada, SDP/ICE, DTLS, canais de dados) | "Conectado ao console" com os canais abertos | ✅ Parte 1 (v0.3.0): WebRTC validado em execução no Switch. 🧪 Parte 2 (v0.4.0): conexão com o Xbox em teste |
-| **2c** | Vídeo: FFmpeg com NVDEC + desenho com deko3d | A tela do Xbox aparece no Switch (sem controle e sem som) | — |
+| **2b** | Conexão WebRTC com o console (biblioteca portada, SDP/ICE, DTLS, canais de dados) | "Conectado ao console" com os canais abertos | ✅ Concluída (v0.4.4): conexão completa com o Xbox, 4 canais, handshake, vídeo chegando, keepalive aceito, 3+ min estável |
+| **2c** | Vídeo: FFmpeg com NVDEC + desenho com deko3d | A tela do Xbox aparece no Switch (sem controle e sem som) | ⏳ Próxima |
 | **3** | Controle + áudio | Jogar normalmente; teste de rajada de botões sem queda | — |
 | **4** | Reconexão completa + HOME sem pausar | Sleep/resume, queda do Wi-Fi por alguns segundos e sessão longa (1h+) sem fechar o app; apertar HOME e voltar sem perder a conexão | — |
 | **5** | Vibração, configurações (qualidade, deadzone, mapeamento), acabamento | Uso normal do dia a dia | — |
