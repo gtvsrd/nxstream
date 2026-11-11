@@ -85,7 +85,8 @@ Fonte: Greenlight (`xcloudapi.ts`, `streammanager.ts`) e xbox-xcloud-player (`ap
 
 Observações da fase 2a (Xbox Series X, rede local):
 - Console em repouso: `Provisioning` → `Provisioned` em ~11 s, **sem passar por `ReadyToConnect`** (o `/connect` não foi necessário com o console próprio). O código continua tratando `ReadyToConnect` caso aconteça.
-- Sem cliente conectado, a sessão continuou existindo por pelo menos 4 minutos (o `DELETE` respondeu HTTP 202).
+- Sem cliente conectado, a sessão continuou `Provisioned` por quase 6 minutos (o `DELETE` respondeu HTTP 202).
+- A sessão **sobrevive ao sleep do Switch**: após bloqueios de 18, 23 e 63 s, o `/state` continuou `Provisioned`. Limite máximo ainda não medido.
 
 Abrir uma sessão com o console em repouso o acorda apenas no modo de streaming: o LED não acende por completo e o HDMI/TV não é acionado. É o mesmo comportamento do app oficial; não existe comando separado de "ligar".
 

@@ -52,7 +52,7 @@ make -C tests
 | Colocar e tirar da dock | Linha "Modo mudou" | |
 
 **v0.0.1:** o app não recebeu nenhum aviso ao acordar (o libnx suspende em silêncio por padrão). A rede volta conectada imediatamente.
-**v0.0.2:** ativa os avisos do sistema (`AppletFocusHandlingMode_SuspendHomeSleepNotify`) e adiciona detector de congelamento. ✅ Todos os avisos chegam no sleep e no HOME, e a rede volta instantaneamente ao acordar.
+**v0.0.2:** ativa os avisos do sistema (`AppletFocusHandlingMode_SuspendHomeSleepNotify`) e adiciona detector de congelamento. ✅ O app detecta a volta e a rede volta instantaneamente ao acordar. ⚠️ Correção posterior (log da v0.2.2): no **bloqueio/sleep**, a detecção veio do detector de tempo, não de um aviso do sistema. Nenhum aviso chega nesse caso.
 
 ### Fase 1: login e lista de consoles (v0.1.0)
 
@@ -78,8 +78,8 @@ Se algo falhar, mande o arquivo `/switch/nxstream/nxstream.log` (ele não conté
 | A em um console **ligado** | Estados passam por "Preparando..." até "Sessao pronta!" | |
 | A em um console **em repouso** | Mesmo resultado; o console acorda só no modo de streaming | ✅ Pronta em ~11 s |
 | Tempo até ficar pronta | Mostrado na tela ("preparada em X s") | ✅ ~11 s a partir do repouso |
-| Deixar a sessão aberta 3+ minutos | Verificações com "viva" e nenhuma falha | v0.2.0: keepalive HTTP 400 a cada envio (~30–40 s). Servidor: `KeepAlive : ServerStreamingStarted` (keepalive não aceito antes do cliente conectar). v0.2.1 troca por consulta de estado. Sessão continuou existindo por 4+ min |
-| Dormir o Switch 30 s com a sessão aberta e acordar | Linha "Voltou de X s suspenso: sessao continua viva" (ou "caiu") | |
+| Deixar a sessão aberta 3+ minutos | Verificações com "viva" e nenhuma falha (v0.2.2: ✅ ~6 min) | v0.2.0: keepalive HTTP 400 a cada envio (~30–40 s). Servidor: `KeepAlive : ServerStreamingStarted` (keepalive não aceito antes do cliente conectar). v0.2.1 troca por consulta de estado. Sessão continuou existindo por 4+ min |
+| Dormir o Switch 30 s com a sessão aberta e acordar | Linha "Voltou de X s suspenso: sessao continua viva" (ou "caiu") | v0.2.2: sessão viva após 18, 23 e 63 s (pelo log), mas a tela não mostrou: nenhum aviso do sistema no bloqueio. Corrigido na v0.2.3 (a confirmar) |
 | Dormir o Switch 5+ minutos e acordar | Idem: descobre por quanto tempo a sessão sobrevive sem keepalive | |
 | B na sessão | Volta para a lista; a sessão é encerrada | |
 
