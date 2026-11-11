@@ -36,8 +36,8 @@ Cada fase termina com um `.nro` testado no Switch antes de seguir para a próxim
 | **1** | Login por código + lista de consoles | Logar uma vez; reabrir o app sem pedir login; seu Xbox aparece listado com estado | ✅ Concluída (v0.1.0 validada no Switch) |
 | **2a** | Sessão: criar, acompanhar estados, autorizar, keepalive, encerrar | Sessão fica "pronta" e permanece viva por minutos; comportamento após sleep observado | ✅ Concluída (v0.2.3 validada no Switch) |
 | **2b** | Conexão WebRTC com o console (biblioteca portada, SDP/ICE, DTLS, canais de dados) | "Conectado ao console" com os canais abertos | ✅ Concluída (v0.4.4): conexão completa com o Xbox, 4 canais, handshake, vídeo chegando, keepalive aceito, 3+ min estável |
-| **2c.1** | Quadros: montar os quadros H.264 dos pacotes RTP e ler a resolução | Quadros por segundo estáveis, quadros-chave chegando, resolução lida | 🧪 v0.5.0 em teste (branch `fase-2c`) |
-| **2c.2** | Decodificação: quadros no chip de vídeo do Switch (FFmpeg com NVDEC) | Quadros decodificados por segundo = recebidos, tempo de decodificação baixo | — |
+| **2c.1** | Quadros: montar os quadros H.264 dos pacotes RTP e ler a resolução | Quadros por segundo estáveis, quadros-chave chegando, resolução lida | ✅ Concluída (v0.5.2): 1280x720 a 60 quadros/s, ~4,5 Mbps, estável por quase 10 min |
+| **2c.2** | Decodificação: quadros no chip de vídeo do Switch (FFmpeg com NVDEC) | Quadros decodificados por segundo = recebidos, tempo de decodificação baixo | ⏳ Próxima |
 | **2c.3** | Imagem: desenhar os quadros na tela (GPU) | A tela do Xbox aparece no Switch (sem controle e sem som) | — |
 | **3** | Controle + áudio | Jogar normalmente; teste de rajada de botões sem queda | — |
 | **4** | Reconexão completa + HOME sem pausar | Sleep/resume, queda do Wi-Fi por alguns segundos e sessão longa (1h+) sem fechar o app; apertar HOME e voltar sem perder a conexão | — |

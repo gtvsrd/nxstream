@@ -88,6 +88,7 @@ Observações da fase 2a (Xbox Series X, rede local):
 - Sem cliente conectado, a sessão continuou `Provisioned` por quase 6 minutos (o `DELETE` respondeu HTTP 202).
 - A sessão **sobrevive à suspensão do Switch** (sleep e HOME): após 18, 23, 37, 63, 98 e 190 s suspenso, o `/state` continuou `Provisioned`. Limite máximo ainda não medido.
 - Console já ligado: pronta em ~5 s (contra ~11 s a partir do repouso).
+- v0.5.2: depois de **381 s** de sleep, o keepalive ainda respondeu HTTP 200 (sessão viva). Criar uma sessão nova logo em seguida levou **36 s** em `Provisioning` (contra 3–10 s normalmente): reaproveitar a sessão viva na reconexão (fase 4) evita essa espera.
 - Com a conexão WebRTC aberta, um sleep de 282 s derrubou a conexão (os sockets morrem no sleep), mas **a sessão continuou viva** (keepalive HTTP 200 logo ao acordar). Reconectar exige só refazer a negociação WebRTC, não uma sessão nova (fase 4).
 
 Abrir uma sessão com o console em repouso o acorda apenas no modo de streaming: o LED não acende por completo e o HDMI/TV não é acionado. É o mesmo comportamento do app oficial; não existe comando separado de "ligar".

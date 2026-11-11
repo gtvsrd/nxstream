@@ -161,8 +161,9 @@ Conecte ao console como na fase 2b. A tela de conectado agora mostra a seção *
 | Resolução | Aparece em poucos segundos (provavelmente 1280x720) | v0.5.0: 2560x1440 (o pedido de 720p em `dimensionschanged` foi ignorado). ✅ v0.5.1: **1280x720**, H.264 Main 3.2, ~4,5 Mbps, informando "android" no `X-MS-Device-Info` |
 | Quadros por segundo | Estável, perto de 60/s (ou 30/s), mesmo com a tela do Xbox parada | ✅ v0.5.0: 59–61/s durante 2 min, 17–29 Mbps |
 | Quadros-chave | Pelo menos 1, logo após conectar (sozinho ou depois de "pedido") | ✅ v0.5.0: primeiro em 0,2 s após conectar, sem pedido; depois a cada 30 s |
-| Mexer no Xbox pelo controle dele (menu, um jogo) | Mbps sobe quando a imagem muda muito | |
-| Deixar 3+ minutos | Quadros por segundo continuam estáveis | |
+| Mexer no Xbox pelo controle dele (menu, um jogo) | Mbps sobe quando a imagem muda muito | ✅ v0.5.2: 4,1–5,5 Mbps; quadros-chave maiores (até ~125 KB) quando a imagem muda |
+| Deixar 3+ minutos | Quadros por segundo continuam estáveis | ✅ v0.5.2: 9 min 45 s a 59–61 quadros/s, quadros-chave a cada 30 s, todos os keepalives ok |
+| Fechar com + na tela conectada | Fecha sem travar e sem erro de sistema | ✅ v0.5.2: log termina com os 4 passos e `NXStream encerrado` |
 
 O log registra uma linha de vídeo a cada 10 s, a resolução e os primeiros quadros-chave.
 
