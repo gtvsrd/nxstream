@@ -23,7 +23,7 @@ INCLUDES    := source deps/prefix/include compat/include third_party/cjson
 
 APP_TITLE   := NXStream
 APP_AUTHOR  := gtvsrd
-APP_VERSION := 0.5.2
+APP_VERSION := 0.6.0
 
 #---------------------------------------------------------------------------------
 # Flags de compilação
@@ -41,8 +41,14 @@ LDFLAGS   = -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir 
 # WebRTC (deps/prefix, ver scripts/compilar-deps.sh): a ordem importa no link
 # estático, cada biblioteca antes das que ela usa.
 # libcurl do devkitPro usa o TLS nativo do Switch (backend libnx), não o mbedTLS.
+# FFmpeg do devkitPro (com NVDEC/nvtegra): dependências pelo pkg-config das portlibs
+FFMPEG_LIBS := $(shell $(DEVKITPRO)/portlibs/switch/bin/aarch64-none-elf-pkg-config --libs --static libavcodec libavutil 2>/dev/null)
+ifeq ($(strip $(FFMPEG_LIBS)),)
+FFMPEG_LIBS := -lavcodec -lavutil -lm
+endif
 LIBS     := -ldatachannel -lusrsctp -lsrtp2 -ljuice \
             -lmbedtls -lmbedx509 -lmbedcrypto \
+            $(FFMPEG_LIBS) \
             -lcurl -lz -lnx
 # deps/prefix primeiro, pelo mesmo motivo dos cabeçalhos (mbedTLS 3 antes do 2.28)
 LIBDIRS  := $(TOPDIR)/deps/prefix $(PORTLIBS) $(LIBNX)

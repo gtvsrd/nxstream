@@ -171,6 +171,20 @@ O log registra uma linha de vídeo a cada 10 s, a resolução e os primeiros qua
 
 **v0.5.1:** ❌ o app travou em "3/4: liberando a libdatachannel" e precisou ser fechado por fora. O `join()` causa um impasse: a thread de limpeza é criada dentro de um destrutor que segura a trava (ou roda numa thread do pool) de que a própria limpeza precisa. **Reproduzido no PC** com `tests/limpeza` (compila a libdatachannel com os mesmos patches): com `join()`, `rtcCleanup()` trava. **v0.5.2:** a thread de limpeza é mantida viva (objeto `std::thread` no heap, sem `detach()` nem `join()`); no mesmo teste, `rtcCleanup()` volta em 0,01 s em 3 de 3 rodadas. O teste roda no GitHub Actions sempre que os patches mudam.
 
+### Fase 2c.2: decodificação (v0.6.0)
+
+Conecte ao console. A tela de conectado ganha a seção **Decodificacao**.
+
+| Teste | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Decodificador | "h264 + nvtegra" em verde (chip de vídeo do Switch) | |
+| Decodificados por segundo | Igual aos recebidos (~60/s) | |
+| Tempo de decodificação | Médio bem abaixo de 16,7 ms (o limite para 60/s) | |
+| Erros e descartados | 0 erros; descartados só os poucos quadros antes do 1º quadro-chave | |
+| Imagem mudando muito (menu, jogo) | Continua ~60/s, sem erros | |
+| Deixar 3+ minutos | Estável | |
+| Fechar com + | Fecha sem travar (o log mostra "decod: encerrado") | |
+
 As próximas fases recebem seus checklists aqui quando começarem.
 
 ## Convenções

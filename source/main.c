@@ -20,6 +20,7 @@
 #include "core/log.h"
 #include "core/terminar.h"
 #include "net/conexao.h"
+#include "media/decodificador.h"
 #include "net/rtc_comum.h"
 #include "net/rtc_diag.h"
 
@@ -443,6 +444,8 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
     double t_janela = 0, fps = 0, mbps = 0;
     unsigned long quadros_janela = 0, bytes_janela = 0;
     double ultimo_pedido_chave = -10;
+    unsigned long decod_janela = 0;
+    double fps_decod = 0;
     double t_log_video = 0;
     long status_keepalive = -1;
     int ka_ok = 0, ka_falhas = 0;
@@ -550,13 +553,21 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                     mbps = (e.bytes_video - bytes_janela) * 8.0 / dt / 1e6;
                     quadros_janela = e.quadros;
                     bytes_janela = e.bytes_video;
+                    DecodEstado d;
+                    decod_ler(&d);
+                    fps_decod = (d.decodificados - decod_janela) / dt;
+                    decod_janela = d.decodificados;
                     t_janela = agora;
                     // Uma linha a cada 10 s no log, para comparar com o que a tela mostra
                     if (agora - t_log_video >= 10.0) {
                         t_log_video = agora;
-                        LOG("main: video %.0f fps, %.1f Mbps, %lu quadros, %lu chave, %dx%d",
+                        DecodEstado d;
+                        decod_ler(&d);
+                        LOG("main: video %.0f fps, %.1f Mbps, %lu quadros, %lu chave, %dx%d | decod %.0f/s, "
+                            "%.1f ms (max %.1f), %lu erros, %lu descartados",
                             fps, mbps, e.quadros, e.quadros_chave,
-                            e.sps_valido ? e.sps.largura : 0, e.sps_valido ? e.sps.altura : 0);
+                            e.sps_valido ? e.sps.largura : 0, e.sps_valido ? e.sps.altura : 0,
+                            fps_decod, d.ms_medio, d.ms_maximo, d.erros, d.descartados);
                     }
                 }
                 // Sem quadro-chave não há como começar a decodificar: pede ao console
@@ -566,6 +577,17 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                     e.pedidos_quadro_chave < 5) {
                     conexao_pedir_quadro_chave();
                     ultimo_pedido_chave = agora;
+                }
+                // O decodificador perdeu quadros (fila cheia ou erro): pede um
+                // quadro-chave para recomeçar limpo, no máximo um por segundo
+                {
+                    DecodEstado d;
+                    decod_ler(&d);
+                    if (d.precisa_chave && agora - ultimo_pedido_chave >= 1.0) {
+                        decod_limpar_pedido_chave();
+                        conexao_pedir_quadro_chave();
+                        ultimo_pedido_chave = agora;
+                    }
                 }
                 if (e.caiu) {
                     // Reconexão automática é a fase 4; por ora mostra e registra o motivo
@@ -640,8 +662,28 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                     printf("  (primeiro em %.1f s apos conectar)", e.t_primeiro_chave - e.t_conectado);
                 if (e.pedidos_quadro_chave)
                     printf("  [%lu pedido(s)]", e.pedidos_quadro_chave);
-                printf("\n  Maior quadro: %.1f KB   Audio: %lu pacotes\n\n", e.maior_quadro / 1024.0,
+                printf("\n  Maior quadro: %.1f KB   Audio: %lu pacotes\n", e.maior_quadro / 1024.0,
                        e.pacotes_audio);
+
+                DecodEstado d;
+                decod_ler(&d);
+                printf("\nDecodificacao:\n");
+                if (!d.ativo && d.decodificados == 0) {
+                    printf("  " COR_ERRO "Decodificador nao iniciou" COR_FIM " (detalhes no log)\n");
+                } else {
+                    printf("  %s%s" COR_FIM "\n", d.hardware ? COR_OK : COR_DESTAQ, d.descricao);
+                    printf("  Decodificados: %s%.0f/s" COR_FIM "  (%lu no total)",
+                           fps_decod >= 50 ? COR_OK : fps_decod >= 25 ? COR_DESTAQ : COR_ERRO, fps_decod,
+                           d.decodificados);
+                    if (d.largura)
+                        printf("  %dx%d %s", d.largura, d.altura, d.formato);
+                    printf("\n  Tempo:  %s%.1f ms" COR_FIM " medio, %.1f ms maximo  (limite p/ 60/s: 16,7 ms)\n",
+                           d.ms_medio < 12 ? COR_OK : d.ms_medio < 16.7 ? COR_DESTAQ : COR_ERRO, d.ms_medio,
+                           d.ms_maximo);
+                    printf("  Erros: %s%lu" COR_FIM "   Descartados: %lu   Fila: %d\n",
+                           d.erros ? COR_ERRO : COR_OK, d.erros, d.descartados, d.fila);
+                }
+                printf("\n");
                 if (status_keepalive < 0)
                     printf("Keepalive: primeiro envio em %d s\n",
                            SESSAO_INTERVALO_KEEPALIVE_S - (int)segundos_desde(ultimo_keepalive));
@@ -652,8 +694,8 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                            status_keepalive, (int)segundos_desde(ultimo_keepalive), ka_ok, ka_falhas);
                 if (apos_sleep[0])
                     printf("%s\n", apos_sleep);
-                printf("\n" COR_FRACA "Fase 2c.1: os quadros sao montados e medidos, mas ainda nao\n"
-                       "decodificados. A imagem aparece na fase 2c.3." COR_FIM "\n");
+                printf(COR_FRACA "Fase 2c.2: os quadros sao decodificados pelo chip de video do\n"
+                       "Switch, mas ainda nao desenhados. A imagem aparece na fase 2c.3." COR_FIM "\n");
             }
             printf("\nB = desconectar   + = desconectar e fechar\n");
         }

@@ -77,6 +77,8 @@ jobs:
         run: |
           ls -l $DEVKITPRO/portlibs/switch/lib/libcurl.a $DEVKITPRO/portlibs/switch/lib/libz.a
           ls -l deps/prefix/lib/libdatachannel.a deps/prefix/lib/libmbedtls.a
+          echo "FFmpeg: $($DEVKITPRO/portlibs/switch/bin/aarch64-none-elf-pkg-config --modversion libavcodec 2>/dev/null || echo 'pkg-config indisponivel')"
+          $DEVKITPRO/portlibs/switch/bin/aarch64-none-elf-pkg-config --libs --static libavcodec libavutil 2>/dev/null || true
 
       - name: Compilar
         run: make -j$(nproc)

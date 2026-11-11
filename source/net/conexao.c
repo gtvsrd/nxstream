@@ -1,6 +1,7 @@
 #include "conexao.h"
 #include "rtc_comum.h"
 #include "../core/log.h"
+#include "../media/decodificador.h"
 #include "cJSON.h"
 
 #include <pthread.h>
@@ -358,6 +359,7 @@ static void ao_quadro(int tr, const char *dados, int tamanho, const rtcFrameInfo
     H264Quadro q;
     h264_analisar_quadro((const uint8_t *)dados, (size_t)tamanho, &q);
     double t = agora_s();
+    decod_enviar((const uint8_t *)dados, (size_t)tamanho, q.tem_idr); // fase 2c.2
 
     pthread_mutex_lock(&g_trava);
     bool primeiro = g_estado.quadros == 0;
@@ -415,6 +417,9 @@ bool conexao_criar(void) {
     pthread_mutex_unlock(&g_trava);
     g_inicio = armGetSystemTick();
     rtc_comum_iniciar();
+    // Decodificador antes da conexão, para o primeiro quadro-chave não se perder.
+    // Se falhar, a conexão segue (a tela mostra o motivo; o log também).
+    decod_iniciar();
 
     rtcConfiguration cfg;
     memset(&cfg, 0, sizeof cfg);
@@ -537,6 +542,8 @@ void conexao_encerrar(void) {
         LOG("conexao: encerrada");
         g_pc = -1;
     }
+    // Depois da conexão: não chegam mais quadros para o decodificador
+    decod_encerrar();
     pthread_mutex_lock(&g_trava);
     free(g_oferta);
     g_oferta = NULL;
