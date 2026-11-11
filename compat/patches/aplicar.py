@@ -71,6 +71,20 @@ LIBJUICE_BUFFERS_SWITCH = '''#ifdef __SWITCH__
 ''' + LIBJUICE_BUFFERS_ORIGINAL + '''#endif
 '''
 
+# usrsctp: a struct sockaddr_conn precisa ter o mesmo formato das outras
+# sockaddr (o próprio cabeçalho avisa). A libnx usa o formato BSD (sa_len de 1
+# byte + família de 1 byte) e a usrsctp é compilada com HAVE_SA_LEN, mas o
+# cabeçalho só escolhe o formato BSD para Apple/BSDs. No Switch, AF_CONN (123)
+# era lido como "tamanho 123, família 0": bind falhava com EAFNOSUPPORT (106).
+# Vai junto com HAVE_SCONN_LEN em compat.cmake (a libdatachannel preenche sconn_len).
+USRSCTP_SOCKADDR_ORIGINAL = """#if defined(__APPLE__) || defined(__Bitrig__) || defined(__DragonFly__) || \\
+    defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
+struct sockaddr_conn {"""
+USRSCTP_SOCKADDR_SWITCH = """#if defined(__APPLE__) || defined(__Bitrig__) || defined(__DragonFly__) || \\
+    defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || \\
+    defined(__SWITCH__) /* NXStream: libnx usa sockaddr no formato BSD */
+struct sockaddr_conn {"""
+
 ALTERACOES = [
     (
         "deps/usrsctp/usrsctplib/user_environment.c",
@@ -90,6 +104,13 @@ ALTERACOES = [
         LIBJUICE_BUFFERS_ORIGINAL,
         LIBJUICE_BUFFERS_SWITCH,
         "NXStream: buffers menores",
+        "substituir",
+    ),
+    (
+        "deps/usrsctp/usrsctplib/usrsctp.h",
+        USRSCTP_SOCKADDR_ORIGINAL,
+        USRSCTP_SOCKADDR_SWITCH,
+        "NXStream: libnx usa sockaddr no formato BSD",
         "substituir",
     ),
 ]
