@@ -64,3 +64,14 @@ jobs:
           name: nxstream-nro
           path: nxstream.nro
           if-no-files-found: error
+
+      # O .elf tem os símbolos: serve para traduzir os endereços de um crash
+      # report do Atmosphère (/atmosphere/crash_reports) em funções e linhas,
+      # com scripts/traduzir-crash.sh. Não é para instalar no Switch.
+      - name: Publicar o .elf (análise de crash)
+        uses: actions/upload-artifact@v5
+        with:
+          name: nxstream-elf-para-crash-reports
+          path: nxstream.elf
+          if-no-files-found: error
+          retention-days: 90
