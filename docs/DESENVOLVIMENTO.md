@@ -21,6 +21,15 @@ Para baixar: aba **Actions** → execução mais recente → seção **Artifacts
 2. Abra em **title mode**: segure **R** ao iniciar qualquer jogo instalado e escolha o NXStream no menu do homebrew. Pelo álbum (applet mode) o app tem pouca memória e o streaming não vai funcionar.
 3. Anote o resultado e, se algo der errado, mande o arquivo de log (ver abaixo).
 
+## Crash reports
+
+Quando o app fecha com erro, o Atmosphère salva um relatório em `/atmosphere/crash_reports/` no cartão SD. Para traduzir os endereços em funções e linhas:
+
+1. Baixe o artifact `nxstream-elf-para-crash-reports` do **mesmo** build do `.nro` que travou.
+2. Com o devkitPro instalado: `sh scripts/traduzir-crash.sh nxstream.elf <relatorio>.log`
+
+O script confere se o `Module Id` do relatório bate com o `.elf` antes de traduzir.
+
 ## Logs
 
 - **No cartão SD:** `/switch/nxstream/nxstream.log`, com horário de cada evento. O arquivo cresce a cada uso; pode ser apagado a qualquer momento.
@@ -127,7 +136,7 @@ Na lista, escolha o console com **A**. Depois de "Sessao pronta", a tela mostra 
 
 **v0.4.1:** nas 3 tentativas, o `POST /sdp` falhou com "Couldn't connect to server" no mesmo instante, enquanto o mesmo servidor tinha respondido a `/play` e `/state` logo antes. Causa provável (hipótese): a libjuice pede 1 MB + 1 MB de buffer para o socket UDP e esgota o poço de memória de sockets da libnx (~2,25 MB por padrão), sem sobrar para o socket TCP do curl. **v0.4.2:** poço de sockets dobrado (`sb_efficiency` 8), 6 sessões BSD, buffers da libjuice reduzidos no Switch (512 KB + 128 KB) e o log das falhas do curl passa a trazer a causa do sistema.
 
-**v0.4.2:** ✅ hipótese dos buffers confirmada: `/sdp` e `/ice` passaram (HTTP 202), o console respondeu com o SDP dele, anunciou o IP local (192.168.0.4:9002), e nas 3 tentativas **a conexão ICE e o handshake DTLS com o Xbox foram concluídos**. ❌ No passo seguinte, ao abrir o SCTP: erro `Could not bind usrsctp socket, errno=106` (EAFNOSUPPORT) numa tentativa, e o app fechou sozinho nas outras duas. Causa: a `struct sockaddr_conn` da usrsctp ficava no formato Linux enquanto a usrsctp e a libnx usam o formato BSD (`sa_len`), então AF_CONN era lido como "tamanho 123, família 0". **v0.4.3:** patch na `usrsctp.h` (formato BSD no Switch) e `HAVE_SCONN_LEN` em `compat.cmake`.
+**v0.4.2:** ✅ hipótese dos buffers confirmada: `/sdp` e `/ice` passaram (HTTP 202), o console respondeu com o SDP dele, anunciou o IP local (192.168.0.4:9002), e nas 3 tentativas **a conexão ICE e o handshake DTLS com o Xbox foram concluídos**. ❌ No passo seguinte, ao abrir o SCTP: erro `Could not bind usrsctp socket, errno=106` (EAFNOSUPPORT) numa tentativa, e o app fechou sozinho nas outras duas. Causa (confirmada pelo crash report do Atmosphère, traduzido com o `.elf` do mesmo build): a `struct sockaddr_conn` da usrsctp ficava no formato Linux enquanto a usrsctp (`HAVE_SA_LEN`) e a libnx usam o formato BSD, então AF_CONN (123) era lido como "tamanho 123, família 0". Em `usrsctp_register_address` → `sctp_add_addr_to_vrf`, o `memcpy(..., addr->sa_len)` copiava 123 bytes para um espaço de ~28: corrupção de memória, e o app caía na reserva de memória seguinte (`_malloc_r`, criando o `SctpTransport`). Quando não caía, o `bind` falhava com errno 106. **v0.4.3:** patch na `usrsctp.h` (formato BSD no Switch) e `HAVE_SCONN_LEN` em `compat.cmake`.
 
 Se alguma etapa falhar, mande o `nxstream.log`: ele contém a oferta, a resposta SDP do console, todos os candidatos e as mensagens dos canais.
 
