@@ -111,14 +111,14 @@ O que a imagem `devkitpro/devkita64` oferece:
 - libopus, libcurl 7.69 (TLS libnx), zlib, CMake 3.31 com `Switch.cmake`.
 - **mbedTLS 2.28**, mas a libdatachannel exige **3.x**.
 
-Resultados:
-1. **mbedTLS 3.6.2 compila** para o Switch com: `MBEDTLS_SSL_DTLS_SRTP`, sem `NET_C`/`TIMING_C`/`FS_IO`/armazenamento PSA, sem TLS 1.3, `MBEDTLS_FATAL_WARNINGS=OFF` (aviso novo do GCC 15), `MBEDTLS_PLATFORM_MS_TIME_ALT` e `MBEDTLS_ENTROPY_HARDWARE_ALT`. O app precisa fornecer `mbedtls_ms_time()` e `mbedtls_hardware_poll()`.
-2. **libdatachannel configura** com o toolchain, apontando os módulos de busca para o mbedTLS 3 (`MbedTLS_*` e `MBEDTLS_*` via `-D`).
-3. **Dependências que falham ao compilar:**
-   - usrsctp: falta `sys/uio.h`; tipos `u_int`/`u_long` não definidos (compila com `-std=c99 -pedantic`).
-   - libjuice: falta `ifaddrs.h` (`getifaddrs`, lista de interfaces de rede).
-   - libSRTP: `htons`/`ntohl`... sem declaração (`arpa/inet.h` não incluído).
-4. A parte C++ da libdatachannel ainda não foi alcançada.
+Resultado: ✅ **a libdatachannel compila inteira para o Switch**, com as três dependências (libjuice, libSRTP, usrsctp) e o mbedTLS 3.6.2, sem erros. Foram necessários:
+
+1. **mbedTLS 3.6.2** compilado pelo projeto (a imagem só tem a 2.28), com `MBEDTLS_SSL_DTLS_SRTP`; sem `NET_C`, `TIMING_C`, armazenamento PSA e TLS 1.3; com `MBEDTLS_FATAL_WARNINGS=OFF` (aviso novo do GCC 15), `MBEDTLS_PLATFORM_MS_TIME_ALT` e `MBEDTLS_ENTROPY_HARDWARE_ALT`. **`MBEDTLS_FS_IO` deve ficar ligado** (a libdatachannel lê certificados de arquivo). O app precisa fornecer `mbedtls_ms_time()` e `mbedtls_hardware_poll()`.
+2. **Caminhos do mbedTLS 3** passados via `-D` para os módulos de busca da libdatachannel (`MbedTLS_*`) e da libSRTP (`MBEDTLS_*`), para não pegar o 2.28 da imagem.
+3. **Camada `compat/`** (ver `compat/README.md`): `sys/uio.h`, `sys/socket.h` (`CMSG_ALIGN`), `errno.h` (`ERESTART`), `netinet/in.h`, `netinet/in_systm.h`, `netinet/ip.h`, `ifaddrs.h` + `getifaddrs()` com o IP do Switch, e `_DEFAULT_SOURCE` para os tipos BSD.
+4. **Um patch na usrsctp** (`compat/patches/aplicar.py`): gerador aleatório do Switch (`randomGet`).
+
+Próximo risco: compilar não garante funcionar. Threads, sockets e `poll()` da libnx ainda precisam ser testados em execução no console.
 
 Essas três dependências (usrsctp e libSRTP, além do mbedTLS) também são usadas pela libpeer, então a camada de compatibilidade serve aos dois caminhos.
 
