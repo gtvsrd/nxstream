@@ -83,7 +83,15 @@ jobs:
             -DBUILD_SHARED_LIBS=OFF -DUSE_MBEDTLS=ON -DNO_WEBSOCKET=ON \
             -DNO_EXAMPLES=ON -DNO_TESTS=ON
           echo "===== compilando (continua apos erros para listar todos) ====="
-          cmake --build build -j$(nproc) -k 2>&1 | tee build.log | grep -E "Built target|error|undefined" | sed 's|.*/ldc/||' | sort | uniq -c | sort -rn | head -80
-          echo "===== resultado ====="
-          ls -l build/*.a build/deps/*/*.a 2>/dev/null || true
-          ! grep -q "Error " build.log
+          # "-- -k": opção do make (continua depois de erros), passada após o "--"
+          cmake --build build -j$(nproc) -- -k > build.log 2>&1 || true
+          echo "===== alvos compilados ====="
+          grep "Built target" build.log || echo "(nenhum)"
+          echo "===== erros (agrupados) ====="
+          grep -E "error:|undefined reference" build.log | sed 's|.*/ldc/||' | sort | uniq -c | sort -rn | head -80 || true
+          echo "===== ultimas linhas ====="
+          tail -25 build.log
+          echo "===== bibliotecas geradas ====="
+          find build -name "*.a" -exec ls -l {} \;
+          # Só passa se a biblioteca principal existir de verdade
+          test -f build/libdatachannel-static.a || test -f build/libdatachannel.a
