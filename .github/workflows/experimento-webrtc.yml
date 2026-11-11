@@ -54,10 +54,13 @@ jobs:
           # O app fornece: mbedtls_ms_time() (relógio) e mbedtls_hardware_poll() (entropia do Switch)
           python3 scripts/config.py set MBEDTLS_PLATFORM_MS_TIME_ALT
           python3 scripts/config.py set MBEDTLS_ENTROPY_HARDWARE_ALT
+          # WebRTC usa DTLS 1.2; TLS 1.3 não é necessário
+          python3 scripts/config.py unset MBEDTLS_SSL_PROTO_TLS1_3
           cmake -B build -G "Unix Makefiles" \
             -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Switch.cmake \
             -DCMAKE_INSTALL_PREFIX=$PWD/../prefix \
-            -DENABLE_PROGRAMS=OFF -DENABLE_TESTING=OFF -DUSE_SHARED_MBEDTLS_LIBRARY=OFF
+            -DENABLE_PROGRAMS=OFF -DENABLE_TESTING=OFF -DUSE_SHARED_MBEDTLS_LIBRARY=OFF \
+            -DMBEDTLS_FATAL_WARNINGS=OFF
           cmake --build build -j$(nproc) 2>&1 | tail -40
           cmake --install build
 
