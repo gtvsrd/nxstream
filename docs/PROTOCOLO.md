@@ -90,6 +90,8 @@ Observações da fase 2a (Xbox Series X, rede local):
 - Console já ligado: pronta em ~5 s (contra ~11 s a partir do repouso).
 - v0.5.2: depois de **381 s** de sleep, o keepalive ainda respondeu HTTP 200 (sessão viva). Criar uma sessão nova logo em seguida levou **36 s** em `Provisioning` (contra 3–10 s normalmente): reaproveitar a sessão viva na reconexão (fase 4) evita essa espera.
 - Com a conexão WebRTC aberta, um sleep de 282 s derrubou a conexão (os sockets morrem no sleep), mas **a sessão continuou viva** (keepalive HTTP 200 logo ao acordar). Reconectar exige só refazer a negociação WebRTC, não uma sessão nova (fase 4).
+- **Corrigido pela v0.9.1 (fase 4): a sessão viva não aceita uma segunda conexão WebRTC.** Em 4 de 4 quedas (sleep de 276 s, 635 s e 6 h), a nova oferta SDP na mesma sessão recebeu `AgentNotListening: Cannot perform SDP exchange because the session is currently not listening for streaming client connect`, e as seguintes `HTTP 400 SessionInUnexpectedState (SdpRequest : Failed)`. Uma sessão nova, com o console já acordado, fica pronta em 2,5–3,4 s e conecta em ~3 s. Desde a v0.9.2 a reconexão encerra a sessão antiga e abre outra direto.
+- **O gsToken vence em 4 h** (`valido por 14400 s`, também usado no keepalive). Vencido, toda chamada responde `HTTP 401` com corpo vazio. Desde a v0.9.2 o app renova o token 15 min antes de vencer (numa thread, durante o streaming), antes de abrir cada sessão e sempre que recebe 401.
 
 Abrir uma sessão com o console em repouso o acorda apenas no modo de streaming: o LED não acende por completo e o HDMI/TV não é acionado. É o mesmo comportamento do app oficial; não existe comando separado de "ligar".
 

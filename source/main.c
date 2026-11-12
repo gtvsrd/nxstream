@@ -51,6 +51,9 @@ static XConsole g_console;               // console escolhido na lista
 static bool g_auto_conexao_feita = false; // já passou pela lista uma vez (conexão automática só na 1ª)
 static bool g_reconectando = false;      // fase 4: falhas na conexão viram nova tentativa, não tela de erro
 static bool g_chegou_a_conectar = false; // esta tentativa chegou a conectar (zera a contagem de tentativas)
+static time_t g_streaming_obtido = 0;    // quando o gsToken atual foi obtido (vale ~4 h)
+static bool g_forcar_renovacao = false;  // o servidor respondeu 401: renovar o gsToken antes da próxima chamada
+static AuthConta *g_conta = NULL;        // conta, para renovar o acesso durante o streaming
 #define LIMITE_SUSPENSAO_S 1.5               // quadro parado por mais que isso = suspensão
 
 // ---------------------------------------------------------------------------
@@ -335,9 +338,9 @@ static bool confirmar_sair_da_conta(void) {
     return esperar_botao(HidNpadButton_A | HidNpadButton_B) == HidNpadButton_A;
 }
 
-static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming, time_t streaming_obtido) {
+static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
     // gsToken vencendo (dura ~4 h): obtém outro antes de usar
-    if (streaming->duracao_s > 0 && time(NULL) - streaming_obtido > streaming->duracao_s - 120)
+    if (streaming->duracao_s > 0 && time(NULL) - g_streaming_obtido > streaming->duracao_s - 120)
         return PASSO_STREAMING;
 
     mostrar_aguarde("Procurando seus consoles...");
@@ -455,6 +458,12 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming, time_t stre
 
 // Tela de erro da sessão. Retorna o próximo passo.
 static Passo erro_sessao(const char *titulo, const char *detalhe) {
+    if (detalhe && strstr(detalhe, "HTTP 401"))
+        g_forcar_renovacao = true; // token recusado: renova antes da próxima tentativa
+    if (g_reconectando) { // fase 4: durante a reconexão, a falha vira nova tentativa
+        LOG("main: tentativa falhou: %s %s", titulo, detalhe ? detalhe : "");
+        return PASSO_RECONECTAR;
+    }
     cabecalho();
     printf(COR_ERRO "%s" COR_FIM "\n\n", titulo);
     if (detalhe && detalhe[0])
@@ -462,6 +471,112 @@ static Passo erro_sessao(const char *titulo, const char *detalhe) {
     printf("A = tentar de novo\nB = voltar para a lista\n+ = fechar o app\n");
     u64 b = esperar_botao(HidNpadButton_A | HidNpadButton_B | HidNpadButton_Plus);
     return b == HidNpadButton_A ? PASSO_SESSAO : b == HidNpadButton_B ? PASSO_LISTA : PASSO_SAIR;
+}
+
+// ---------------------------------------------------------------------------
+// Renovação do acesso ao streaming (v0.9.2). O gsToken vale ~4 h (log: "valido
+// por 14400 s"). Depois disso toda chamada à API responde HTTP 401: no log da
+// v0.9.1, ao acordar o Switch depois de 6 h, as 10 tentativas de reconexão
+// falharam assim. Agora o token é renovado antes de vencer: durante o streaming
+// numa thread (sem travar o vídeo) e antes de cada tentativa de reconexão.
+// ---------------------------------------------------------------------------
+#define RENOVAR_ANTES_S        900  // conectado: renova 15 min antes de vencer
+#define RENOVAR_ANTES_SESSAO_S 300  // antes de abrir uma sessão
+
+static bool streaming_vencendo(const AuthStreaming *s, int margem_s) {
+    if (g_forcar_renovacao)
+        return true;
+    return s->duracao_s > 0 && time(NULL) - g_streaming_obtido > s->duracao_s - margem_s;
+}
+
+// Renova a conta e obtém um gsToken novo em *novo (não mexe no atual)
+static AuthStatus obter_streaming_novo(AuthConta *conta, AuthStreaming *novo) {
+    AuthStatus st = auth_renovar(conta);
+    if (st == AUTH_OK) {
+        if (!auth_salvar_refresh(NX_ARQ_TOKEN, conta->refresh_token))
+            LOG("main: nao foi possivel salvar o token renovado");
+        st = auth_streaming(conta, novo);
+    }
+    return st;
+}
+
+static void keepalive_esperar(void);
+
+static void aplicar_streaming_novo(AuthStreaming *atual, AuthStreaming *novo) {
+    keepalive_esperar(); // o keepalive em voo lê o token atual
+    auth_streaming_liberar(atual);
+    *atual = *novo;
+    memset(novo, 0, sizeof *novo);
+    g_streaming_obtido = time(NULL);
+    g_forcar_renovacao = false;
+}
+
+// Antes de abrir uma sessão (inclusive ao reconectar): renova se estiver vencendo
+static void garantir_streaming(AuthConta *conta, AuthStreaming *s) {
+    if (!streaming_vencendo(s, RENOVAR_ANTES_SESSAO_S))
+        return;
+    LOG("main: acesso ao streaming %s (obtido ha %ld s); renovando",
+        g_forcar_renovacao ? "recusado (HTTP 401)" : "vencendo", (long)(time(NULL) - g_streaming_obtido));
+    mostrar_aguarde("Renovando o acesso ao Xbox Live...");
+    AuthStreaming novo = {0};
+    AuthStatus st = obter_streaming_novo(conta, &novo);
+    if (st == AUTH_OK) {
+        aplicar_streaming_novo(s, &novo);
+        LOG("main: acesso ao streaming renovado");
+    } else {
+        LOG("main: falha ao renovar o acesso (%s)", auth_ultimo_erro());
+        auth_streaming_liberar(&novo);
+    }
+}
+
+// Renovação em segundo plano enquanto conectado
+static struct {
+    pthread_t thread;
+    bool rodando;
+    volatile bool pronto;
+    AuthStatus st;
+    AuthStreaming novo;
+    double ultima_tentativa; // segundos desde o início da conexão
+} g_ren;
+
+static void *thread_renovacao(void *arg) {
+    (void)arg;
+    g_ren.st = obter_streaming_novo(g_conta, &g_ren.novo);
+    __atomic_store_n(&g_ren.pronto, true, __ATOMIC_RELEASE);
+    return NULL;
+}
+
+static void renovacao_disparar(void) {
+    if (g_ren.rodando || !g_conta)
+        return;
+    LOG("main: acesso ao streaming vencendo (obtido ha %ld s); renovando em segundo plano",
+        (long)(time(NULL) - g_streaming_obtido));
+    memset(&g_ren.novo, 0, sizeof g_ren.novo);
+    g_ren.pronto = false;
+    pthread_attr_t at;
+    pthread_attr_init(&at);
+    pthread_attr_setstacksize(&at, 256 * 1024); // curl + TLS
+    g_ren.rodando = pthread_create(&g_ren.thread, &at, thread_renovacao, NULL) == 0;
+    pthread_attr_destroy(&at);
+    if (!g_ren.rodando)
+        LOG("main: sem thread para renovar; fica para a proxima reconexao");
+}
+
+// Junta a thread (esperando, se `esperar`) e aplica o token novo
+static void renovacao_concluir(AuthStreaming *s, bool esperar) {
+    if (!g_ren.rodando)
+        return;
+    if (!esperar && !__atomic_load_n(&g_ren.pronto, __ATOMIC_ACQUIRE))
+        return;
+    pthread_join(g_ren.thread, NULL);
+    g_ren.rodando = false;
+    if (g_ren.st == AUTH_OK) {
+        aplicar_streaming_novo(s, &g_ren.novo);
+        LOG("main: acesso ao streaming renovado durante a conexao");
+    } else {
+        LOG("main: falha ao renovar o acesso (%s); nova tentativa em 1 min", auth_ultimo_erro());
+        auth_streaming_liberar(&g_ren.novo);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -558,7 +673,9 @@ static Passo falha_conexao(const AuthStreaming *s, const XSessao *sessao,
     LOG("main: conexao: %s %s", titulo, detalhe ? detalhe : "");
     modo_texto();
     conexao_encerrar();
-    if (g_reconectando) // fase 4: a sessão continua; passo_sessao tenta de novo
+    if (detalhe && strstr(detalhe, "HTTP 401"))
+        g_forcar_renovacao = true;
+    if (g_reconectando) // fase 4: passo_sessao tenta de novo com uma sessão nova
         return PASSO_RECONECTAR;
     encerrar_sessao(s, sessao);
     return erro_sessao(titulo, detalhe);
@@ -855,10 +972,22 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                     keepalive_marcar = keepalive_apos_sleep;
                     keepalive_apos_sleep = false;
                 }
+                // gsToken vencendo: renova em segundo plano (uma tentativa por minuto)
+                renovacao_concluir(streaming, false);
+                if (!g_ren.rodando && streaming_vencendo(streaming, RENOVAR_ANTES_S) &&
+                    (g_ren.ultima_tentativa <= 0 || agora - g_ren.ultima_tentativa >= 60.0 ||
+                     agora < g_ren.ultima_tentativa)) {
+                    g_ren.ultima_tentativa = agora;
+                    renovacao_disparar();
+                }
                 long st;
                 if (keepalive_resultado(&st)) {
                     status_keepalive = st;
                     if (st >= 200 && st < 300) ka_ok++; else ka_falhas++;
+                    if (st == 401) {
+                        LOG("main: keepalive recusado (HTTP 401): acesso vencido");
+                        g_forcar_renovacao = true;
+                    }
                     if (keepalive_marcar) {
                         size_t n = strlen(apos_sleep);
                         snprintf(apos_sleep + n, sizeof apos_sleep - n, ": keepalive HTTP %ld", st);
@@ -1234,8 +1363,7 @@ static Passo abrir_sessao(AuthConta *conta, AuthStreaming *streaming, XSessao *s
 // Espera antes de uma nova tentativa, mostrando o que está acontecendo.
 // Retorna PASSO_RECONECTAR para seguir, ou PASSO_LISTA/PASSO_SAIR.
 #define RECONEXAO_TENTATIVAS 5
-static Passo esperar_reconexao(const AuthStreaming *streaming, const XSessao *sessao, int tentativa, double espera,
-                               bool sessao_nova) {
+static Passo esperar_reconexao(int tentativa, double espera) {
     u64 inicio = armGetSystemTick();
     bool fechar = false;
     int ultimo = -1;
@@ -1248,74 +1376,81 @@ static Passo esperar_reconexao(const AuthStreaming *streaming, const XSessao *se
             ultimo = marca;
             cabecalho();
             printf(COR_DESTAQ "A conexao com %s caiu." COR_FIM "\n\n", g_console.nome);
-            printf("Reconectando em %.0f s (tentativa %d de %d%s)...\n\n", falta + 0.49, tentativa,
-                   RECONEXAO_TENTATIVAS, sessao_nova ? ", sessao nova" : "");
-            printf(COR_FRACA "A sessao com o console continua aberta; so a conexao e refeita." COR_FIM "\n\n");
+            printf("Reconectando em %.0f s (tentativa %d de %d)...\n\n", falta + 0.49, tentativa,
+                   RECONEXAO_TENTATIVAS);
+            printf(COR_FRACA "Uma sessao nova e aberta com o console (leva poucos segundos)." COR_FIM "\n\n");
             printf("B = desistir e voltar para a lista\n");
         }
         u64 b = quadro(&fechar);
-        if (fechar) {
-            keepalive_esperar();
-            xapi_sessao_encerrar(streaming, sessao);
+        if (fechar)
             return PASSO_SAIR;
-        }
-        if (b & HidNpadButton_B) {
-            encerrar_sessao(streaming, sessao);
+        if (b & HidNpadButton_B)
             return PASSO_LISTA;
-        }
     }
 }
 
-// Sessão + conexão, com reconexão automática (fase 4): se a conexão cair, refaz
-// só a conexão WebRTC na mesma sessão (até RECONEXAO_TENTATIVAS vezes, com espera
-// crescente); se não der, abre uma sessão nova e tenta de novo.
+// Sessão + conexão, com reconexão automática (fase 4).
+//
+// v0.9.2: a reconexão abre sempre uma sessão nova. No log da v0.9.1, refazer só a
+// conexão WebRTC na sessão antiga nunca funcionou (4 de 4 quedas): a 1ª oferta
+// recebe "AgentNotListening" e as seguintes "SessionInUnexpectedState"; cada
+// queda gastava ~25 s em 5 tentativas inúteis antes de abrir a sessão nova, que
+// fica pronta em 2-3 s com o console já acordado.
 static Passo passo_sessao(AuthConta *conta, AuthStreaming *streaming) {
     XSessao sessao;
     double tempo_preparo = 0;
+    g_conta = conta;
+    memset(&g_ren, 0, sizeof g_ren);
+    garantir_streaming(conta, streaming);
     Passo p = abrir_sessao(conta, streaming, &sessao, &tempo_preparo);
     if (p != PASSO_SESSAO)
         return p;
 
     int tentativa = 0;
-    bool sessao_nova = false; // já trocou de sessão nesta sequência de quedas
     for (;;) {
         g_reconectando = tentativa > 0;
         g_chegou_a_conectar = false;
         p = passo_conectar(streaming, &sessao, tempo_preparo, tentativa);
+        renovacao_concluir(streaming, true); // nada de thread mexendo na conta daqui em diante
+        g_ren.ultima_tentativa = 0;
         if (p != PASSO_RECONECTAR) {
             g_reconectando = false;
             return p;
         }
-        if (g_chegou_a_conectar) { // estava funcionando: recomeça a contagem
+        if (g_chegou_a_conectar) // estava funcionando: recomeça a contagem
             tentativa = 0;
-            sessao_nova = false;
-        }
-        tentativa++;
-        if (tentativa > RECONEXAO_TENTATIVAS) {
-            if (!sessao_nova) {
-                LOG("main: %d tentativas na mesma sessao falharam; abrindo uma sessao nova", RECONEXAO_TENTATIVAS);
-                keepalive_esperar();
-                xapi_sessao_encerrar(streaming, &sessao);
+
+        // Fecha a sessão antiga (não aceita outra conexão) e abre outra
+        keepalive_esperar();
+        xapi_sessao_encerrar(streaming, &sessao);
+        for (;;) {
+            tentativa++;
+            if (tentativa > RECONEXAO_TENTATIVAS) {
                 g_reconectando = false;
-                p = abrir_sessao(conta, streaming, &sessao, &tempo_preparo);
-                if (p != PASSO_SESSAO)
-                    return p;
-                sessao_nova = true;
-                tentativa = 1;
-                continue; // conecta já na sessão nova
+                return erro_sessao("Nao foi possivel reconectar ao console.",
+                                   "Confira o Wi-Fi do Switch e se o Xbox continua ligado ou em repouso.");
             }
-            g_reconectando = false;
-            encerrar_sessao(streaming, &sessao);
-            return erro_sessao("Nao foi possivel reconectar ao console.",
-                               "Confira o Wi-Fi do Switch e se o Xbox continua ligado ou em repouso.");
+            // 1ª tentativa na hora; depois 1, 2, 4, 8 s
+            if (tentativa > 1) {
+                double espera = (double)(1 << (tentativa - 2));
+                if (espera > 8) espera = 8;
+                p = esperar_reconexao(tentativa, espera);
+                if (p != PASSO_RECONECTAR) {
+                    g_reconectando = false;
+                    return p;
+                }
+            }
+            g_reconectando = true;
+            garantir_streaming(conta, streaming);
+            p = abrir_sessao(conta, streaming, &sessao, &tempo_preparo);
+            if (p == PASSO_SESSAO)
+                break;  // sessão pronta: conecta
+            if (p != PASSO_RECONECTAR) {
+                g_reconectando = false;
+                return p;
+            }
         }
-        double espera = tentativa == 1 ? 0.5 : (double)(1 << (tentativa - 2)); // 0,5 1 2 4 8 s
-        if (espera > 8) espera = 8;
-        p = esperar_reconexao(streaming, &sessao, tentativa, espera, sessao_nova);
-        if (p != PASSO_RECONECTAR) {
-            g_reconectando = false;
-            return p;
-        }
+        LOG("main: sessao nova pronta para a reconexao (tentativa %d)", tentativa);
     }
 }
 
@@ -1445,7 +1580,6 @@ int main(int argc, char *argv[]) {
     } else {
         AuthConta conta = {0};
         AuthStreaming streaming = {0};
-        time_t streaming_obtido = 0;
         bool recem_logada = false;
         const char *aviso_login = NULL;
         Passo passo = PASSO_INICIO;
@@ -1466,10 +1600,11 @@ int main(int argc, char *argv[]) {
                     auth_streaming_liberar(&streaming);
                     passo = passo_streaming(&conta, &streaming, recem_logada, &aviso_login);
                     recem_logada = false;
-                    streaming_obtido = time(NULL);
+                    g_streaming_obtido = time(NULL);
+                    g_forcar_renovacao = false;
                     break;
                 case PASSO_LISTA:
-                    passo = passo_lista(&conta, &streaming, streaming_obtido);
+                    passo = passo_lista(&conta, &streaming);
                     break;
                 case PASSO_SESSAO:
                     passo = passo_sessao(&conta, &streaming);

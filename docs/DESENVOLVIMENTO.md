@@ -273,6 +273,16 @@ Para usar no dia a dia. Quando a conexão cai, a tela mostra "A conexao com XBOX
 
 **v0.9.1:** se a conta tiver um só console, o app conecta sozinho na primeira vez que chega à lista (depois do login ou ao abrir o app): uma tela de 2 s mostra "Conectando a XBOX em 2 s..." com **A** = conectar agora e **B** = ficar na lista. Depois de desconectar, a lista não reconecta sozinha.
 
+**v0.9.2:** corrige o que o log da v0.9.1 mostrou:
+- Ao acordar depois de 6 h, todas as tentativas falhavam com HTTP 401: o acesso ao streaming vence em 4 h. Agora é renovado antes de vencer (durante o streaming, sem travar o vídeo) e antes de cada tentativa. No log: `main: acesso ao streaming ... renovando` e `renovado`.
+- Cada queda gastava ~25 s em 5 tentativas na sessão antiga, que nunca aceita uma conexão nova. Agora a reconexão abre uma sessão nova direto: deve levar ~6–8 s com o console acordado (mais se ele tiver voltado ao repouso). No log: `main: sessao nova pronta para a reconexao (tentativa N)`.
+
+| Teste (v0.9.2) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Repouso de 1–10 min e acordar | Vídeo volta em menos de ~10 s, na tentativa 1 | |
+| Repouso de uma noite | Renova o acesso e reconecta sozinho (pode levar ~25 s com o console em repouso) | |
+| Sessão de 4 h+ sem desligar a tela | Continua conectado; o log mostra a renovação em segundo plano por volta de 3h45 | |
+
 O log registra `main: conexao instavel (...)`, `main: conexao voltou sozinha em X s`, `main: ... reconectando`, `main: reconectado (tentativa N)` e, se for o caso, `abrindo uma sessao nova`.
 
 As próximas fases recebem seus checklists aqui quando começarem.
