@@ -4,5 +4,6 @@ build/
 *.elf
 *.map
 tests/test_parse
+tests/test_input
 tests/teste_token.json*
 deps/

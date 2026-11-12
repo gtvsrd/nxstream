@@ -361,10 +361,10 @@ falhar:
     return false;
 }
 
-void video_tela_desenhar(AVFrame *quadro) {
+long long video_tela_desenhar(AVFrame *quadro) {
     if (!g_ativa) {
         av_frame_free(&quadro);
-        return;
+        return -1;
     }
     int novo_mapa = -1;
     if (quadro) {
@@ -466,7 +466,9 @@ void video_tela_desenhar(AVFrame *quadro) {
         av_frame_free(&g_exibido); // o anterior já não está na tela
         g_exibido = quadro;
         g_mapa_atual = novo_mapa;
+        return quadro->pts == AV_NOPTS_VALUE ? -1 : (long long)quadro->pts;
     }
+    return -1;
 }
 
 void video_tela_encerrar(void) {

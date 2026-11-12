@@ -15,7 +15,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 #---------------------------------------------------------------------------------
 TARGET      := nxstream
 BUILD       := build
-SOURCES     := source source/core source/auth source/api source/net source/media source/ui compat/src third_party/cjson
+SOURCES     := source source/core source/auth source/api source/net source/media source/ui source/input compat/src third_party/cjson
 DATA        := data
 # Shaders GLSL da GPU (deko3d): compilados pelo uam e embutidos no executável
 SHADERS     := shaders
@@ -25,7 +25,7 @@ INCLUDES    := source deps/prefix/include compat/include third_party/cjson
 
 APP_TITLE   := NXStream
 APP_AUTHOR  := gtvsrd
-APP_VERSION := 0.7.3
+APP_VERSION := 0.8.0
 
 #---------------------------------------------------------------------------------
 # Flags de compilação
@@ -48,9 +48,15 @@ FFMPEG_LIBS := $(shell $(DEVKITPRO)/portlibs/switch/bin/aarch64-none-elf-pkg-con
 ifeq ($(strip $(FFMPEG_LIBS)),)
 FFMPEG_LIBS := -lavcodec -lavutil -lm
 endif
+# Opus (áudio, fase 3): libopus das portlibs se existir; senão o Opus nativo do FFmpeg
+OPUS_LIBS := $(shell $(DEVKITPRO)/portlibs/switch/bin/aarch64-none-elf-pkg-config --libs --static opus 2>/dev/null)
+ifneq ($(strip $(OPUS_LIBS)),)
+CFLAGS   += -DTEM_LIBOPUS
+CXXFLAGS += -DTEM_LIBOPUS
+endif
 LIBS     := -ldatachannel -lusrsctp -lsrtp2 -ljuice \
             -lmbedtls -lmbedx509 -lmbedcrypto \
-            $(FFMPEG_LIBS) \
+            $(FFMPEG_LIBS) $(OPUS_LIBS) \
             -lcurl -lz -ldeko3d -lnx
 # deps/prefix primeiro, pelo mesmo motivo dos cabeçalhos (mbedTLS 3 antes do 2.28)
 LIBDIRS  := $(TOPDIR)/deps/prefix $(PORTLIBS) $(LIBNX)

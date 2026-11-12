@@ -2,6 +2,7 @@
 #include "rtc_comum.h"
 #include "../core/log.h"
 #include "../media/decodificador.h"
+#include "../media/audio.h"
 #include "cJSON.h"
 
 #include <pthread.h>
@@ -151,11 +152,11 @@ static void enviar_handshake(void) {
 
 // Depois do HandshakeAck (docs/PROTOCOLO.md 3.4)
 static void apos_handshake(void) {
-    // 1. control: autorização e gamepad (o cliente oficial envia "adicionado" e "removido")
+    // 1. control: autorização e o controle 0 conectado (fase 3: fica conectado;
+    //    até a v0.7 o app também mandava "removido", como o cliente oficial sem controle)
     enviar_texto(CANAL_CONTROL,
                  "{\"message\":\"authorizationRequest\",\"accessKey\":\"4BDB3609-C1F1-4195-9B37-FEFF45DA8B8E\"}");
     enviar_texto(CANAL_CONTROL, "{\"message\":\"gamepadChanged\",\"gamepadIndex\":0,\"wasAdded\":true}");
-    enviar_texto(CANAL_CONTROL, "{\"message\":\"gamepadChanged\",\"gamepadIndex\":0,\"wasAdded\":false}");
 
     // 2. input: metadados do cliente (15 bytes, little-endian)
     uint8_t pacote[15];
@@ -320,11 +321,12 @@ static void ao_mensagem(int id, const char *dados, int tamanho, void *ptr) {
     int n = tamanho < 0 ? (int)strlen(dados) : tamanho;
 
     if (origem == ID_TRILHA_VIDEO || origem == ID_TRILHA_AUDIO) {
-        // Vídeo chega montado em quadros por ao_quadro(); aqui só o áudio
-        if (origem == ID_TRILHA_AUDIO) {
+        // Vídeo chega montado em quadros por ao_quadro(); aqui só o áudio (RTP com Opus)
+        if (origem == ID_TRILHA_AUDIO && tamanho >= 0) {
             pthread_mutex_lock(&g_trava);
             g_estado.pacotes_audio++;
             pthread_mutex_unlock(&g_trava);
+            audio_receber_rtp((const uint8_t *)dados, n);
         }
         return;
     }
@@ -359,7 +361,7 @@ static void ao_quadro(int tr, const char *dados, int tamanho, const rtcFrameInfo
     H264Quadro q;
     h264_analisar_quadro((const uint8_t *)dados, (size_t)tamanho, &q);
     double t = agora_s();
-    decod_enviar((const uint8_t *)dados, (size_t)tamanho, q.tem_idr); // fase 2c.2
+    decod_enviar((const uint8_t *)dados, (size_t)tamanho, q.tem_idr, info ? info->timestamp : 0);
 
     pthread_mutex_lock(&g_trava);
     bool primeiro = g_estado.quadros == 0;
@@ -397,6 +399,10 @@ static void ao_quadro(int tr, const char *dados, int tamanho, const rtcFrameInfo
             h264_nome_perfil(q.sps.perfil), q.sps.nivel / 10, q.sps.nivel % 10);
 }
 
+void conexao_enviar_input(const uint8_t *dados, size_t tamanho) {
+    enviar(CANAL_INPUT, dados, (int)tamanho);
+}
+
 void conexao_pedir_quadro_chave(void) {
     if (g_trilha_video < 0)
         return;
@@ -420,6 +426,7 @@ bool conexao_criar(void) {
     // Decodificador antes da conexão, para o primeiro quadro-chave não se perder.
     // Se falhar, a conexão segue (a tela mostra o motivo; o log também).
     decod_iniciar();
+    audio_iniciar(); // fase 3; sem som a conexão segue (o motivo vai para o log)
 
     rtcConfiguration cfg;
     memset(&cfg, 0, sizeof cfg);
@@ -542,8 +549,9 @@ void conexao_encerrar(void) {
         LOG("conexao: encerrada");
         g_pc = -1;
     }
-    // Depois da conexão: não chegam mais quadros para o decodificador
+    // Depois da conexão: não chegam mais quadros para o decodificador nem áudio
     decod_encerrar();
+    audio_encerrar();
     pthread_mutex_lock(&g_trava);
     free(g_oferta);
     g_oferta = NULL;

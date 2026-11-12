@@ -17,7 +17,8 @@ bool video_tela_iniciar(void);
 // Desenha um quadro de tela e espera a GPU terminar. `quadro`: novo quadro
 // decodificado (a função fica com ele) ou NULL para repetir o último.
 // Espera o próximo vsync, então ritma o laço principal em ~60 vezes por segundo.
-void video_tela_desenhar(struct AVFrame *quadro);
+// Retorna o timestamp RTP (pts) do quadro novo que foi para a tela, ou -1.
+long long video_tela_desenhar(struct AVFrame *quadro);
 // Solta os quadros e a GPU (devolve a janela para o console de texto)
 void video_tela_encerrar(void);
 bool video_tela_ativa(void);

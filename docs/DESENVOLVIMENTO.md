@@ -220,6 +220,26 @@ Controle do Switch ainda não age no Xbox nesta etapa (é a fase 3).
 | Tela escura do Xbox (fundo preto) por ~20 s | O log mostra os níveis reais do preto | |
 | Menu > Nivel de preto (16, 24, 32) | Dizer qual deixa o preto realmente preto sem apagar os detalhes escuros | |
 
+### Fase 3: controle e áudio (v0.8.0)
+
+Conecte ao console. Com o vídeo na tela, o controle do Switch passa a controlar o Xbox e o som do Xbox sai no Switch. O ajuste **Nivel de preto** (v0.7.3) continua no menu para o teste dos pretos.
+
+Mapeamento por posição, como no controle do Xbox: **B** do Switch = A, **A** = B, **Y** = X, **X** = Y; L/R = LB/RB; ZL/ZR = LT/RT; **+** = Menu, **−** = View; clique dos analógicos = LS/RS. O **botão Xbox** fica no menu do NXStream (+ e − por 1 s). O **B** não desconecta mais direto: desconectar e fechar ficam só no menu.
+
+| Teste | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Navegar no menu do Xbox (analógico, direcional, B = A do Xbox) | Responde na hora, sem botão "preso" | |
+| Gatilhos e bumpers (num jogo) | ZL/ZR e L/R funcionam | |
+| Botão Xbox (pelo menu do NXStream) | Abre o guia do Xbox | |
+| + sozinho e − sozinho | Menu e View do Xbox | |
+| Som | Sai o áudio do Xbox, sem chiado nem picotes | |
+| Atraso do som | Som junto com a imagem (sem eco perceptível) | |
+| Rajada de botões (apertar vários rápido por ~10 s) | A conexão não cai | |
+| Ficar 10+ minutos jogando | Não desconecta por inatividade (o pedido de desconexão de ~10 min da v0.6.0 some) | |
+| Menu aberto | O Xbox não recebe os botões enquanto o menu está aberto | |
+
+O log registra `audio: pronto (...)`, o primeiro pacote de áudio, `main: primeiro botao enviado ao Xbox` e, com as estatísticas ligadas, a linha de áudio (pacotes, perdidos, fila, faltas) e de controle (pacotes enviados).
+
 As próximas fases recebem seus checklists aqui quando começarem.
 
 ## Convenções

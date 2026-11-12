@@ -19,6 +19,7 @@ typedef struct {
     uint8_t *dados;
     size_t   tamanho;
     bool     chave;
+    uint32_t rtp;     // timestamp RTP do quadro (volta no quadro decodificado, em pts)
 } Item;
 
 static pthread_mutex_t g_trava = PTHREAD_MUTEX_INITIALIZER;
@@ -49,7 +50,7 @@ static void esvaziar_fila_trancada(void) {
     g_inicio = 0;
 }
 
-void decod_enviar(const uint8_t *dados, size_t tamanho, bool quadro_chave) {
+void decod_enviar(const uint8_t *dados, size_t tamanho, bool quadro_chave, uint32_t rtp) {
     pthread_mutex_lock(&g_trava);
     if (!g_rodando) {
         pthread_mutex_unlock(&g_trava);
@@ -84,7 +85,7 @@ void decod_enviar(const uint8_t *dados, size_t tamanho, bool quadro_chave) {
     if (quadro_chave)
         g_esperando_chave = false;
     int pos = (g_inicio + g_quantos) % FILA_TAMANHO;
-    g_fila[pos] = (Item){copia, tamanho, quadro_chave};
+    g_fila[pos] = (Item){copia, tamanho, quadro_chave, rtp};
     g_quantos++;
     g_estado.fila = g_quantos;
     pthread_cond_signal(&g_tem_item);
@@ -135,6 +136,7 @@ static void decodificar(Item *item) {
     g_pacote->data = item->dados;
     g_pacote->size = (int)item->tamanho;
     g_pacote->flags = item->chave ? AV_PKT_FLAG_KEY : 0;
+    g_pacote->pts = item->rtp; // o quadro decodificado traz de volta (pts) para os metadados do input
 
     u64 inicio = armGetSystemTick();
     int rc = avcodec_send_packet(g_ctx, g_pacote);

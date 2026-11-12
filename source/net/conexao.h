@@ -8,6 +8,8 @@
 // do estado com conexao_ler().
 #pragma once
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 #include "../api/xapi.h"
 #include "../media/h264_info.h"
 
@@ -55,6 +57,8 @@ void  conexao_encerrar(void);
 
 // Pede ao console um quadro-chave (envia PLI). Use com moderação.
 void  conexao_pedir_quadro_chave(void);
+// Envia um pacote binário no canal "input" (controle e metadados dos quadros; fase 3)
+void  conexao_enviar_input(const uint8_t *dados, size_t tamanho);
 
 const char *conexao_nome_canal(Canal c);
 const char *conexao_nome_estado(int estado);

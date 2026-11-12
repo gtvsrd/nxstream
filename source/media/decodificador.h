@@ -33,7 +33,8 @@ typedef struct {
 
 bool decod_iniciar(void);
 // Chamado pela thread de rede para cada quadro H.264 completo (Annex B)
-void decod_enviar(const uint8_t *dados, size_t tamanho, bool quadro_chave);
+// `rtp`: timestamp RTP do quadro; volta em AVFrame.pts do quadro decodificado
+void decod_enviar(const uint8_t *dados, size_t tamanho, bool quadro_chave, uint32_t rtp);
 void decod_ler(DecodEstado *copia);
 void decod_limpar_pedido_chave(void);
 // Quadro decodificado mais recente (AV_PIX_FMT_NVTEGRA), ou NULL se não chegou

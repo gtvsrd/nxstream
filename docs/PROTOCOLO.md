@@ -181,6 +181,23 @@ O keepalive (seção 2) só é aceito com a conexão aberta.
 - `message`: `HandshakeAck`, depois `Message` em `/streaming/properties/titleinfo` e `/streaming/touchcontrols/showlayoutv2`.
 - Vídeo: primeiro pacote RTP (44 bytes) logo após a conexão.
 
+## 4. Controle e áudio (fase 3)
+
+### 4.1 Controle (canal `input`)
+
+- No `control`, depois do `authorizationRequest`: `{"message":"gamepadChanged","gamepadIndex":0,"wasAdded":true}`. A partir da v0.8.0 o NXStream **não** manda mais o `wasAdded:false` logo em seguida (antes o controle aparecia e sumia).
+- No `input`, depois dos metadados do cliente (sequência 0), um pacote por quadro de tela (~60/s), sequência crescente a partir de 1. Little-endian:
+  - cabeçalho (14 bytes): `u16 tipos` (1 = metadados de quadro, 2 = controle; somados), `u32 sequência`, `f64 tempo em ms`;
+  - metadados (`tipos & 1`): `u8 n`, e para cada quadro exibido 7 × `u32`: chave = **timestamp RTP do quadro**, chegada, enviado, decodificado, exibido, agora, agora (ms);
+  - controle (`tipos & 2`): `u8 n`, e para cada controle 23 bytes: `u8 índice`, `u16 botões`, `s16` LX, LY, RX, RY (−32767..32767, y positivo = cima), `u16` LT, RT (0..65535), `u32 1` (little-endian) e `u32 1` (**big-endian**, como o cliente de referência grava).
+  - Botões: Nexus 2, Menu 4, View 8, A 16, B 32, X 64, Y 128, cima 256, baixo 512, esquerda 1024, direita 2048, LB 4096, RB 8192, LS 16384, RS 32768.
+- O cliente de referência só envia o controle junto com metadados de quadros exibidos (`requestVideoFrameCallback` com o `rtpTimestamp`); o NXStream faz igual, com o timestamp RTP que a libdatachannel entrega em cada quadro.
+- O console manda no `input` relatórios de vibração (`tipo 128`) e as dimensões do vídeo (`tipo 16`, os 10 bytes vistos na seção 3.7: altura e largura em `u32` a partir do byte 2). Vibração fica para a fase 5.
+
+### 4.2 Áudio
+
+- Trilha de áudio: RTP com Opus 48 kHz (`opus/48000/2`). Sem depacketizer na libdatachannel: o NXStream recebe o pacote RTP inteiro, pula o cabeçalho (12 bytes + CSRC + extensão), decodifica o Opus e toca pelo `audout` do Switch (48 kHz, 2 canais, 16 bits).
+
 ## Referências
 
 - [unknownskl/xbox-xcloud-player](https://github.com/unknownskl/xbox-xcloud-player): cliente de referência do protocolo (TypeScript). Principal fonte para API e formato do input.

@@ -25,6 +25,8 @@
 #include "net/conexao.h"
 #include "media/decodificador.h"
 #include "media/video_tela.h"
+#include "media/audio.h"
+#include "input/controle.h"
 #include "ui/sobreposicao.h"
 #include "net/rtc_comum.h"
 #include "net/rtc_diag.h"
@@ -528,14 +530,15 @@ static void linha_etapa(const char *nome, EtapaConexao atual, EtapaConexao esta,
 }
 
 // Menu do vídeo (+ e - segurados por 1 s)
-enum { MENU_VOLTAR, MENU_ESTATISTICAS, MENU_PRETO, MENU_DESCONECTAR, MENU_FECHAR, MENU_ITENS };
+enum { MENU_VOLTAR, MENU_XBOX, MENU_ESTATISTICAS, MENU_PRETO, MENU_DESCONECTAR, MENU_FECHAR, MENU_ITENS };
 
 static void desenhar_menu(int item, bool estatisticas) {
     char preto[40];
     snprintf(preto, sizeof preto, "Nivel de preto: %d%s", video_tela_nivel_preto(),
              video_tela_nivel_preto() == 16 ? " (padrao)" : "");
-    const char *nomes[MENU_ITENS] = {"Voltar ao jogo", estatisticas ? "Esconder estatisticas" : "Mostrar estatisticas",
-                                     preto, "Desconectar", "Fechar o app"};
+    const char *nomes[MENU_ITENS] = {"Voltar ao jogo", "Botao Xbox (guia)",
+                                     estatisticas ? "Esconder estatisticas" : "Mostrar estatisticas", preto,
+                                     "Desconectar", "Fechar o app"};
     const int x = 22, y = 15, largura = 36;
     // Cada linha é preenchida até a largura para o fundo da caixa ficar uniforme
     sobre_cursor(x, y);
@@ -605,6 +608,13 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
     int menu_item = 0;
     int nivel_preto = 0;
     double segurando_desde = -1;
+    // Controle (fase 3)
+    MetadadoQuadro metadados[INPUT_MAX_METADADOS];
+    int num_metadados = 0;
+    uint32_t seq_input = 0;       // o pacote de metadados do cliente (sequência 0) já foi pela conexão
+    unsigned long pacotes_input = 0;
+    double nexus_ate = 0;
+    bool primeiro_botao_logado = false;
     video_tela_ajuste_preto(0);
 
     for (;;) {
@@ -867,13 +877,21 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                            status_keepalive, (int)segundos_desde(ultimo_keepalive), ka_ok, ka_falhas);
                 if (apos_sleep[0])
                     tp("%s\n", apos_sleep);
+                AudioEstado a;
+                audio_ler(&a);
+                if (!a.ativo)
+                    tp("Audio: " COR_ERRO "desligado" COR_FIM " (detalhes no log)\n");
+                else
+                    tp("Audio: %s, %lu pacotes, %lu perdidos, fila %d ms, %lu faltas\n", a.descricao, a.pacotes,
+                       a.perdidos, a.fila_ms, a.faltas);
+                tp("Controle: %lu pacotes enviados ao Xbox\n", pacotes_input);
                 if (video_erro[0])
                     tp(COR_ERRO "Tela: %s" COR_FIM " (detalhes no log)\n", video_erro);
                 else if (!em_video)
                     tp(COR_FRACA "O video aparece assim que o primeiro quadro for decodificado." COR_FIM "\n");
             }
             if (em_video)
-                tp("\nSegure + e - por 1 s: menu   B = desconectar\n");
+                tp("\nSegure + e - por 1 s: menu (desconectar, fechar, botao Xbox)\n");
             else
                 tp("\nB = desconectar   + = desconectar e fechar\n");
         }
@@ -904,8 +922,13 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                 }
             }
         }
-        if (video_tela_ativa())
-            video_tela_desenhar(decod_pegar_quadro()); // espera o vsync
+        if (video_tela_ativa()) {
+            long long pts = video_tela_desenhar(decod_pegar_quadro()); // espera o vsync
+            if (pts >= 0 && num_metadados < INPUT_MAX_METADADOS) {
+                uint32_t ms = (uint32_t)(segundos_desde(inicio) * 1000.0);
+                metadados[num_metadados++] = (MetadadoQuadro){(uint32_t)pts, ms, ms, ms, ms};
+            }
+        }
 
         u64 b = quadro(&fechar);
         u64 segurados = padGetButtons(&g_controle);
@@ -946,7 +969,10 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                 } else if (b & HidNpadButton_A) {
                     menu_aberto = false;
                     menu_mudou = true;
-                    if (menu_item == MENU_PRETO) {
+                    if (menu_item == MENU_XBOX) {
+                        nexus_ate = agora + 0.25; // aperta o botão Xbox por 250 ms
+                        LOG("main: botao Xbox (guia)");
+                    } else if (menu_item == MENU_PRETO) {
                         // Alterna 16 -> 24 -> 32 e deixa o menu aberto para comparar
                         nivel_preto = (nivel_preto + 1) % 3;
                         video_tela_ajuste_preto(nivel_preto);
@@ -961,8 +987,30 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                         acao = 2;
                     }
                 }
-            } else if (!menu_aberto && (b & HidNpadButton_B)) {
-                acao = 1; // nesta fase o B continua desconectando direto
+            }
+
+            // --- Controle -> Xbox (fase 3): um pacote por quadro de tela, com os
+            // metadados dos quadros exibidos, como o cliente oficial
+            if (e.handshake_ok) {
+                EstadoControle c;
+                if (menu_aberto || esperar_soltar) {
+                    memset(&c, 0, sizeof c); // menu aberto: controle parado no Xbox
+                } else {
+                    controle_ler(&g_controle, &c);
+                    if (combinacao) // + e - juntos são do NXStream (menu), não do jogo
+                        c.botoes &= (uint16_t)~(XB_MENU | XB_VIEW);
+                }
+                if (agora < nexus_ate)
+                    c.botoes |= XB_NEXUS;
+                uint8_t pacote[INPUT_TAMANHO_MAX];
+                size_t n = pacote_input_montar(pacote, ++seq_input, agora * 1000.0, metadados, num_metadados, &c);
+                conexao_enviar_input(pacote, n);
+                num_metadados = 0;
+                pacotes_input++;
+                if (c.botoes && !primeiro_botao_logado) {
+                    primeiro_botao_logado = true;
+                    LOG("main: primeiro botao enviado ao Xbox (0x%04x)", c.botoes);
+                }
             }
         }
         if (acao) {

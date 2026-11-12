@@ -27,8 +27,8 @@ flowchart LR
 | `xbox_api` | `source/api/` | HTTPS para listar consoles, criar sessão, trocar SDP/ICE, keepalive, encerrar |
 | `webrtc` | `source/net/` | Conexão com o console, DTLS/SRTP, canais de dados |
 | `video` | `source/media/` | `h264_info`: tipos de NAL, quadro-chave e resolução (SPS), testado no PC. `decodificador`: fila de até 8 quadros e thread própria que decodifica pelo NVDEC (FFmpeg do devkitPro, `AV_HWDEVICE_TYPE_NVTEGRA`); se a fila encher, descarta até o próximo quadro-chave e pede um ao console; o quadro pronto mais recente fica guardado para a tela. `video_tela`: desenho pela GPU com o deko3d; a memória de cada quadro do NVDEC vira um bloco da GPU (luma R8 + croma RG8 no layout de vídeo, sem cópia, como no Moonlight-Switch) e um shader converte NV12 → RGB (BT.709/601). Os shaders ficam em `shaders/`, compilados pelo `uam` no build e embutidos no executável |
-| `audio` | `source/media/` | Decodificação Opus e saída de som |
-| `input` | `source/input/` | Leitura do controle, mapeamento, envio em ritmo fixo, vibração |
+| `audio` | `source/media/` | `audio`: RTP → Opus (libopus se o build encontrar; senão o Opus do FFmpeg) → fila de até 200 ms (mantida perto de 60 ms) → thread de saída com blocos de 20 ms no `audout` |
+| `input` | `source/input/` | `controle`: botões e analógicos do Switch → controle do Xbox, por posição (B do Switch = A do Xbox). `pacote_input`: monta o pacote do canal `input` (testado no PC). Um pacote por quadro de tela, com os metadados dos quadros exibidos. Depois: vibração e mapeamento configurável (fase 5) |
 | `session` | `source/session/` | Máquina de estados que coordena tudo, incluindo reconexão |
 | `ui` | `source/ui/` | Telas em texto (console do libnx): login, lista de consoles, status, erros. `sobreposicao`: terminal 80x45 com a mesma fonte e cores do console, desenhado numa imagem RGBA por cima do vídeo (estatísticas, menu, avisos) |
 

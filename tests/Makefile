@@ -15,8 +15,12 @@ all: run
 test_parse: $(FONTES)
 	$(CC) $(CFLAGS) -o $@ $(FONTES)
 
-run: test_parse
+test_input: test_input.c ../source/input/pacote_input.c
+	$(CC) $(CFLAGS) -o $@ test_input.c ../source/input/pacote_input.c
+
+run: test_parse test_input
 	./test_parse
+	./test_input
 
 clean:
-	rm -f test_parse teste_token.json teste_token.json.tmp
+	rm -f test_parse test_input teste_token.json teste_token.json.tmp
