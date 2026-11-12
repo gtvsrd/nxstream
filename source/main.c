@@ -15,6 +15,7 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <switch.h>
+#include <rtc/rtc.h> // estados da conexão (RTC_CONNECTED...) para a reconexão
 
 #include "api/config.h"
 #include "api/xapi.h"
@@ -38,7 +39,8 @@
 #define COR_FRACA   "\x1b[37m"
 #define COR_FIM     "\x1b[0m"
 
-typedef enum { PASSO_INICIO, PASSO_LOGIN, PASSO_STREAMING, PASSO_LISTA, PASSO_SESSAO, PASSO_DIAG, PASSO_SAIR } Passo;
+typedef enum { PASSO_INICIO, PASSO_LOGIN, PASSO_STREAMING, PASSO_LISTA, PASSO_SESSAO, PASSO_DIAG, PASSO_SAIR,
+               PASSO_RECONECTAR } Passo; // PASSO_RECONECTAR: só entre passo_conectar e passo_sessao
 
 static PadState g_controle;
 static u64 g_tick_anterior;
@@ -46,6 +48,8 @@ static double g_ultimo_congelamento = 0; // segundos suspenso no último sleep/H
 static bool g_retorno_pendente = false;   // sistema avisou que o app voltou a rodar
 static bool g_em_foco = true;             // último estado de foco conhecido
 static XConsole g_console;               // console escolhido na lista
+static bool g_reconectando = false;      // fase 4: falhas na conexão viram nova tentativa, não tela de erro
+static bool g_chegou_a_conectar = false; // esta tentativa chegou a conectar (zera a contagem de tentativas)
 #define LIMITE_SUSPENSAO_S 1.5               // quadro parado por mais que isso = suspensão
 
 // ---------------------------------------------------------------------------
@@ -516,8 +520,18 @@ static Passo falha_conexao(const AuthStreaming *s, const XSessao *sessao,
     LOG("main: conexao: %s %s", titulo, detalhe ? detalhe : "");
     modo_texto();
     conexao_encerrar();
+    if (g_reconectando) // fase 4: a sessão continua; passo_sessao tenta de novo
+        return PASSO_RECONECTAR;
     encerrar_sessao(s, sessao);
     return erro_sessao(titulo, detalhe);
+}
+
+// A conexão caiu depois de conectada: solta a tela e a conexão (a sessão continua)
+static Passo cair_para_reconexao(const char *motivo) {
+    LOG("main: %s; reconectando", motivo);
+    modo_texto();
+    conexao_encerrar();
+    return PASSO_RECONECTAR;
 }
 
 static void linha_etapa(const char *nome, EtapaConexao atual, EtapaConexao esta, double t, const char *extra) {
@@ -565,8 +579,14 @@ static void desenhar_aviso_menu(void) {
     sobre_printf("%s", t);
 }
 
-static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double tempo_preparo) {
-    mostrar_aguarde("Montando a conexao com o console...");
+static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double tempo_preparo, int tentativa) {
+    if (tentativa > 0) {
+        char t[96];
+        snprintf(t, sizeof t, "Reconectando ao console (tentativa %d)...", tentativa);
+        mostrar_aguarde(t);
+    } else {
+        mostrar_aguarde("Montando a conexao com o console...");
+    }
     if (!conexao_criar()) {
         ConexaoEstado e;
         conexao_ler(&e);
@@ -610,6 +630,7 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
     uint32_t seq_input = 0;       // o pacote de metadados do cliente (sequência 0) já foi pela conexão
     unsigned long pacotes_input = 0;
     double nexus_ate = 0, menu_xbox_ate = 0;
+    double t_queda = -1; // fase 4: quando a conexão saiu de "conectado" (-1 = está conectada)
     double mais_desde = -1, menos_desde = -1; // atalho do botão Xbox (+ segurado, clique no -)
     bool mais_em_atalho = false;
     bool primeiro_botao_logado = false;
@@ -692,6 +713,9 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                 if (e.conectado) {
                     t_etapa[ET_CONECTANDO] = e.t_conectado;
                     etapa = ET_CONECTADO;
+                    g_chegou_a_conectar = true;
+                    if (tentativa > 0)
+                        LOG("main: reconectado (tentativa %d)", tentativa);
                     ultimo_keepalive = armGetSystemTick();
                     g_ultimo_congelamento = 0;
                     LOG("main: conectado ao console em %.2f s", e.t_conectado);
@@ -755,12 +779,29 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                         ultimo_pedido_chave = agora;
                     }
                 }
-                if (e.caiu) {
-                    // Reconexão automática é a fase 4; por ora mostra e registra o motivo
-                    char det[96];
-                    snprintf(det, sizeof det, "Estado: %s. A reconexao automatica chega na fase 4.",
-                             conexao_nome_estado(e.estado));
-                    return falha_conexao(streaming, sessao, "A conexao com o console caiu.", det);
+                // Fase 4: queda. "desconectado" pode voltar sozinho em poucos segundos
+                // (oscilação do Wi-Fi); "falhou"/"fechado" ou mais de 4 s fora = reconectar.
+                if (e.estado != RTC_CONNECTED) {
+                    if (t_queda < 0) {
+                        t_queda = agora;
+                        LOG("main: conexao instavel (%s); aguardando", conexao_nome_estado(e.estado));
+                    }
+                    if (e.estado == RTC_FAILED || e.estado == RTC_CLOSED || agora - t_queda > 4.0) {
+                        char m[96];
+                        snprintf(m, sizeof m, "conexao caiu (%s ha %.1f s)", conexao_nome_estado(e.estado),
+                                 agora - t_queda);
+                        return cair_para_reconexao(m);
+                    }
+                } else if (t_queda >= 0) {
+                    LOG("main: conexao voltou sozinha em %.1f s", agora - t_queda);
+                    t_queda = -1;
+                }
+                // Voltou do repouso: as conexões de rede morreram no sleep; refaz já
+                if (g_ultimo_congelamento > 2.0) {
+                    char m[96];
+                    snprintf(m, sizeof m, "voltou de %.0f s em repouso", g_ultimo_congelamento);
+                    g_ultimo_congelamento = 0;
+                    return cair_para_reconexao(m);
                 }
                 bool forcar = false;
                 if (g_ultimo_congelamento > 0) {
@@ -926,7 +967,12 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                 }
             }
         }
-        if (video_tela_ativa()) {
+        if (video_tela_ativa() && !g_em_foco) {
+            // HOME (fase 4): o app segue rodando em segundo plano; sem desenhar,
+            // mas mantendo conexão, keepalive e som. Solta os quadros e ritma o laço.
+            decod_liberar_quadro(decod_pegar_quadro());
+            svcSleepThread(16000000ULL);
+        } else if (video_tela_ativa()) {
             long long pts = video_tela_desenhar(decod_pegar_quadro()); // espera o vsync
             if (pts >= 0 && num_metadados < INPUT_MAX_METADADOS) {
                 uint32_t ms = (uint32_t)(segundos_desde(inicio) * 1000.0);
@@ -1014,8 +1060,8 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
             // metadados dos quadros exibidos, como o cliente oficial
             if (e.handshake_ok) {
                 EstadoControle c;
-                if (menu_aberto || esperar_soltar) {
-                    memset(&c, 0, sizeof c); // menu aberto: controle parado no Xbox
+                if (menu_aberto || esperar_soltar || !g_em_foco) {
+                    memset(&c, 0, sizeof c); // menu aberto ou HOME: controle parado no Xbox
                 } else {
                     controle_ler(&g_controle, &c);
                     // + só vira Menu do Xbox depois de 0,3 s sem o - (ou num toque rápido,
@@ -1050,7 +1096,9 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
     }
 }
 
-static Passo passo_sessao(AuthConta *conta, AuthStreaming *streaming) {
+// Abre a sessão e espera ela ficar pronta. Retorna PASSO_SESSAO se deu certo
+// (ou o passo seguinte: erro, lista, sair).
+static Passo abrir_sessao(AuthConta *conta, AuthStreaming *streaming, XSessao *sessao_saida, double *preparo) {
     char texto[160];
     snprintf(texto, sizeof texto, "Abrindo sessao com %s...", g_console.nome);
     mostrar_aguarde(texto);
@@ -1139,11 +1187,98 @@ static Passo passo_sessao(AuthConta *conta, AuthStreaming *streaming) {
         }
     }
 
-    double tempo_preparo = segundos_desde(inicio);
-    LOG("main: sessao pronta em %.1f s", tempo_preparo);
+    *preparo = segundos_desde(inicio);
+    *sessao_saida = sessao;
+    LOG("main: sessao pronta em %.1f s", *preparo);
+    return PASSO_SESSAO;
+}
 
-    // --- 2. Sessão pronta: conecta ao console (fase 2b) ---------------------
-    return passo_conectar(streaming, &sessao, tempo_preparo);
+// Espera antes de uma nova tentativa, mostrando o que está acontecendo.
+// Retorna PASSO_RECONECTAR para seguir, ou PASSO_LISTA/PASSO_SAIR.
+#define RECONEXAO_TENTATIVAS 5
+static Passo esperar_reconexao(const AuthStreaming *streaming, const XSessao *sessao, int tentativa, double espera,
+                               bool sessao_nova) {
+    u64 inicio = armGetSystemTick();
+    bool fechar = false;
+    int ultimo = -1;
+    for (;;) {
+        double falta = espera - segundos_desde(inicio);
+        if (falta <= 0)
+            return PASSO_RECONECTAR;
+        int marca = (int)(falta * 4);
+        if (marca != ultimo) {
+            ultimo = marca;
+            cabecalho();
+            printf(COR_DESTAQ "A conexao com %s caiu." COR_FIM "\n\n", g_console.nome);
+            printf("Reconectando em %.0f s (tentativa %d de %d%s)...\n\n", falta + 0.49, tentativa,
+                   RECONEXAO_TENTATIVAS, sessao_nova ? ", sessao nova" : "");
+            printf(COR_FRACA "A sessao com o console continua aberta; so a conexao e refeita." COR_FIM "\n\n");
+            printf("B = desistir e voltar para a lista\n");
+        }
+        u64 b = quadro(&fechar);
+        if (fechar) {
+            keepalive_esperar();
+            xapi_sessao_encerrar(streaming, sessao);
+            return PASSO_SAIR;
+        }
+        if (b & HidNpadButton_B) {
+            encerrar_sessao(streaming, sessao);
+            return PASSO_LISTA;
+        }
+    }
+}
+
+// Sessão + conexão, com reconexão automática (fase 4): se a conexão cair, refaz
+// só a conexão WebRTC na mesma sessão (até RECONEXAO_TENTATIVAS vezes, com espera
+// crescente); se não der, abre uma sessão nova e tenta de novo.
+static Passo passo_sessao(AuthConta *conta, AuthStreaming *streaming) {
+    XSessao sessao;
+    double tempo_preparo = 0;
+    Passo p = abrir_sessao(conta, streaming, &sessao, &tempo_preparo);
+    if (p != PASSO_SESSAO)
+        return p;
+
+    int tentativa = 0;
+    bool sessao_nova = false; // já trocou de sessão nesta sequência de quedas
+    for (;;) {
+        g_reconectando = tentativa > 0;
+        g_chegou_a_conectar = false;
+        p = passo_conectar(streaming, &sessao, tempo_preparo, tentativa);
+        if (p != PASSO_RECONECTAR) {
+            g_reconectando = false;
+            return p;
+        }
+        if (g_chegou_a_conectar) { // estava funcionando: recomeça a contagem
+            tentativa = 0;
+            sessao_nova = false;
+        }
+        tentativa++;
+        if (tentativa > RECONEXAO_TENTATIVAS) {
+            if (!sessao_nova) {
+                LOG("main: %d tentativas na mesma sessao falharam; abrindo uma sessao nova", RECONEXAO_TENTATIVAS);
+                keepalive_esperar();
+                xapi_sessao_encerrar(streaming, &sessao);
+                g_reconectando = false;
+                p = abrir_sessao(conta, streaming, &sessao, &tempo_preparo);
+                if (p != PASSO_SESSAO)
+                    return p;
+                sessao_nova = true;
+                tentativa = 1;
+                continue; // conecta já na sessão nova
+            }
+            g_reconectando = false;
+            encerrar_sessao(streaming, &sessao);
+            return erro_sessao("Nao foi possivel reconectar ao console.",
+                               "Confira o Wi-Fi do Switch e se o Xbox continua ligado ou em repouso.");
+        }
+        double espera = tentativa == 1 ? 0.5 : (double)(1 << (tentativa - 2)); // 0,5 1 2 4 8 s
+        if (espera > 8) espera = 8;
+        p = esperar_reconexao(streaming, &sessao, tentativa, espera, sessao_nova);
+        if (p != PASSO_RECONECTAR) {
+            g_reconectando = false;
+            return p;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1254,7 +1389,8 @@ int main(int argc, char *argv[]) {
 
     AppletHookCookie cookie;
     appletHook(&cookie, ao_evento_do_sistema, NULL);
-    appletSetFocusHandlingMode(AppletFocusHandlingMode_SuspendHomeSleepNotify);
+    // Fase 4: HOME não pausa o app (o stream continua); o repouso pausa sempre.
+    appletSetFocusHandlingMode(AppletFocusHandlingMode_NoSuspend);
 
     http_definir_ao_terminar(ao_terminar_http);
 

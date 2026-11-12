@@ -259,6 +259,20 @@ O log registra `audio: pronto (...)`, o primeiro pacote de áudio, `main: primei
 |---|---|---|
 | Jogar 15+ minutos | Sem pulos no som fora das oscilações da rede; "cortados ms" em 0 e a fila perto de 40 ms no log | |
 
+### Fase 4: reconexão e HOME sem pausar (v0.9.0)
+
+Para usar no dia a dia. Quando a conexão cai, a tela mostra "A conexao com XBOX caiu. Reconectando em N s (tentativa X de 5)..." e o vídeo volta sozinho; **B** nessa tela desiste e volta para a lista.
+
+| Teste | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Apertar HOME, esperar ~30 s, voltar | Vídeo volta na hora, sem reconectar (o som pode continuar tocando no HOME) | |
+| Colocar o Switch em repouso por 1–5 min e acordar | Reconecta sozinho em poucos segundos e o vídeo volta | |
+| Repouso longo (30+ min) | Reconecta (se a sessão tiver expirado, abre uma sessão nova sozinho) | |
+| Wi-Fi caindo por alguns segundos (ex.: sair de perto do roteador) | Se voltar em até 4 s, segue sem reconectar; senão reconecta | |
+| Sessão longa (1 h+) | Continua conectado | |
+
+O log registra `main: conexao instavel (...)`, `main: conexao voltou sozinha em X s`, `main: ... reconectando`, `main: reconectado (tentativa N)` e, se for o caso, `abrindo uma sessao nova`.
+
 As próximas fases recebem seus checklists aqui quando começarem.
 
 ## Convenções

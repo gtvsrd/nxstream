@@ -39,8 +39,8 @@ Cada fase termina com um `.nro` testado no Switch antes de seguir para a próxim
 | **2c.1** | Quadros: montar os quadros H.264 dos pacotes RTP e ler a resolução | Quadros por segundo estáveis, quadros-chave chegando, resolução lida | ✅ Concluída (v0.5.2): 1280x720 a 60 quadros/s, ~4,5 Mbps, estável por quase 10 min |
 | **2c.2** | Decodificação: quadros no chip de vídeo do Switch (FFmpeg com NVDEC) | Quadros decodificados por segundo = recebidos, tempo de decodificação baixo | ✅ Concluída (v0.6.0): 59–61 decodificados/s, ~2 ms por quadro no NVDEC, estável por ~11 min |
 | **2c.3** | Imagem: desenhar os quadros na tela (GPU) | A tela do Xbox aparece no Switch (sem controle e sem som) | ✅ v0.7.2: imagem certa, menu e estatísticas, 8+ min sem travadas (nível de preto em teste junto com a fase 3) |
-| **3** | Controle + áudio | Jogar normalmente; teste de rajada de botões sem queda | 🧪 v0.8.0 em teste |
-| **4** | Reconexão completa + HOME sem pausar | Sleep/resume, queda do Wi-Fi por alguns segundos e sessão longa (1h+) sem fechar o app; apertar HOME e voltar sem perder a conexão | — |
+| **3** | Controle + áudio | Jogar normalmente; teste de rajada de botões sem queda | ✅ v0.8.1: 21 min jogando, controle e botão Xbox, som até o fim, sem quedas (v0.8.2: áudio sem cortes por diferença de relógio) |
+| **4** | Reconexão completa + HOME sem pausar | Sleep/resume, queda do Wi-Fi por alguns segundos e sessão longa (1h+) sem fechar o app; apertar HOME e voltar sem perder a conexão | 🧪 v0.9.0 em teste (uso no dia a dia) |
 | **5** | Vibração, configurações (qualidade, deadzone, mapeamento), acabamento | Uso normal do dia a dia | — |
 
 A fase 2 é a mais pesada e arriscada, porque junta WebRTC, criptografia e decodificação de vídeo. Por isso foi dividida em 2a, 2b e 2c.

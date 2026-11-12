@@ -42,4 +42,6 @@ void decod_limpar_pedido_chave(void);
 // nenhum novo. Quem chama fica com ele (av_frame_free quando não precisar mais).
 struct AVFrame;
 struct AVFrame *decod_pegar_quadro(void);
+// Solta um quadro de decod_pegar_quadro() sem desenhar (ex.: app em segundo plano). Aceita NULL.
+void decod_liberar_quadro(struct AVFrame *quadro);
 void decod_encerrar(void);

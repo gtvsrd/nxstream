@@ -327,6 +327,10 @@ AVFrame *decod_pegar_quadro(void) {
     return f;
 }
 
+void decod_liberar_quadro(AVFrame *f) {
+    av_frame_free(&f);
+}
+
 void decod_limpar_pedido_chave(void) {
     pthread_mutex_lock(&g_trava);
     g_estado.precisa_chave = false;
