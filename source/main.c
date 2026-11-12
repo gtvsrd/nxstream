@@ -48,6 +48,7 @@ static double g_ultimo_congelamento = 0; // segundos suspenso no último sleep/H
 static bool g_retorno_pendente = false;   // sistema avisou que o app voltou a rodar
 static bool g_em_foco = true;             // último estado de foco conhecido
 static XConsole g_console;               // console escolhido na lista
+static bool g_auto_conexao_feita = false; // já passou pela lista uma vez (conexão automática só na 1ª)
 static bool g_reconectando = false;      // fase 4: falhas na conexão viram nova tentativa, não tela de erro
 static bool g_chegou_a_conectar = false; // esta tentativa chegou a conectar (zera a contagem de tentativas)
 #define LIMITE_SUSPENSAO_S 1.5               // quadro parado por mais que isso = suspensão
@@ -351,6 +352,42 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming, time_t stre
         return b == HidNpadButton_Plus || b == 0 ? PASSO_SAIR : PASSO_LISTA;
     }
 
+    // Só um console na conta: na primeira vez depois do login/abertura do app,
+    // conecta sozinho (2 s para desistir com B). Depois de desconectar, a lista
+    // fica parada como antes.
+    if (!g_auto_conexao_feita && consoles.total == 1) {
+        g_auto_conexao_feita = true;
+        const XConsole *x = &consoles.itens[0];
+        u64 inicio = armGetSystemTick();
+        bool fechar = false;
+        int ultimo = -1;
+        for (;;) {
+            double falta = 2.0 - segundos_desde(inicio);
+            if (falta <= 0) {
+                g_console = *x;
+                LOG("main: console escolhido automaticamente (unico na conta): %s (%s)", g_console.nome,
+                    g_console.estado);
+                return PASSO_SESSAO;
+            }
+            if ((int)(falta * 4) != ultimo) {
+                ultimo = (int)(falta * 4);
+                cabecalho();
+                printf("Conectando a " COR_DESTAQ "%s" COR_FIM " (%s, %s) em %.0f s...\n\n", x->nome,
+                       xapi_tipo_amigavel(x->tipo), xapi_estado_amigavel(x->estado), falta + 0.49);
+                printf(COR_FRACA "E o unico console da conta: a conexao e automatica." COR_FIM "\n\n");
+                printf("A = conectar agora   B = ficar na lista\n");
+            }
+            u64 b = quadro(&fechar);
+            if (fechar)
+                return PASSO_SAIR;
+            if (b & HidNpadButton_A)
+                inicio = armGetSystemTick() - armNsToTicks(3000000000ULL); // já
+            if (b & HidNpadButton_B)
+                break;
+        }
+    }
+    g_auto_conexao_feita = true;
+
     int sel = 0;
     const char *mensagem = NULL;
     for (;;) {
@@ -395,6 +432,7 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming, time_t stre
             auth_apagar(NX_ARQ_TOKEN);
             auth_conta_liberar(conta);
             LOG("main: usuario saiu da conta");
+            g_auto_conexao_feita = false; // depois do próximo login, conecta sozinho de novo
             return PASSO_LOGIN;
         }
         if ((b & HidNpadButton_AnyUp) && sel > 0)

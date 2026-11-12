@@ -271,6 +271,8 @@ Para usar no dia a dia. Quando a conexão cai, a tela mostra "A conexao com XBOX
 | Wi-Fi caindo por alguns segundos (ex.: sair de perto do roteador) | Se voltar em até 4 s, segue sem reconectar; senão reconecta | |
 | Sessão longa (1 h+) | Continua conectado | |
 
+**v0.9.1:** se a conta tiver um só console, o app conecta sozinho na primeira vez que chega à lista (depois do login ou ao abrir o app): uma tela de 2 s mostra "Conectando a XBOX em 2 s..." com **A** = conectar agora e **B** = ficar na lista. Depois de desconectar, a lista não reconecta sozinha.
+
 O log registra `main: conexao instavel (...)`, `main: conexao voltou sozinha em X s`, `main: ... reconectando`, `main: reconectado (tentativa N)` e, se for o caso, `abrindo uma sessao nova`.
 
 As próximas fases recebem seus checklists aqui quando começarem.
