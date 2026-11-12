@@ -528,11 +528,14 @@ static void linha_etapa(const char *nome, EtapaConexao atual, EtapaConexao esta,
 }
 
 // Menu do vídeo (+ e - segurados por 1 s)
-enum { MENU_VOLTAR, MENU_ESTATISTICAS, MENU_DESCONECTAR, MENU_FECHAR, MENU_ITENS };
+enum { MENU_VOLTAR, MENU_ESTATISTICAS, MENU_PRETO, MENU_DESCONECTAR, MENU_FECHAR, MENU_ITENS };
 
 static void desenhar_menu(int item, bool estatisticas) {
+    char preto[40];
+    snprintf(preto, sizeof preto, "Nivel de preto: %d%s", video_tela_nivel_preto(),
+             video_tela_nivel_preto() == 16 ? " (padrao)" : "");
     const char *nomes[MENU_ITENS] = {"Voltar ao jogo", estatisticas ? "Esconder estatisticas" : "Mostrar estatisticas",
-                                     "Desconectar", "Fechar o app"};
+                                     preto, "Desconectar", "Fechar o app"};
     const int x = 22, y = 15, largura = 36;
     // Cada linha é preenchida até a largura para o fundo da caixa ficar uniforme
     sobre_cursor(x, y);
@@ -600,7 +603,9 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
     bool menu_aberto = false, menu_mudou = false, esperar_soltar = false;
     bool mostrar_estatisticas = false;
     int menu_item = 0;
+    int nivel_preto = 0;
     double segurando_desde = -1;
+    video_tela_ajuste_preto(0);
 
     for (;;) {
         ConexaoEstado e;
@@ -941,7 +946,13 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                 } else if (b & HidNpadButton_A) {
                     menu_aberto = false;
                     menu_mudou = true;
-                    if (menu_item == MENU_ESTATISTICAS) {
+                    if (menu_item == MENU_PRETO) {
+                        // Alterna 16 -> 24 -> 32 e deixa o menu aberto para comparar
+                        nivel_preto = (nivel_preto + 1) % 3;
+                        video_tela_ajuste_preto(nivel_preto);
+                        LOG("main: nivel de preto %d", video_tela_nivel_preto());
+                        menu_aberto = true;
+                    } else if (menu_item == MENU_ESTATISTICAS) {
                         mostrar_estatisticas = !mostrar_estatisticas;
                         LOG("main: estatisticas %s", mostrar_estatisticas ? "ligadas" : "desligadas");
                     } else if (menu_item == MENU_DESCONECTAR) {

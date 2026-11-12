@@ -77,6 +77,9 @@ static int g_num_mapas;
 static int g_mapa_atual = -1;
 static AVFrame *g_exibido;     // quadro na tela agora (fica preso até o próximo ser desenhado)
 static Cores g_cores;
+static int g_ajuste_preto = 0;        // 0, 1, 2: preto em 16, 24 ou 32 (teste da v0.7.3)
+static const int NIVEL_PRETO[3] = {16, 24, 32};
+static u64 g_ultima_medida;           // ticks da última medição dos níveis de luma
 
 bool video_tela_ativa(void) { return g_ativa; }
 const char *video_tela_erro(void) { return g_erro; }
@@ -140,12 +143,59 @@ static void definir_cores(const AVFrame *q) {
         rv = cheia ? 1.5748f : 1.7927f; gu = cheia ? 0.1873f : 0.2132f;
         gv = cheia ? 0.4681f : 0.5329f; bu = cheia ? 1.8556f : 2.1124f;
     }
-    Cores c = {{cheia ? 1.0f : 1.1644f, cheia ? 0.0f : 16.0f / 255.0f, 0, 0}, {rv, gu, gv, bu}};
+    // Preto e branco: na faixa limitada o preto é 16 e o branco 235. O ajuste do menu
+    // sobe o preto (24 ou 32) mantendo o branco em 235.
+    float preto = cheia ? 0.0f : (float)NIVEL_PRETO[g_ajuste_preto];
+    float branco = cheia ? 255.0f : 235.0f;
+    float escala = 255.0f / (branco - preto);
+    // Croma: os coeficientes acima já incluem a faixa (224 níveis); só o luma muda
+    Cores c = {{escala, preto / 255.0f, 0, 0}, {rv, gu, gv, bu}};
     if (memcmp(&c, &g_cores, sizeof c) != 0) {
         g_cores = c;
-        LOG("video: cores %s, faixa %s", bt601 ? "BT.601" : "BT.709", cheia ? "cheia" : "limitada");
+        LOG("video: cores %s, faixa %s, preto em %.0f (range=%d espaco=%d primarias=%d transf=%d)",
+            bt601 ? "BT.601" : "BT.709", cheia ? "cheia" : "limitada", preto, q->color_range, q->colorspace,
+            q->color_primaries, q->color_trc);
     }
 }
+
+// Mede os níveis de luma do quadro (mínimo, percentis e máximo) lendo a memória
+// do NVDEC pela CPU. A ordem dos bytes (layout de vídeo) não importa para isso.
+static void medir_niveis(const AVFrame *q) {
+    AVNVTegraMap *mapa = av_nvtegra_frame_get_fbuf_map(q);
+    if (!mapa) return;
+    const uint8_t *luma = (const uint8_t *)av_nvtegra_map_get_addr(mapa);
+    uint32_t tam = (uint32_t)(q->data[1] - q->data[0]); // o plano de luma vem antes do croma
+    if (!luma || tam == 0) return;
+    static uint32_t hist[256];
+    memset(hist, 0, sizeof hist);
+    uint32_t n = 0;
+    for (uint32_t i = 0; i < tam; i += 61) { // ~23 mil amostras espalhadas
+        hist[luma[i]]++;
+        n++;
+    }
+    int minimo = 0, maximo = 255, p1 = 0, p5 = 0, p50 = 0;
+    while (minimo < 255 && !hist[minimo]) minimo++;
+    while (maximo > 0 && !hist[maximo]) maximo--;
+    uint32_t soma = 0;
+    bool a1 = false, a5 = false, a50 = false;
+    for (int v = 0; v < 256; v++) {
+        soma += hist[v];
+        if (!a1 && soma >= n / 100) { p1 = v; a1 = true; }
+        if (!a5 && soma >= n / 20) { p5 = v; a5 = true; }
+        if (!a50 && soma >= n / 2) { p50 = v; a50 = true; }
+    }
+    LOG("video: luma min %d, 1%% %d, 5%% %d, mediana %d, max %d (preto ajustado em %d)", minimo, p1, p5, p50,
+        maximo, NIVEL_PRETO[g_ajuste_preto]);
+}
+
+void video_tela_ajuste_preto(int nivel) {
+    if (nivel < 0 || nivel > 2) nivel = 0;
+    g_ajuste_preto = nivel;
+    memset(&g_cores, 0, sizeof g_cores); // recalcula e registra no próximo quadro
+    g_ultima_medida = 0;                 // e mede de novo já
+}
+
+int video_tela_nivel_preto(void) { return NIVEL_PRETO[g_ajuste_preto]; }
 
 // Encontra (ou cria) o bloco da GPU para a memória deste quadro do NVDEC
 static int mapear(const AVFrame *q) {
@@ -207,6 +257,7 @@ bool video_tela_iniciar(void) {
     if (g_ativa) return true;
     g_erro[0] = 0;
     memset(&g_cores, 0, sizeof g_cores);
+    g_ultima_medida = 0;
     g_num_mapas = 0;
     g_mapa_atual = -1;
     g_sobre_pronta = false;
@@ -321,8 +372,15 @@ void video_tela_desenhar(AVFrame *quadro) {
             av_frame_free(&quadro); // decodificado pela CPU: não desenhado nesta fase
         } else {
             novo_mapa = mapear(quadro);
-            if (novo_mapa < 0) av_frame_free(&quadro);
-            else definir_cores(quadro);
+            if (novo_mapa < 0) {
+                av_frame_free(&quadro);
+            } else {
+                definir_cores(quadro);
+                if (!g_ultima_medida || armTicksToNs(armGetSystemTick() - g_ultima_medida) > 10000000000ULL) {
+                    g_ultima_medida = armGetSystemTick();
+                    medir_niveis(quadro);
+                }
+            }
         }
     }
 

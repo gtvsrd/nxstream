@@ -211,7 +211,14 @@ Controle do Switch ainda não age no Xbox nesta etapa (é a fase 3).
 
 | Teste (v0.7.2) | Resultado esperado | Resultado obtido |
 |---|---|---|
-| Deixar 2+ minutos com estatísticas ligadas | Nenhuma travada a cada 30 s; "Keepalive: ok" continua atualizando | |
+| Deixar 2+ minutos com estatísticas ligadas | Nenhuma travada a cada 30 s; "Keepalive: ok" continua atualizando | ✅ v0.7.2: 8 min 45 s sem travadas, 20 keepalives ok, 0 erros |
+
+**v0.7.2:** no OLED o preto fica claro demais. O app já converte a faixa limitada (16 = preto), então o preto do vídeo do Xbox provavelmente chega acima de 16. **v0.7.3** (diagnóstico): o log mede os níveis de luma do quadro a cada 10 s (`video: luma min ..., 1% ..., mediana ...`) e o menu ganha **Nivel de preto: 16 / 24 / 32** para comparar na tela.
+
+| Teste (v0.7.3) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Tela escura do Xbox (fundo preto) por ~20 s | O log mostra os níveis reais do preto | |
+| Menu > Nivel de preto (16, 24, 32) | Dizer qual deixa o preto realmente preto sem apagar os detalhes escuros | |
 
 As próximas fases recebem seus checklists aqui quando começarem.
 

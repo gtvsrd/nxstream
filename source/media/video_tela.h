@@ -21,5 +21,8 @@ void video_tela_desenhar(struct AVFrame *quadro);
 // Solta os quadros e a GPU (devolve a janela para o console de texto)
 void video_tela_encerrar(void);
 bool video_tela_ativa(void);
+// Nível de preto (teste): 0 = padrão (16), 1 = 24, 2 = 32. Vale a partir do próximo quadro.
+void video_tela_ajuste_preto(int nivel);
+int video_tela_nivel_preto(void);
 // Último erro (para o log e a tela de erro)
 const char *video_tela_erro(void);
