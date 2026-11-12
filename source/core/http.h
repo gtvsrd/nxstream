@@ -24,6 +24,10 @@ bool http_requisicao(HttpMetodo metodo, const char *url, const char *const *head
 
 void http_resposta_liberar(HttpResposta *resposta);
 
+// As conexões HTTPS ficam abertas entre requisições. Depois de um repouso do
+// Switch elas morreram: chamar isto faz a próxima requisição abrir conexões novas.
+void http_descartar_conexoes(void);
+
 // Função chamada ao fim de cada requisição (com ou sem sucesso).
 // O app usa para descontar o tempo de rede do detector de suspensão.
 void http_definir_ao_terminar(void (*funcao)(void));

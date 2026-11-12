@@ -53,6 +53,7 @@ static bool g_reconectando = false;      // fase 4: falhas na conexão viram nov
 static bool g_chegou_a_conectar = false; // esta tentativa chegou a conectar (zera a contagem de tentativas)
 static time_t g_streaming_obtido = 0;    // quando o gsToken atual foi obtido (vale ~4 h)
 static bool g_forcar_renovacao = false;  // o servidor respondeu 401: renovar o gsToken antes da próxima chamada
+static u64 g_tick_queda = 0;            // quando a conexão caiu (para medir a reconexão inteira)
 static AuthConta *g_conta = NULL;        // conta, para renovar o acesso durante o streaming
 #define LIMITE_SUSPENSAO_S 1.5               // quadro parado por mais que isso = suspensão
 
@@ -140,6 +141,8 @@ static u64 quadro(bool *fechar) {
     g_retorno_pendente = false;
     if (por_aviso || por_tempo) {
         g_ultimo_congelamento = parado > 0.1 ? parado : 0.1;
+        if (parado > LIMITE_SUSPENSAO_S)
+            http_descartar_conexoes(); // as conexões HTTPS abertas morreram no repouso
         LOG("sistema: app voltou depois de %.1f s suspenso (detectado por %s)", parado,
             por_aviso && por_tempo ? "aviso e tempo" : por_aviso ? "aviso" : "tempo");
     }
@@ -666,7 +669,7 @@ typedef enum { ET_OFERTA, ET_RESPOSTA, ET_CANDIDATOS, ET_CONECTANDO, ET_CONECTAD
 #define CONEXAO_LIMITE_OFERTA_S     10
 #define CONEXAO_LIMITE_TROCA_S      30   // resposta SDP e candidatos
 #define CONEXAO_LIMITE_CONECTAR_S   20
-#define CONEXAO_INTERVALO_CONSULTA  0.5
+#define CONEXAO_INTERVALO_CONSULTA  0.25
 
 static Passo falha_conexao(const AuthStreaming *s, const XSessao *sessao,
                            const char *titulo, const char *detalhe) {
@@ -870,7 +873,8 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                     etapa = ET_CONECTADO;
                     g_chegou_a_conectar = true;
                     if (tentativa > 0)
-                        LOG("main: reconectado (tentativa %d)", tentativa);
+                        LOG("main: reconectado (tentativa %d), %.1f s desde a queda", tentativa,
+                            g_tick_queda ? segundos_desde(g_tick_queda) : 0.0);
                     ultimo_keepalive = armGetSystemTick();
                     g_ultimo_congelamento = 0;
                     LOG("main: conectado ao console em %.2f s", e.t_conectado);
@@ -1293,8 +1297,10 @@ static Passo abrir_sessao(AuthConta *conta, AuthStreaming *streaming, XSessao *s
         }
 
         if (passou >= proxima) {
+            // Intervalo contado do início da consulta (antes contava do fim e,
+            // com ~1 s por requisição, a consulta saía a cada 2 s)
+            proxima = passou + SESSAO_INTERVALO_ESTADO_S;
             estado = xapi_sessao_estado(streaming, &sessao, detalhe, sizeof detalhe);
-            proxima = segundos_desde(inicio) + SESSAO_INTERVALO_ESTADO_S;
             LOG("main: sessao: %s (%.0f s)", detalhe[0] ? detalhe : xapi_sessao_estado_texto(estado), passou);
 
             if (estado == XSESSAO_ERRO) {
@@ -1396,6 +1402,47 @@ static Passo esperar_reconexao(int tentativa, double espera) {
 // recebe "AgentNotListening" e as seguintes "SessionInUnexpectedState"; cada
 // queda gastava ~25 s em 5 tentativas inúteis antes de abrir a sessão nova, que
 // fica pronta em 2-3 s com o console já acordado.
+// Encerramento da sessão antiga em segundo plano (v0.9.3): no log da v0.9.2 ele
+// levou de 1 a 7 s, e a sessão nova só era pedida depois. Agora as duas coisas
+// correm juntas. A thread usa uma cópia do token (o principal pode renová-lo).
+static struct {
+    pthread_t thread;
+    bool rodando;
+    AuthStreaming s;
+    XSessao sessao;
+} g_enc;
+
+static void *thread_encerrar(void *arg) {
+    (void)arg;
+    xapi_sessao_encerrar(&g_enc.s, &g_enc.sessao);
+    return NULL;
+}
+
+static void encerramento_esperar(void) {
+    if (g_enc.rodando) {
+        pthread_join(g_enc.thread, NULL);
+        g_enc.rodando = false;
+    }
+    free(g_enc.s.gs_token);
+    g_enc.s.gs_token = NULL;
+}
+
+static void encerrar_em_segundo_plano(const AuthStreaming *s, const XSessao *sessao) {
+    encerramento_esperar();
+    g_enc.s = *s;
+    g_enc.s.gs_token = strdup(s->gs_token ? s->gs_token : "");
+    g_enc.sessao = *sessao;
+    pthread_attr_t at;
+    pthread_attr_init(&at);
+    pthread_attr_setstacksize(&at, 256 * 1024); // curl + TLS
+    g_enc.rodando = g_enc.s.gs_token && pthread_create(&g_enc.thread, &at, thread_encerrar, NULL) == 0;
+    pthread_attr_destroy(&at);
+    if (!g_enc.rodando) { // sem thread: encerra na hora, como antes
+        xapi_sessao_encerrar(s, sessao);
+        encerramento_esperar();
+    }
+}
+
 static Passo passo_sessao(AuthConta *conta, AuthStreaming *streaming) {
     XSessao sessao;
     double tempo_preparo = 0;
@@ -1420,9 +1467,12 @@ static Passo passo_sessao(AuthConta *conta, AuthStreaming *streaming) {
         if (g_chegou_a_conectar) // estava funcionando: recomeça a contagem
             tentativa = 0;
 
-        // Fecha a sessão antiga (não aceita outra conexão) e abre outra
+        // Fecha a sessão antiga (não aceita outra conexão) e abre outra. O token
+        // é renovado antes se tiver vencido (senão o próprio encerramento dá 401).
+        g_tick_queda = armGetSystemTick();
         keepalive_esperar();
-        xapi_sessao_encerrar(streaming, &sessao);
+        garantir_streaming(conta, streaming);
+        encerrar_em_segundo_plano(streaming, &sessao);
         for (;;) {
             tentativa++;
             if (tentativa > RECONEXAO_TENTATIVAS) {
@@ -1629,6 +1679,7 @@ int main(int argc, char *argv[]) {
         LOG("main: encerrando (3/4: liberando a libdatachannel)");
         rtc_comum_finalizar();
         LOG("main: encerrando (4/4: finalizando o HTTPS)");
+        encerramento_esperar();
         http_encerrar();
     }
 

@@ -283,6 +283,23 @@ Para usar no dia a dia. Quando a conexão cai, a tela mostra "A conexao com XBOX
 | Repouso de uma noite | Renova o acesso e reconecta sozinho (pode levar ~25 s com o console em repouso) | |
 | Sessão de 4 h+ sem desligar a tela | Continua conectado; o log mostra a renovação em segundo plano por volta de 3h45 | |
 
+**Resultado da v0.9.2 (log de 12/11):** 4 de 4 reconexões na 1ª tentativa, incluindo duas depois de ~4 h e ~6 h em repouso (acesso renovado sozinho). Tempo da queda até o vídeo: 8 s (console acordado), 20 s e 19 s (console em repouso, ~9 s preparando a sessão) e 48 s (o encerramento da sessão antiga levou 7 s e o console 36 s para preparar a nova).
+
+**v0.9.3:** otimizações da reconexão:
+- **Conexões HTTPS reaproveitadas.** Antes, cada chamada à API abria TCP + TLS do zero até o servidor nos EUA (~1 s cada, e a reconexão faz mais de 10 chamadas). Agora um pequeno conjunto de handles do curl mantém as conexões abertas; depois de um repouso elas são descartadas.
+- **Sessão antiga encerrada em segundo plano**, em paralelo com o pedido da sessão nova (antes: 1–7 s esperando).
+- **Acesso renovado antes de encerrar a sessão antiga** (antes, depois de horas em repouso, o encerramento dava 401 e gastava 2 s).
+- Estado da sessão consultado a cada 1 s de fato (antes saía a cada ~2 s) e a troca de SDP/candidatos consultada a cada 0,25 s.
+- O log mostra `main: reconectado (tentativa N), X s desde a queda`.
+
+O tempo que o console leva para preparar a sessão (2,5 s acordado, ~9 s em repouso, às vezes 35 s) depende dele e não do app.
+
+| Teste (v0.9.3) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Repouso curto (1–10 min) | "X s desde a queda" menor que os 8 s da v0.9.2 | |
+| Repouso longo (horas) | Reconecta na 1ª tentativa, sem "encerrar sessao respondeu HTTP 401" | |
+| Conectar pela lista (abrir o app) | Mais rápido que antes, principalmente a etapa "Resposta do console" | |
+
 O log registra `main: conexao instavel (...)`, `main: conexao voltou sozinha em X s`, `main: ... reconectando`, `main: reconectado (tentativa N)` e, se for o caso, `abrindo uma sessao nova`.
 
 As próximas fases recebem seus checklists aqui quando começarem.

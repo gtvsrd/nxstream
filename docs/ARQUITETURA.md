@@ -23,6 +23,7 @@ flowchart LR
 | Módulo | Pasta | Responsabilidade |
 |---|---|---|
 | `log` | `source/core/` | Log com horário no SD (`/switch/nxstream/nxstream.log`) e no nxlink |
+| `http` | `source/core/` | HTTPS pelo libcurl. Mantém até 4 handles reaproveitáveis (um por thread em uso) para não refazer TCP + TLS a cada chamada; `http_descartar_conexoes()` depois de um repouso |
 | `auth` | `source/auth/` | Login por código (device code), cadeia de tokens, renovação, armazenamento no SD |
 | `xbox_api` | `source/api/` | HTTPS para listar consoles, criar sessão, trocar SDP/ICE, keepalive, encerrar |
 | `webrtc` | `source/net/` | Conexão com o console, DTLS/SRTP, canais de dados |
