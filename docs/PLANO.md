@@ -1,5 +1,16 @@
 # Plano do projeto
 
+## Situação atual (12/11/2026)
+
+> Parte do trabalho das fases 2c.3 a 4 foi feita numa conversa do Claude que era do blog (Arcar.se). Este resumo junta tudo aqui, para a conversa do NXStream continuar.
+
+- **`main`** = **v0.8.1**, a última versão testada e aprovada: imagem na tela pela GPU (deko3d, sem cópia), controle do Switch, som do Xbox, menu (+ e − por 1 s), botão Xbox (+ segurado e clique no −), 21 min jogando sem quedas.
+- **`fase-4`** = **v0.9.1**, em teste no dia a dia: v0.8.2 (áudio acompanha a diferença de relógio, sem cortes), reconexão automática (mesma sessão, depois sessão nova), HOME sem pausar, conexão automática quando a conta tem um só console, ícone do app.
+- Branches `fase-2c`, `fase-2c3` e `fase-3` já estão contidas na `main`/`fase-4` e podem ser apagadas.
+- Resultados de cada teste, versão por versão: `docs/DESENVOLVIMENTO.md` (fases 2c.2, 2c.3, 3 e 4).
+- Próximo passo: o usuário testar a v0.9.1 no dia a dia (repouso, Wi-Fi, HOME, sessão longa) e mandar os logs; com a fase 4 validada, juntar `fase-4` na `main` e seguir para a fase 5 (vibração, mapeamento configurável, opções).
+- Dicas registradas: para atualizar, copiar só o `nxstream.nro` (o `token.json` guarda o login entre versões); o preto em 16 (faixa limitada) é o correto no OLED.
+
 ## Objetivo
 
 Um cliente de **Xbox Remote Play** para Nintendo Switch (homebrew `.nro`) que transmite a tela do **seu próprio Xbox, na rede local**, com foco em **confiabilidade**:
