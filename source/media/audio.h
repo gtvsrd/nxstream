@@ -19,7 +19,9 @@ typedef struct {
     unsigned long perdidos;     // pelos números de sequência
     unsigned long erros;        // falhas do decodificador
     unsigned long faltas;       // blocos tocados em silêncio (fila vazia)
-    unsigned long descartados_ms; // áudio jogado fora para não atrasar
+    unsigned long descartados_ms; // áudio jogado fora para não atrasar (só acúmulo grande)
+    unsigned long acelerados;   // blocos tocados 1% mais rápido (fila acima do alvo)
+    unsigned long desacelerados;// blocos tocados 1% mais devagar (fila abaixo do alvo)
     int      fila_ms;           // áudio esperando para tocar
     int      canais;            // canais no fluxo (1 ou 2)
 } AudioEstado;

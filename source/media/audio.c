@@ -23,7 +23,13 @@
 #define BLOCO       960                    // 20 ms por bloco de saída
 #define NUM_BLOCOS  3                      // blocos na fila do audout
 #define FILA_MAX    (TAXA / 5)             // 200 ms de capacidade
-#define FILA_ALVO   (TAXA * 60 / 1000)     // acima de ~60 ms + 2 blocos: corta o excesso
+// Fila de áudio (v0.8.2): os relógios do Xbox e do Switch não andam iguais, então a
+// fila cresce ou encolhe devagar. Em vez de cortar o excesso de uma vez (um pulo no
+// som), a saída toca 1% mais rápido acima da faixa e 1% mais devagar abaixo dela,
+// o que não se percebe. Só um acúmulo grande (rede entregando tudo de uma vez) é cortado.
+#define FILA_ALVO   (TAXA * 40 / 1000)     // ~40 ms
+#define FILA_FAIXA  (TAXA * 20 / 1000)     // +-20 ms em volta do alvo: velocidade normal
+#define FILA_CORTE  (TAXA * 150 / 1000)    // acima de 150 ms: corta de uma vez até o alvo
 #define MAX_QUADRO  5760                   // 120 ms (maior quadro Opus)
 
 static pthread_mutex_t g_trava = PTHREAD_MUTEX_INITIALIZER;
@@ -106,6 +112,7 @@ void audio_receber_rtp(const uint8_t *d, int n) {
     int pt = d[1] & 0x7F;
     uint16_t seq = (uint16_t)(d[2] << 8 | d[3]);
     uint32_t ssrc = (uint32_t)d[8] << 24 | (uint32_t)d[9] << 16 | (uint32_t)d[10] << 8 | d[11];
+    if (pt >= 72 && pt <= 76) return; // RTCP (200-204) no mesmo fluxo (rtcp-mux): não é áudio
     if (pt != 111) { // só Opus (rtpmap 111); outros (ex.: ruído de conforto) são ignorados
         if (++g_outros_pt <= 5)
             LOG("audio: pacote com payload %d ignorado (%d bytes, seq %u)", pt, n, seq);
@@ -170,13 +177,36 @@ void audio_receber_rtp(const uint8_t *d, int n) {
 // Preenche um bloco de saída com o que houver na fila (o resto, silêncio)
 static void preencher(int16_t *saida) {
     pthread_mutex_lock(&g_trava);
-    // Atraso acumulado (a rede entregou de uma vez): corta o excesso para manter ~60 ms
-    if (g_qtd > FILA_ALVO + 2 * BLOCO) {
+    if (g_qtd > FILA_CORTE) { // acúmulo grande: corta até o alvo
         int corte = g_qtd - FILA_ALVO;
         g_ini = (g_ini + corte) % FILA_MAX;
         g_qtd -= corte;
         g_estado.descartados_ms += (unsigned long)corte;
     }
+    // Quantas amostras da fila viram um bloco de 960 na saída
+    int consumir = BLOCO;
+    if (g_qtd > FILA_ALVO + FILA_FAIXA) {
+        consumir = BLOCO + BLOCO / 100; // 1% mais rápido
+        g_estado.acelerados++;
+    } else if (g_qtd < FILA_ALVO - FILA_FAIXA && g_qtd > BLOCO) {
+        consumir = BLOCO - BLOCO / 100; // 1% mais devagar
+        g_estado.desacelerados++;
+    }
+    if (g_qtd >= consumir + 1) {
+        // Interpolação linear de `consumir` amostras para BLOCO
+        for (int i = 0; i < BLOCO; i++) {
+            uint32_t p = (uint32_t)i * (uint32_t)consumir * 256u / BLOCO; // posição em 1/256
+            int k = (int)(p >> 8), f = (int)(p & 255);
+            int a = (g_ini + k) % FILA_MAX, b = (g_ini + k + 1) % FILA_MAX;
+            saida[i * 2] = (int16_t)((g_fila[a * 2] * (256 - f) + g_fila[b * 2] * f) >> 8);
+            saida[i * 2 + 1] = (int16_t)((g_fila[a * 2 + 1] * (256 - f) + g_fila[b * 2 + 1] * f) >> 8);
+        }
+        g_ini = (g_ini + consumir) % FILA_MAX;
+        g_qtd -= consumir;
+        pthread_mutex_unlock(&g_trava);
+        return;
+    }
+    // Fila quase vazia: toca o que tiver e completa com silêncio
     int n = g_qtd < BLOCO ? g_qtd : BLOCO;
     for (int i = 0; i < n; i++) {
         int pos = (g_ini + i) % FILA_MAX;

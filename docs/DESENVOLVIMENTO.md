@@ -248,8 +248,16 @@ O log registra `audio: pronto (...)`, o primeiro pacote de áudio, `main: primei
 |---|---|---|
 | Jogar 15+ minutos | Som continua até o fim; se o fluxo recomeçar, o log mostra "audio: fluxo recomecou" e o som volta | |
 | Fluidez | Sem os trancos de antes; "repetidos" e "pulados" crescendo devagar no log | |
-| Botão Xbox: + segurado e clique no - | Abre o guia do Xbox (como no homebrew anterior) | |
+| Botão Xbox: + segurado e clique no - | Abre o guia do Xbox (como no homebrew anterior) | ✅ v0.8.1 |
 | + sozinho (toque rápido ou segurado) | Menu do Xbox (sai ao soltar, ou depois de 0,3 s segurado) | |
+
+**v0.8.1 (21 min jogando):** ✅ som até o fim (63 mil pacotes, 0 perdidos, 27 faltas de 20 ms); ✅ atalho do botão Xbox. ⚠️ Pulos de quadro/áudio em alguns momentos. No log: (1) às 22:28:46–56 uma oscilação da rede (faltas de áudio e quadros repetidos ao mesmo tempo); às 22:31:58 e 22:39 quadros repetidos só no vídeo; no total 136 pulados e 324 repetidos em 75 864 (0,6%); (2) a fila de áudio cresceu devagar de 40 para 100 ms (relógios do Xbox e do Switch diferentes) e, ao passar do limite, era cortada de uma vez, um pulo no som. Os pacotes "payload 72" eram RTCP (200) no mesmo fluxo, não áudio.
+
+**v0.8.2:** a saída de áudio toca 1% mais rápido ou mais devagar para manter a fila em ~40 ms (sem cortes; corte só acima de 150 ms); RTCP não vai mais para o log; o log a cada 10 s mostra também os cortes e os blocos acelerados/desacelerados.
+
+| Teste (v0.8.2) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Jogar 15+ minutos | Sem pulos no som fora das oscilações da rede; "cortados ms" em 0 e a fila perto de 40 ms no log | |
 
 As próximas fases recebem seus checklists aqui quando começarem.
 
