@@ -609,7 +609,9 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
     int num_metadados = 0;
     uint32_t seq_input = 0;       // o pacote de metadados do cliente (sequência 0) já foi pela conexão
     unsigned long pacotes_input = 0;
-    double nexus_ate = 0;
+    double nexus_ate = 0, menu_xbox_ate = 0;
+    double mais_desde = -1, menos_desde = -1; // atalho do botão Xbox (+ segurado, clique no -)
+    bool mais_em_atalho = false;
     bool primeiro_botao_logado = false;
 
     for (;;) {
@@ -943,6 +945,29 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
             // o app: na fase 3 os botões vão para o jogo)
             double agora = segundos_desde(inicio);
             bool combinacao = (segurados & HidNpadButton_Plus) && (segurados & HidNpadButton_Minus);
+            // Botão Xbox: com + segurado, um clique no - (solto antes de 1 s, sem abrir o menu)
+            bool mais = segurados & HidNpadButton_Plus;
+            if (mais && mais_desde < 0) {
+                mais_desde = agora;
+                mais_em_atalho = false;
+            }
+            if (mais && (b & HidNpadButton_Minus)) {
+                mais_em_atalho = true;
+                menos_desde = agora;
+            }
+            if (menos_desde >= 0 && !(segurados & HidNpadButton_Minus)) {
+                if (agora - menos_desde < 1.0 && !menu_aberto && !esperar_soltar) {
+                    nexus_ate = agora + 0.25;
+                    LOG("main: botao Xbox (+ segurado e clique no -)");
+                }
+                menos_desde = -1;
+            }
+            if (!mais && mais_desde >= 0) {
+                // + solto: se foi um toque rápido sem o -, manda um toque no Menu do Xbox
+                if (!mais_em_atalho && agora - mais_desde < 0.3)
+                    menu_xbox_ate = agora + 0.1;
+                mais_desde = -1;
+            }
             if (!combinacao) {
                 segurando_desde = -1;
                 esperar_soltar = false;
@@ -991,8 +1016,15 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                     memset(&c, 0, sizeof c); // menu aberto: controle parado no Xbox
                 } else {
                     controle_ler(&g_controle, &c);
-                    if (combinacao) // + e - juntos são do NXStream (menu), não do jogo
-                        c.botoes &= (uint16_t)~(XB_MENU | XB_VIEW);
+                    // + só vira Menu do Xbox depois de 0,3 s sem o - (ou num toque rápido,
+                    // ao soltar); com + segurado o - é do NXStream (botão Xbox / menu)
+                    c.botoes &= (uint16_t)~XB_MENU;
+                    if (mais_desde >= 0 && !mais_em_atalho && agora - mais_desde >= 0.3)
+                        c.botoes |= XB_MENU;
+                    if (agora < menu_xbox_ate)
+                        c.botoes |= XB_MENU;
+                    if (mais || combinacao)
+                        c.botoes &= (uint16_t)~XB_VIEW;
                 }
                 if (agora < nexus_ate)
                     c.botoes |= XB_NEXUS;

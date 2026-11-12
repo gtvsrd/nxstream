@@ -224,7 +224,7 @@ Controle do Switch ainda não age no Xbox nesta etapa (é a fase 3).
 
 Conecte ao console. Com o vídeo na tela, o controle do Switch passa a controlar o Xbox e o som do Xbox sai no Switch. O ajuste **Nivel de preto** (v0.7.3) continua no menu para o teste dos pretos.
 
-Mapeamento por posição, como no controle do Xbox: **B** do Switch = A, **A** = B, **Y** = X, **X** = Y; L/R = LB/RB; ZL/ZR = LT/RT; **+** = Menu, **−** = View; clique dos analógicos = LS/RS. O **botão Xbox** fica no menu do NXStream (+ e − por 1 s). O **B** não desconecta mais direto: desconectar e fechar ficam só no menu.
+Mapeamento por posição, como no controle do Xbox: **B** do Switch = A, **A** = B, **Y** = X, **X** = Y; L/R = LB/RB; ZL/ZR = LT/RT; **+** = Menu, **−** = View; clique dos analógicos = LS/RS. O **botão Xbox**: com **+** segurado, um clique no **−** (v0.8.1; também no menu do NXStream, + e − por 1 s). O **B** não desconecta mais direto: desconectar e fechar ficam só no menu.
 
 | Teste | Resultado esperado | Resultado obtido |
 |---|---|---|
@@ -248,6 +248,8 @@ O log registra `audio: pronto (...)`, o primeiro pacote de áudio, `main: primei
 |---|---|---|
 | Jogar 15+ minutos | Som continua até o fim; se o fluxo recomeçar, o log mostra "audio: fluxo recomecou" e o som volta | |
 | Fluidez | Sem os trancos de antes; "repetidos" e "pulados" crescendo devagar no log | |
+| Botão Xbox: + segurado e clique no - | Abre o guia do Xbox (como no homebrew anterior) | |
+| + sozinho (toque rápido ou segurado) | Menu do Xbox (sai ao soltar, ou depois de 0,3 s segurado) | |
 
 As próximas fases recebem seus checklists aqui quando começarem.
 

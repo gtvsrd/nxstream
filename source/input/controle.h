@@ -5,7 +5,7 @@
 //   Switch Y (esquerda) -> Xbox X    Switch X (em cima) -> Xbox Y
 //   L/R -> LB/RB, ZL/ZR -> LT/RT (digitais: 0 ou 100%), + -> Menu, - -> View,
 //   clique dos analógicos -> LS/RS, direcional -> direcional.
-// O botão Xbox (guia) fica no menu do NXStream.
+// O botão Xbox (guia): + segurado e clique no - (tratado em main.c), ou pelo menu.
 #pragma once
 #include <switch.h>
 #include "input/pacote_input.h"
