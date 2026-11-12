@@ -530,14 +530,11 @@ static void linha_etapa(const char *nome, EtapaConexao atual, EtapaConexao esta,
 }
 
 // Menu do vídeo (+ e - segurados por 1 s)
-enum { MENU_VOLTAR, MENU_XBOX, MENU_ESTATISTICAS, MENU_PRETO, MENU_DESCONECTAR, MENU_FECHAR, MENU_ITENS };
+enum { MENU_VOLTAR, MENU_XBOX, MENU_ESTATISTICAS, MENU_DESCONECTAR, MENU_FECHAR, MENU_ITENS };
 
 static void desenhar_menu(int item, bool estatisticas) {
-    char preto[40];
-    snprintf(preto, sizeof preto, "Nivel de preto: %d%s", video_tela_nivel_preto(),
-             video_tela_nivel_preto() == 16 ? " (padrao)" : "");
     const char *nomes[MENU_ITENS] = {"Voltar ao jogo", "Botao Xbox (guia)",
-                                     estatisticas ? "Esconder estatisticas" : "Mostrar estatisticas", preto,
+                                     estatisticas ? "Esconder estatisticas" : "Mostrar estatisticas",
                                      "Desconectar", "Fechar o app"};
     const int x = 22, y = 15, largura = 36;
     // Cada linha é preenchida até a largura para o fundo da caixa ficar uniforme
@@ -606,7 +603,6 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
     bool menu_aberto = false, menu_mudou = false, esperar_soltar = false;
     bool mostrar_estatisticas = false;
     int menu_item = 0;
-    int nivel_preto = 0;
     double segurando_desde = -1;
     // Controle (fase 3)
     MetadadoQuadro metadados[INPUT_MAX_METADADOS];
@@ -615,7 +611,6 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
     unsigned long pacotes_input = 0;
     double nexus_ate = 0;
     bool primeiro_botao_logado = false;
-    video_tela_ajuste_preto(0);
 
     for (;;) {
         ConexaoEstado e;
@@ -726,11 +721,15 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                         t_log_video = agora;
                         DecodEstado d;
                         decod_ler(&d);
+                        AudioEstado a;
+                        audio_ler(&a);
                         LOG("main: video %.0f fps, %.1f Mbps, %lu quadros, %lu chave, %dx%d | decod %.0f/s, "
-                            "%.1f ms (max %.1f), %lu erros, %lu descartados",
+                            "%.1f ms (max %.1f), %lu erros, %lu descartados | tela %lu pulados, %lu repetidos | "
+                            "audio %lu pacotes, %lu perdidos, fila %d ms, %lu faltas",
                             fps, mbps, e.quadros, e.quadros_chave,
                             e.sps_valido ? e.sps.largura : 0, e.sps_valido ? e.sps.altura : 0,
-                            fps_decod, d.ms_medio, d.ms_maximo, d.erros, d.descartados);
+                            fps_decod, d.ms_medio, d.ms_maximo, d.erros, d.descartados, d.nao_exibidos,
+                            d.repetidos, a.pacotes, a.perdidos, a.fila_ms, a.faltas);
                     }
                 }
                 // Sem quadro-chave não há como começar a decodificar: pede ao console
@@ -865,6 +864,7 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                            d.ms_maximo);
                     tp("  Erros: %s%lu" COR_FIM "   Descartados: %lu   Fila: %d\n",
                            d.erros ? COR_ERRO : COR_OK, d.erros, d.descartados, d.fila);
+                    tp("  Tela: %lu pulados, %lu repetidos\n", d.nao_exibidos, d.repetidos);
                 }
                 tp("\n");
                 if (status_keepalive < 0)
@@ -972,12 +972,6 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                     if (menu_item == MENU_XBOX) {
                         nexus_ate = agora + 0.25; // aperta o botão Xbox por 250 ms
                         LOG("main: botao Xbox (guia)");
-                    } else if (menu_item == MENU_PRETO) {
-                        // Alterna 16 -> 24 -> 32 e deixa o menu aberto para comparar
-                        nivel_preto = (nivel_preto + 1) % 3;
-                        video_tela_ajuste_preto(nivel_preto);
-                        LOG("main: nivel de preto %d", video_tela_nivel_preto());
-                        menu_aberto = true;
                     } else if (menu_item == MENU_ESTATISTICAS) {
                         mostrar_estatisticas = !mostrar_estatisticas;
                         LOG("main: estatisticas %s", mostrar_estatisticas ? "ligadas" : "desligadas");

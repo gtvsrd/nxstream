@@ -22,7 +22,8 @@ typedef struct {
     unsigned long erros;        // erros do decodificador
     unsigned long descartados;  // quadros jogados fora (fila cheia ou antes do 1º quadro-chave)
     unsigned long esperando_chave; // quadros descartados esperando quadro-chave
-    unsigned long nao_exibidos; // decodificados que um mais novo substituiu antes de irem à tela
+    unsigned long nao_exibidos; // decodificados que não chegaram à tela (fila da tela cheia)
+    unsigned long repetidos;    // atualizações de tela sem quadro novo (repetiram o anterior)
 
     double ms_ultimo, ms_medio, ms_maximo; // tempo de decodificação (janela recente)
     int    largura, altura;     // do último quadro decodificado

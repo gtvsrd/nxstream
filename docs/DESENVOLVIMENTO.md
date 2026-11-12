@@ -240,6 +240,15 @@ Mapeamento por posição, como no controle do Xbox: **B** do Switch = A, **A** =
 
 O log registra `audio: pronto (...)`, o primeiro pacote de áudio, `main: primeiro botao enviado ao Xbox` e, com as estatísticas ligadas, a linha de áudio (pacotes, perdidos, fila, faltas) e de controle (pacotes enviados).
 
+**v0.8.0 (12 min jogando):** ✅ controle funcionou (navegação, jogo, botão Xbox pelo menu); ✅ não caiu e não desconectou por inatividade; ✅ preto: 16 é o mais preto (o ajuste saiu do menu). ❌ O som parou aos ~9 min (22:02:36), junto com o único erro de áudio e um salto de ~32 mil no contador de perdidos: a sequência RTP do áudio saltou e o app passou a tratar todo pacote seguinte como "atrasado" (o resto da sessão ficou em silêncio: 9 027 faltas de 20 ms). ⚠️ Às vezes não parecia 60 quadros/s, embora a rede (59–61/s) e a decodificação (0 erros) estivessem estáveis: o app mostrava só o quadro mais recente, então quando dois chegavam no mesmo intervalo de tela um era pulado e o outro repetido.
+
+**v0.8.1:** áudio se ressincroniza em saltos grandes da sequência ou troca de SSRC, aceita só pacotes Opus (payload 111) e registra os outros; vídeo com fila curta de exibição (um quadro por atualização de tela, até 2 de folga); o log a cada 10 s e as estatísticas trazem quadros pulados/repetidos e o estado do áudio.
+
+| Teste (v0.8.1) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Jogar 15+ minutos | Som continua até o fim; se o fluxo recomeçar, o log mostra "audio: fluxo recomecou" e o som volta | |
+| Fluidez | Sem os trancos de antes; "repetidos" e "pulados" crescendo devagar no log | |
+
 As próximas fases recebem seus checklists aqui quando começarem.
 
 ## Convenções

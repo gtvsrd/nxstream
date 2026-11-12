@@ -37,6 +37,8 @@ static int g_ini, g_qtd;                   // em quadros (pares)
 
 static bool g_tem_seq;
 static uint16_t g_ultima_seq;
+static uint32_t g_ssrc;
+static unsigned long g_outros_pt; // pacotes que não são Opus (payload diferente de 111)
 static int16_t g_pcm[MAX_QUADRO * CANAIS];
 
 static void *g_mem_saida;                  // blocos do audout (alinhados a 0x1000)
@@ -101,7 +103,14 @@ void audio_receber_rtp(const uint8_t *d, int n) {
     if (!g_rodando || n < 12 || (d[0] >> 6) != 2) return;
     int cc = d[0] & 0x0F;
     bool ext = d[0] & 0x10, preench = d[0] & 0x20;
+    int pt = d[1] & 0x7F;
     uint16_t seq = (uint16_t)(d[2] << 8 | d[3]);
+    uint32_t ssrc = (uint32_t)d[8] << 24 | (uint32_t)d[9] << 16 | (uint32_t)d[10] << 8 | d[11];
+    if (pt != 111) { // só Opus (rtpmap 111); outros (ex.: ruído de conforto) são ignorados
+        if (++g_outros_pt <= 5)
+            LOG("audio: pacote com payload %d ignorado (%d bytes, seq %u)", pt, n, seq);
+        return;
+    }
     int ofs = 12 + 4 * cc;
     if (ext) {
         if (n < ofs + 4) return;
@@ -111,14 +120,28 @@ void audio_receber_rtp(const uint8_t *d, int n) {
     if (preench && n > 0) fim -= d[n - 1];
     if (ofs >= fim) return;
 
+    // Sequência: pacotes repetidos ou um pouco atrasados são ignorados; um salto
+    // grande (para frente ou para trás) ou outro SSRC é um fluxo recomeçado e o
+    // app se ressincroniza. (v0.8.0 ignorava tudo depois de um salto para trás:
+    // o som parou por volta dos 10 min e não voltou.)
     int perdidos = 0;
     if (g_tem_seq) {
         int16_t dif = (int16_t)(seq - g_ultima_seq);
-        if (dif <= 0) return;           // repetido ou atrasado: ignora
-        perdidos = dif - 1;
+        if (ssrc != g_ssrc || dif > 200 || dif < -200) {
+            LOG("audio: fluxo recomecou (seq %u -> %u, ssrc %08x -> %08x); ressincronizando", g_ultima_seq, seq,
+                (unsigned)g_ssrc, (unsigned)ssrc);
+#if defined(TEM_LIBOPUS)
+            opus_decoder_ctl(g_opus, OPUS_RESET_STATE);
+#endif
+        } else if (dif <= 0) {
+            return; // repetido ou atrasado
+        } else {
+            perdidos = dif - 1;
+        }
     }
     g_tem_seq = true;
     g_ultima_seq = seq;
+    g_ssrc = ssrc;
 
     // Perdas curtas: o Opus inventa um trecho parecido (melhor que um estalo)
     for (int i = 0; i < perdidos && i < 3; i++) {
@@ -186,6 +209,7 @@ bool audio_iniciar(void) {
     memset(&g_estado, 0, sizeof g_estado);
     g_ini = g_qtd = 0;
     g_tem_seq = false;
+    g_outros_pt = 0;
 
 #if defined(TEM_LIBOPUS)
     int err = 0;
@@ -293,7 +317,7 @@ void audio_encerrar(void) {
     av_packet_free(&g_pkt);
     av_frame_free(&g_quadro);
 #endif
-    if (tinha || g_estado.pacotes)
+    if (tinha)
         LOG("audio: encerrado (%lu pacotes, %lu perdidos, %lu erros, %lu faltas)", g_estado.pacotes,
             g_estado.perdidos, g_estado.erros, g_estado.faltas);
     g_estado.ativo = false;

@@ -108,9 +108,30 @@ static void registrar_tempo(double ms) {
     g_estado.ms_maximo = maximo;
 }
 
-// Quadro pronto para a tela: fica guardado até a thread principal buscá-lo
-// (decod_pegar_quadro). Se chegar outro antes, o antigo nunca chega à tela.
-static AVFrame *g_pronto;
+// Quadros prontos para a tela (v0.8.1): fila curta, um quadro por atualização de
+// tela. Antes só o mais recente ficava guardado: quando dois chegavam no mesmo
+// intervalo de 16,7 ms (variação normal da rede), um era pulado e o seguinte
+// repetido, e a imagem dava trancos mesmo a 60 quadros/s.
+#define PRONTOS_MAX 4
+#define PRONTOS_ALVO 2 // acima disso, os mais antigos saem (não deixa o atraso crescer)
+static AVFrame *g_prontos[PRONTOS_MAX];
+static int g_num_prontos;
+static bool g_ja_entregou; // já houve quadro para a tela (para contar repetições)
+
+static AVFrame *tirar_mais_antigo_trancado(void) {
+    AVFrame *f = g_prontos[0];
+    for (int i = 1; i < g_num_prontos; i++) g_prontos[i - 1] = g_prontos[i];
+    g_num_prontos--;
+    return f;
+}
+
+static void esvaziar_prontos_trancado(void) {
+    while (g_num_prontos > 0) {
+        AVFrame *f = tirar_mais_antigo_trancado();
+        av_frame_free(&f);
+    }
+    g_ja_entregou = false;
+}
 
 static void entregar_para_tela(void) {
     if (g_quadro->format != AV_PIX_FMT_NVTEGRA) { // pela CPU: a tela só desenha os do NVDEC
@@ -124,11 +145,12 @@ static void entregar_para_tela(void) {
     }
     av_frame_move_ref(f, g_quadro);
     pthread_mutex_lock(&g_trava);
-    if (g_pronto) {
-        av_frame_free(&g_pronto);
+    if (g_num_prontos == PRONTOS_MAX) { // a tela não está buscando: o mais antigo sai
+        AVFrame *velho = tirar_mais_antigo_trancado();
+        av_frame_free(&velho);
         g_estado.nao_exibidos++;
     }
-    g_pronto = f;
+    g_prontos[g_num_prontos++] = f;
     pthread_mutex_unlock(&g_trava);
 }
 
@@ -246,7 +268,7 @@ bool decod_iniciar(void) {
     }
 
     // Quadros presos fora do decodificador: o que está na tela e o que espera por ela
-    g_ctx->extra_hw_frames = 3;
+    g_ctx->extra_hw_frames = PRONTOS_MAX + 2; // fila da tela + o que está na tela + folga
     // Streaming: entregar cada quadro assim que possível, sem acumular
     g_ctx->flags |= AV_CODEC_FLAG_LOW_DELAY;
     g_ctx->flags2 |= AV_CODEC_FLAG2_FAST;
@@ -289,8 +311,18 @@ void decod_ler(DecodEstado *copia) {
 
 AVFrame *decod_pegar_quadro(void) {
     pthread_mutex_lock(&g_trava);
-    AVFrame *f = g_pronto;
-    g_pronto = NULL;
+    AVFrame *f = NULL;
+    if (g_num_prontos == 0) {
+        if (g_ja_entregou) g_estado.repetidos++; // esta atualização de tela repete o quadro anterior
+    } else {
+        while (g_num_prontos > PRONTOS_ALVO) { // acumulou: descarta os mais antigos
+            AVFrame *velho = tirar_mais_antigo_trancado();
+            av_frame_free(&velho);
+            g_estado.nao_exibidos++;
+        }
+        f = tirar_mais_antigo_trancado();
+        g_ja_entregou = true;
+    }
     pthread_mutex_unlock(&g_trava);
     return f;
 }
@@ -312,7 +344,7 @@ void decod_encerrar(void) {
 
     pthread_mutex_lock(&g_trava);
     esvaziar_fila_trancada();
-    av_frame_free(&g_pronto);
+    esvaziar_prontos_trancado();
     g_estado.ativo = false;
     pthread_mutex_unlock(&g_trava);
 
