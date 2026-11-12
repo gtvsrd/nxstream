@@ -7,6 +7,7 @@
 //   LISTA -> (A no console) SESSAO -> LISTA
 // Nenhum erro fecha o app: sempre há "tentar de novo" ou "sair da conta".
 
+#include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -419,8 +420,74 @@ static Passo erro_sessao(const char *titulo, const char *detalhe) {
     return b == HidNpadButton_A ? PASSO_SESSAO : b == HidNpadButton_B ? PASSO_LISTA : PASSO_SAIR;
 }
 
+// ---------------------------------------------------------------------------
+// Keepalive em segundo plano (v0.7.2): a requisição HTTP leva até algumas
+// centenas de ms; feita na thread principal, travava o vídeo a cada 30 s.
+// ---------------------------------------------------------------------------
+static struct {
+    pthread_t thread;
+    bool rodando;           // há uma thread (terminada ou não) para juntar
+    volatile bool pronto;   // a thread terminou; o resultado está em `status`
+    long status;
+    const AuthStreaming *s;
+    const XSessao *sessao;
+} g_ka;
+
+static void *thread_keepalive(void *arg) {
+    (void)arg;
+    g_ka.status = xapi_sessao_keepalive(g_ka.s, g_ka.sessao);
+    __atomic_store_n(&g_ka.pronto, true, __ATOMIC_RELEASE);
+    return NULL;
+}
+
+// Dispara um keepalive se não houver outro em andamento. Retorna false se não deu.
+static bool keepalive_disparar(const AuthStreaming *s, const XSessao *sessao) {
+    if (g_ka.rodando)
+        return false;
+    g_ka.s = s;
+    g_ka.sessao = sessao;
+    g_ka.status = 0;
+    g_ka.pronto = false;
+    pthread_attr_t at;
+    pthread_attr_init(&at);
+    pthread_attr_setstacksize(&at, 256 * 1024); // curl + TLS
+    bool ok = pthread_create(&g_ka.thread, &at, thread_keepalive, NULL) == 0;
+    pthread_attr_destroy(&at);
+    if (!ok) { // sem thread: faz na hora, como antes
+        LOG("main: keepalive sem thread; enviando direto");
+        g_ka.status = xapi_sessao_keepalive(s, sessao);
+        g_ka.pronto = true;
+        return true;
+    }
+    g_ka.rodando = true;
+    return true;
+}
+
+// Se o keepalive terminou, entrega o status (HTTP) e libera para o próximo
+static bool keepalive_resultado(long *status) {
+    if (!__atomic_load_n(&g_ka.pronto, __ATOMIC_ACQUIRE))
+        return false;
+    if (g_ka.rodando) {
+        pthread_join(g_ka.thread, NULL);
+        g_ka.rodando = false;
+    }
+    g_ka.pronto = false;
+    *status = g_ka.status;
+    return true;
+}
+
+// Espera um keepalive em andamento (antes de encerrar a sessão)
+static void keepalive_esperar(void) {
+    if (g_ka.rodando) {
+        pthread_join(g_ka.thread, NULL);
+        g_ka.rodando = false;
+    }
+    g_ka.pronto = false;
+}
+
 static void encerrar_sessao(const AuthStreaming *streaming, const XSessao *sessao) {
     mostrar_aguarde("Encerrando a sessao...");
+    keepalive_esperar(); // não encerrar com um keepalive ainda em voo
     xapi_sessao_encerrar(streaming, sessao);
 }
 
@@ -521,6 +588,7 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
     double t_log_video = 0;
     long status_keepalive = -1;
     int ka_ok = 0, ka_falhas = 0;
+    bool keepalive_apos_sleep = false, keepalive_marcar = false;
     char apos_sleep[160] = "";
     int ultimo_quadro = -1;
     bool fechar = false;
@@ -682,14 +750,23 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                     g_ultimo_congelamento = 0;
                     forcar = true;
                 }
-                if (forcar || segundos_desde(ultimo_keepalive) >= SESSAO_INTERVALO_KEEPALIVE_S) {
-                    status_keepalive = xapi_sessao_keepalive(streaming, sessao);
-                    ultimo_keepalive = armGetSystemTick();
-                    if (status_keepalive >= 200 && status_keepalive < 300) ka_ok++; else ka_falhas++;
-                    if (forcar) {
+                if (forcar)
+                    keepalive_apos_sleep = true;
+                if ((keepalive_apos_sleep || segundos_desde(ultimo_keepalive) >= SESSAO_INTERVALO_KEEPALIVE_S) &&
+                    keepalive_disparar(streaming, sessao)) {
+                    ultimo_keepalive = armGetSystemTick(); // o próximo conta a partir do envio
+                    keepalive_marcar = keepalive_apos_sleep;
+                    keepalive_apos_sleep = false;
+                }
+                long st;
+                if (keepalive_resultado(&st)) {
+                    status_keepalive = st;
+                    if (st >= 200 && st < 300) ka_ok++; else ka_falhas++;
+                    if (keepalive_marcar) {
                         size_t n = strlen(apos_sleep);
-                        snprintf(apos_sleep + n, sizeof apos_sleep - n, ": keepalive HTTP %ld", status_keepalive);
+                        snprintf(apos_sleep + n, sizeof apos_sleep - n, ": keepalive HTTP %ld", st);
                         LOG("main: %s", apos_sleep);
+                        keepalive_marcar = false;
                     }
                     ultimo_quadro = -1;
                 }
