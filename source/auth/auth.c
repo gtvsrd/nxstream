@@ -207,6 +207,9 @@ AuthStatus auth_streaming(const AuthConta *conta, AuthStreaming *s) {
     HttpResposta r;
     AuthStatus st = AUTH_ERRO;
     char *user_token = NULL, *xsts_token = NULL;
+    // Quem chama pode já trazer a gamertag (renovações): não é pedida de novo
+    char gamertag_antes[sizeof s->gamertag];
+    snprintf(gamertag_antes, sizeof gamertag_antes, "%s", s->gamertag);
 
     // 3a. User token
     {
@@ -271,6 +274,8 @@ AuthStatus auth_streaming(const AuthConta *conta, AuthStreaming *s) {
         if (resp && auth_parse_streaming(resp, s)) {
             LOG("auth: streaming liberado (regiao %s, valido por %d s)", s->base_uri, s->duracao_s);
             st = AUTH_OK;
+            if (!s->gamertag[0])
+                snprintf(s->gamertag, sizeof s->gamertag, "%s", gamertag_antes);
         } else {
             if (r.status != 0 && !g_erro[0])
                 snprintf(g_erro, sizeof g_erro,
@@ -278,6 +283,30 @@ AuthStatus auth_streaming(const AuthConta *conta, AuthStreaming *s) {
             st = r.status ? AUTH_ERRO : AUTH_ERRO_REDE;
         }
         http_resposta_liberar(&r);
+    }
+
+    // 3d. Gamertag (v0.10.3). O XSTS do streaming não traz o nome da conta; o do
+    // Xbox Live comum traz (DisplayClaims.xui[0].gtg). Opcional: se falhar, o app
+    // segue sem mostrar a gamertag.
+    if (st == AUTH_OK && !s->gamertag[0]) {
+        cJSON *corpo = cJSON_CreateObject();
+        cJSON *props = cJSON_AddObjectToObject(corpo, "Properties");
+        cJSON_AddStringToObject(props, "SandboxId", "RETAIL");
+        cJSON *tokens = cJSON_AddArrayToObject(props, "UserTokens");
+        cJSON_AddItemToArray(tokens, cJSON_CreateString(user_token));
+        cJSON_AddStringToObject(corpo, "RelyingParty", XBL_RP_XBOXLIVE);
+        cJSON_AddStringToObject(corpo, "TokenType", "JWT");
+
+        char erro_antes[sizeof g_erro];
+        snprintf(erro_antes, sizeof erro_antes, "%s", g_erro);
+        HttpResposta rg;
+        char *resp = post_json(XBL_URL_XSTS, HEADERS_XBL, corpo, "xsts (gamertag)", &rg);
+        cJSON_Delete(corpo);
+        char *token = resp ? auth_parse_xbl_token(resp, s->gamertag, sizeof s->gamertag) : NULL;
+        free(token); // só a gamertag interessa
+        LOG("auth: gamertag %s (HTTP %ld)", s->gamertag[0] ? "obtida" : "nao veio", rg.status);
+        http_resposta_liberar(&rg);
+        snprintf(g_erro, sizeof g_erro, "%s", erro_antes); // falha aqui não é erro do login
     }
 
 fim:

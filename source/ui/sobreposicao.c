@@ -1,5 +1,6 @@
 // NXStream - texto por cima do vídeo (ver sobreposicao.h)
 #include "ui/sobreposicao.h"
+#include "ui/tela.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -21,6 +22,15 @@ static uint8_t g_cor = 7;   // branco normal, como o console
 static bool g_negrito;
 static bool g_nunca_renderizou = true;
 
+// Menu gráfico (v0.10.3): desenhado pela ui/tela por cima do texto
+typedef struct {
+    bool ativo;
+    char titulo[48], subtitulo[96], rodape[96];
+    char itens[SOBRE_MENU_MAX][64];
+    int  total, selecionado;
+} Menu;
+static Menu g_menu, g_menu_desenhado;
+
 // Mesmas cores do console do libnx (console_sw.c): 8 normais e 8 fortes
 static const uint32_t CORES[16] = {
     0x000000, 0x800000, 0x008000, 0x808000, 0x000080, 0x800080, 0x008080, 0xC0C0C0,
@@ -34,6 +44,20 @@ void sobre_limpar(uint8_t fundo) {
     g_x = g_y = 0;
     g_cor = 7;
     g_negrito = false;
+    memset(&g_menu, 0, sizeof g_menu);
+}
+
+void sobre_menu(const char *titulo, const char *subtitulo, const char *const *itens, int total,
+                int selecionado, const char *rodape) {
+    memset(&g_menu, 0, sizeof g_menu); // zera tudo: a comparação em sobre_mudou() é por memcmp
+    g_menu.ativo = true;
+    snprintf(g_menu.titulo, sizeof g_menu.titulo, "%s", titulo ? titulo : "");
+    snprintf(g_menu.subtitulo, sizeof g_menu.subtitulo, "%s", subtitulo ? subtitulo : "");
+    snprintf(g_menu.rodape, sizeof g_menu.rodape, "%s", rodape ? rodape : "");
+    g_menu.total = total > SOBRE_MENU_MAX ? SOBRE_MENU_MAX : total;
+    for (int i = 0; i < g_menu.total; i++)
+        snprintf(g_menu.itens[i], sizeof g_menu.itens[i], "%s", itens[i]);
+    g_menu.selecionado = selecionado;
 }
 
 void sobre_cursor(int coluna, int linha) {
@@ -111,11 +135,12 @@ void sobre_printf(const char *fmt, ...) {
 }
 
 bool sobre_visivel(void) {
-    return g_algum_texto || g_fundo > 0;
+    return g_algum_texto || g_fundo > 0 || g_menu.ativo;
 }
 
 bool sobre_mudou(void) {
-    return g_nunca_renderizou || g_fundo != g_fundo_desenhado || memcmp(g_tela, g_desenhada, sizeof g_tela) != 0;
+    return g_nunca_renderizou || g_fundo != g_fundo_desenhado || memcmp(g_tela, g_desenhada, sizeof g_tela) != 0 ||
+           memcmp(&g_menu, &g_menu_desenhado, sizeof g_menu) != 0;
 }
 
 void sobre_renderizar(uint32_t *pixels, int passo) {
@@ -147,6 +172,14 @@ void sobre_renderizar(uint32_t *pixels, int passo) {
             }
         }
     }
+    if (g_menu.ativo) {
+        const char *itens[SOBRE_MENU_MAX];
+        for (int i = 0; i < g_menu.total; i++)
+            itens[i] = g_menu.itens[i];
+        ui_menu_video(pixels, passo, g_menu.titulo, g_menu.subtitulo, itens, g_menu.total, g_menu.selecionado,
+                      g_menu.rodape);
+    }
+    g_menu_desenhado = g_menu;
     memcpy(g_desenhada, g_tela, sizeof g_tela);
     g_fundo_desenhado = g_fundo;
     g_nunca_renderizou = false;

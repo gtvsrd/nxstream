@@ -321,6 +321,19 @@ O tempo que o console leva para preparar a sessão (2,5 s acordado, ~9 s em repo
 
 **v0.10.2:** o nome passa a ser escrito sempre **NXStream** (arquivos do logo, `NXStream.nro`, artefatos do CI, pasta `/switch/NXStream/` no SD). O cartão SD não diferencia maiúsculas de minúsculas, então a pasta antiga `/switch/nxstream/` continua valendo: o login salvo e o log seguem funcionando, sem mover nada. Pelo mesmo motivo, copiar o `NXStream.nro` substitui o `nxstream.nro` antigo.
 
+**v0.10.3:**
+- **Logo dentro do app:** o cabeçalho usava a versão de traço grosso (feita para ícones pequenos) e a tela de conexão tinha um disco cinza atrás, então parecia outro logo. Agora é sempre o desenho do `NXStream-logo.svg`, maior (56 px no cabeçalho, 200 px no centro) e com bordas mais limpas.
+- **Ícone do `.nro`:** o `icon.jpg` tinha manchas de compressão JPEG no preto (até 55 de 255 em 23% dos pixels pretos). Agora é salvo com qualidade máxima e sem redução de cor (desvio máximo de 3), com o logo um pouco maior. O tamanho continua 256×256, que é o que o Switch aceita.
+- **Gamertag:** o token do streaming não traz o nome da conta; o app agora pede o do Xbox Live comum (uma chamada a mais no login; não se repete nas renovações). Aparece no cabeçalho de todas as telas e na lista ("Conectado como ..."). No log: `auth: gamertag obtida`.
+- **Menu gráfico no streaming** (+ e − por 1 s): cartão no centro, por cima do vídeo, com o console e o tempo conectado (`docs/telas/8_menu_video.png`). As estatísticas continuam em texto.
+
+| Teste (v0.10.3) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Ícone no menu de homebrews | Preto limpo, sem manchas | |
+| Logo nas telas | Igual ao do ícone | |
+| Gamertag | Aparece no canto de cima à direita e na lista | |
+| Menu no streaming | Cartão gráfico; cima/baixo, A e B funcionam como antes | |
+
 O log registra `main: conexao instavel (...)`, `main: conexao voltou sozinha em X s`, `main: ... reconectando`, `main: reconectado (tentativa N)` e, se for o caso, `abrindo uma sessao nova`.
 
 As próximas fases recebem seus checklists aqui quando começarem.

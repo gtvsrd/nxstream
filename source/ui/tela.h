@@ -45,6 +45,14 @@ void ui_mensagem(UiTipo tipo, const char *titulo, const char *detalhe, const cha
 void ui_lista(const char *titulo, const char *subtitulo, const UiItem *itens, int total, int selecionado,
               const char *mensagem, const char *rodape);
 
+// Gamertag mostrada no cabeçalho de todas as telas ("" ou NULL = nenhuma).
+void ui_definir_conta(const char *gamertag);
+
+// Menu por cima do vídeo: desenha um cartão no centro de uma imagem RGBA
+// 1280x720 (a camada de sobreposição). Itens em UTF-8; rodapé como nas telas.
+void ui_menu_video(uint32_t *pixels, int passo, const char *titulo, const char *subtitulo,
+                   const char *const *itens, int total, int selecionado, const char *rodape);
+
 // Redesenha a tela atual e a mostra (espera o vsync).
 void ui_desenhar(void);
 

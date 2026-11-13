@@ -34,6 +34,7 @@
 #define XBL_URL_XSTS        "https://xsts.auth.xboxlive.com/xsts/authorize"
 #define XBL_RP_USER         "http://auth.xboxlive.com"
 #define XBL_RP_GSSV         "http://gssv.xboxlive.com/"
+#define XBL_RP_XBOXLIVE     "http://xboxlive.com"       // só para ler a gamertag
 
 // ---------------------------------------------------------------------------
 // Serviço de streaming (GSSV) - console próprio ("xhome")

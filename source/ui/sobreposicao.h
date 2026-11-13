@@ -20,6 +20,11 @@
 void sobre_limpar(uint8_t fundo);
 // Escreve como o printf do console: entende \n e as cores \x1b[...m usadas no app.
 void sobre_printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+// Menu gráfico no centro da tela (desenhado pela ui/tela, por cima do texto).
+// Vale até o próximo sobre_limpar(). Itens em UTF-8; rodapé "A=Escolher|B=Voltar".
+#define SOBRE_MENU_MAX 8
+void sobre_menu(const char *titulo, const char *subtitulo, const char *const *itens, int total,
+                int selecionado, const char *rodape);
 // Move o cursor (coluna e linha a partir de 0)
 void sobre_cursor(int coluna, int linha);
 // Há algo para mostrar? (false = não desenhar a camada)

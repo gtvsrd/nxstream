@@ -340,15 +340,16 @@ static int altura_paragrafo(int largura_max, int tam, const char *s) {
 // ---------------------------------------------------------------------------
 // Logo (assets/logo/NXStream-logo.svg): anel bicolor, N vermelho e a diagonal
 // verde do X. Mesma geometria do SVG, em coordenadas 0..100, testada ponto a
-// ponto com 4x4 amostras por pixel. Desenhar custa caro, então cada tamanho é
+// ponto com 6x6 amostras por pixel. Desenhar custa caro, então cada tamanho é
 // desenhado uma vez numa máscara (cobertura de vermelho e de verde) e reusado.
 // ---------------------------------------------------------------------------
 
-// 0 = nada, 1 = vermelho, 2 = verde. `pequeno`: traço mais grosso (até 64 px).
-static int logo_ponto(float x, float y, bool pequeno) {
-    const float w = pequeno ? 11.0f : 8.0f, h = w / 2;
-    const float bx0 = pequeno ? 26.5f : 28.0f, bx1 = 100 - bx0;  // caixa das letras
-    const float by0 = pequeno ? 25.5f : 27.0f, by1 = 100 - by0;
+// 0 = nada, 1 = vermelho, 2 = verde. Uma geometria só, a do NXStream-logo.svg
+// (a v0.10.1 usava a versão de traço grosso no cabeçalho, que parecia outro logo).
+static int logo_ponto(float x, float y) {
+    const float w = 8.0f, h = w / 2;
+    const float bx0 = 28.0f, bx1 = 100 - bx0;  // caixa das letras
+    const float by0 = 27.0f, by1 = 100 - by0;
     const float dx = x - 50, dy = y - 50;
     bool na_caixa = x >= bx0 && x <= bx1 && y >= by0 && y <= by1;
     // Diagonal verde (do canto de cima à direita ao de baixo à esquerda)
@@ -400,19 +401,18 @@ static const MascaraLogo *logo_mascara(int tam) {
         return NULL;
     }
     m->tam = tam;
-    bool pequeno = tam <= 64;
     float esc = 100.0f / tam;
     for (int py = 0; py < tam; py++)
         for (int px = 0; px < tam; px++) {
             int nv = 0, ng = 0;
-            for (int sy = 0; sy < 4; sy++)
-                for (int sx = 0; sx < 4; sx++) {
-                    int c = logo_ponto((px + (sx + 0.5f) / 4) * esc, (py + (sy + 0.5f) / 4) * esc, pequeno);
+            for (int sy = 0; sy < 6; sy++)
+                for (int sx = 0; sx < 6; sx++) {
+                    int c = logo_ponto((px + (sx + 0.5f) / 6) * esc, (py + (sy + 0.5f) / 6) * esc);
                     nv += c == 1;
                     ng += c == 2;
                 }
-            m->verm[py * tam + px] = (unsigned char)(nv * 255 / 16);
-            m->verde[py * tam + px] = (unsigned char)(ng * 255 / 16);
+            m->verm[py * tam + px] = (unsigned char)(nv * 255 / 36);
+            m->verde[py * tam + px] = (unsigned char)(ng * 255 / 36);
         }
     return m;
 }
@@ -433,10 +433,31 @@ static void logo(int cx, int cy, int tam) {
         }
 }
 
+static char g_conta[64]; // gamertag mostrada no cabeçalho ("" = nenhuma)
+
+void ui_definir_conta(const char *gamertag) {
+    copiar(g_conta, sizeof g_conta, gamertag);
+}
+
 static void cabecalho(void) {
-    logo(64, 50, 40);
-    texto(94, 33, 28, COR_TEXTO, "NXStream", 0);
-    texto(1216, 39, 18, COR_TEXTO3, "v" APP_VERSION, 2);
+    logo(72, 52, 56);
+    texto(110, 35, 28, COR_TEXTO, "NXStream", 0);
+    if (g_conta[0]) { // gamertag com a inicial num círculo, como um avatar
+        int w = largura(22, g_conta);
+        texto(1232, 39, 22, COR_TEXTO, g_conta, 2);
+        int cx = 1232 - w - 28;
+        circulo((float)cx, 52, 17, COR_VERDE, 1.0f);
+        const char *p = g_conta;
+        int cp = proximo_cp(&p);
+        char inicial[8] = {0};
+        if (cp < 0x80) {
+            inicial[0] = (char)((cp >= 'a' && cp <= 'z') ? cp - 32 : cp);
+        } else {
+            memcpy(inicial, g_conta, (size_t)(p - g_conta));
+        }
+        texto(cx, 40, 21, COR_ESCURO, inicial, 1);
+    }
+    texto(48, 664, 16, COR_TEXTO3, "v" APP_VERSION, 0);
 }
 
 static void botao(int cx, int cy, const char *nome) {
@@ -451,17 +472,16 @@ static void botao(int cx, int cy, const char *nome) {
 }
 
 // "A=Conectar|B=Voltar": botões alinhados à direita, como no Switch
-static void rodape(const char *r) {
+static void rodape_em(const char *r, int x_direita, int y) {
     if (!r || !r[0])
         return;
-    preencher(48, 648, UI_LARGURA - 96, 1, COR_LINHA);
     char copia[160];
     copiar(copia, sizeof copia, r);
     char *partes[8];
     int n = 0;
     for (char *p = strtok(copia, "|"); p && n < 8; p = strtok(NULL, "|"))
         partes[n++] = p;
-    int x = UI_LARGURA - 64;
+    int x = x_direita;
     for (int i = n - 1; i >= 0; i--) {
         char *igual = strchr(partes[i], '=');
         if (!igual)
@@ -469,18 +489,25 @@ static void rodape(const char *r) {
         *igual = '\0';
         const char *rotulo = igual + 1;
         int w = largura(22, rotulo);
-        texto(x - w, 670, 22, COR_TEXTO2, rotulo, 0);
-        botao(x - w - 26, 684, partes[i]);
+        texto(x - w, y, 22, COR_TEXTO2, rotulo, 0);
+        botao(x - w - 26, y + 14, partes[i]);
         x -= w + 26 + 15 + 36;
     }
+}
+
+static void rodape(const char *r) {
+    if (!r || !r[0])
+        return;
+    preencher(48, 648, UI_LARGURA - 96, 1, COR_LINHA);
+    rodape_em(r, UI_LARGURA - 64, 670);
 }
 
 // ---------------------------------------------------------------------------
 // Telas
 // ---------------------------------------------------------------------------
 static void tela_status(double t) {
-    const float cx = UI_LARGURA / 2.0f, cy = 268;
-    const int tam = 168;           // o anel do logo tem raio de ~0,46 do lado
+    const float cx = UI_LARGURA / 2.0f, cy = 262;
+    const int tam = 200;           // o anel do logo tem raio de ~0,46 do lado
     const float r = tam * 0.46f;
     // Ondas saindo do logo, alternando as duas cores dele
     for (int k = 0; k < 2; k++) {
@@ -489,12 +516,9 @@ static void tela_status(double t) {
         anel(cx, cy, r * (1.0f + 0.9f * p), 2.5f, ((volta + k) & 1) ? COR_VERMELHO : COR_VERDE,
              0.40f * (1 - p) * (1 - p));
     }
-    // Um brilho que "respira" atrás do logo
-    float pulso = 0.5f + 0.5f * (float)sin(t * 2 * M_PI / 1.6);
-    circulo(cx, cy, r - 6, COR_TEXTO, 0.03f + 0.04f * pulso);
     logo((int)cx, (int)cy, tam);
 
-    int y = 392;
+    int y = 400;
     if (g_t.titulo[0]) {
         texto((int)cx, y, 40, COR_TEXTO, g_t.titulo, 1);
         y += 58;
@@ -582,6 +606,34 @@ static void tela_lista(void) {
     }
     if (g_t.detalhe[0])
         paragrafo(x, g_t.total ? y + 8 : 214, w, 22, COR_TEXTO2, g_t.detalhe, 0);
+}
+
+// Menu por cima do vídeo: um cartão no centro da imagem RGBA da sobreposição.
+// O véu escuro em volta já foi pintado por quem chama; aqui tudo é opaco.
+void ui_menu_video(uint32_t *pixels, int passo, const char *titulo, const char *subtitulo,
+                   const char *const *itens, int total, int selecionado, const char *rodape_txt) {
+    g_px = pixels;
+    g_passo = passo;
+    const int w = 600, alt_item = 58, topo = 118, base = 70;
+    const int h = topo + total * alt_item + base;
+    const int x = (UI_LARGURA - w) / 2, y = (UI_ALTURA - h) / 2;
+    retangulo(x - 2, y - 2, w + 4, h + 4, 22, COR_LINHA);
+    retangulo(x, y, w, h, 20, RGB(0x16, 0x16, 0x16));
+    logo(x + 56, y + 56, 64);
+    texto(x + 102, y + 26, 28, COR_TEXTO, titulo ? titulo : "", 0);
+    if (subtitulo && subtitulo[0])
+        texto(x + 102, y + 62, 19, COR_TEXTO2, subtitulo, 0);
+    preencher(x + 28, y + topo - 14, w - 56, 1, COR_LINHA);
+    for (int i = 0; i < total; i++) {
+        int iy = y + topo + i * alt_item;
+        if (i == selecionado) {
+            retangulo(x + 20, iy, w - 40, alt_item - 8, 12, COR_VERDE);
+            retangulo(x + 23, iy + 3, w - 46, alt_item - 14, 9, COR_CARTAO_SEL);
+        }
+        texto(x + 48, iy + 11, 24, i == selecionado ? COR_TEXTO : COR_TEXTO2, itens[i], 0);
+    }
+    preencher(x + 28, y + h - base + 4, w - 56, 1, COR_LINHA);
+    rodape_em(rodape_txt, x + w - 36, y + h - base + 24);
 }
 
 void ui_renderizar(uint32_t *pixels, int passo, double t) {

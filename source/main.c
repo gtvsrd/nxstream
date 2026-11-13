@@ -56,6 +56,7 @@ static bool g_chegou_a_conectar = false; // esta tentativa chegou a conectar (ze
 static time_t g_streaming_obtido = 0;    // quando o gsToken atual foi obtido (vale ~4 h)
 static bool g_forcar_renovacao = false;  // o servidor respondeu 401: renovar o gsToken antes da próxima chamada
 static u64 g_tick_queda = 0;            // quando a conexão caiu (para medir a reconexão inteira)
+static char g_gamertag[64] = "";        // nome da conta, para o cabeçalho e para não pedir de novo
 static AuthConta *g_conta = NULL;        // conta, para renovar o acesso durante o streaming
 #define LIMITE_SUSPENSAO_S 1.5               // quadro parado por mais que isso = suspensão
 
@@ -499,7 +500,10 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
     const char *mensagem = NULL;
     for (;;) {
         char conta_txt[96];
-        snprintf(conta_txt, sizeof conta_txt, "Conta: %s", streaming->gamertag[0] ? streaming->gamertag : "conectada");
+        if (streaming->gamertag[0])
+            snprintf(conta_txt, sizeof conta_txt, "Conectado como %s", streaming->gamertag);
+        else
+            snprintf(conta_txt, sizeof conta_txt, "Conta conectada");
         UiItem itens[UI_MAX_ITENS];
         int total = consoles.total < UI_MAX_ITENS ? consoles.total : UI_MAX_ITENS;
         for (int i = 0; i < total; i++) {
@@ -594,6 +598,7 @@ static AuthStatus obter_streaming_novo(AuthConta *conta, AuthStreaming *novo) {
     if (st == AUTH_OK) {
         if (!auth_salvar_refresh(NX_ARQ_TOKEN, conta->refresh_token))
             LOG("main: nao foi possivel salvar o token renovado");
+        snprintf(novo->gamertag, sizeof novo->gamertag, "%s", g_gamertag); // já conhecida
         st = auth_streaming(conta, novo);
     }
     return st;
@@ -829,31 +834,17 @@ static void linha_etapa(const char *nome, EtapaConexao atual, EtapaConexao esta,
 // Menu do vídeo (+ e - segurados por 1 s)
 enum { MENU_VOLTAR, MENU_XBOX, MENU_ESTATISTICAS, MENU_DESCONECTAR, MENU_FECHAR, MENU_ITENS };
 
-static void desenhar_menu(int item, bool estatisticas) {
-    const char *nomes[MENU_ITENS] = {"Voltar ao jogo", "Botao Xbox (guia)",
-                                     estatisticas ? "Esconder estatisticas" : "Mostrar estatisticas",
-                                     "Desconectar", "Fechar o app"};
-    const int x = 22, y = 15, largura = 36;
-    // Cada linha é preenchida até a largura para o fundo da caixa ficar uniforme
-    sobre_cursor(x, y);
-    sobre_printf("%-*s", largura, "");
-    sobre_cursor(x, y + 1);
-    sobre_printf("  " COR_TITULO "NXStream" COR_FIM "%-*s", largura - 10, "");
-    sobre_cursor(x, y + 2);
-    sobre_printf("%-*s", largura, "");
-    for (int i = 0; i < MENU_ITENS; i++) {
-        sobre_cursor(x, y + 3 + i);
-        if (i == item)
-            sobre_printf("  " COR_DESTAQ "> %-*s" COR_FIM, largura - 4, nomes[i]);
-        else
-            sobre_printf("    %-*s", largura - 4, nomes[i]);
-    }
-    sobre_cursor(x, y + 3 + MENU_ITENS);
-    sobre_printf("%-*s", largura, "");
-    sobre_cursor(x, y + 4 + MENU_ITENS);
-    sobre_printf(COR_FRACA "  Cima/baixo, A = ok, B = voltar    " COR_FIM);
-    sobre_cursor(x, y + 5 + MENU_ITENS);
-    sobre_printf("%-*s", largura, "");
+static void desenhar_menu(int item, bool estatisticas, double conectado_ha) {
+    const char *nomes[MENU_ITENS] = {"Voltar ao jogo", "Botão Xbox (guia)",
+                                     estatisticas ? "Esconder estatísticas" : "Mostrar estatísticas",
+                                     "Desconectar", "Fechar o NXStream"};
+    char sub[96];
+    int seg = conectado_ha > 0 ? (int)conectado_ha : 0;
+    if (seg >= 3600)
+        snprintf(sub, sizeof sub, "%s · conectado há %d h %02d min", g_console.nome, seg / 3600, seg % 3600 / 60);
+    else
+        snprintf(sub, sizeof sub, "%s · conectado há %d min", g_console.nome, seg / 60);
+    sobre_menu("NXStream", sub, nomes, MENU_ITENS, item, "A=Escolher|B=Voltar");
 }
 
 static void desenhar_aviso_menu(void) {
@@ -1248,7 +1239,7 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
         }
         if (redesenhar && em_video) {
             if (menu_aberto)
-                desenhar_menu(menu_item, mostrar_estatisticas);
+                desenhar_menu(menu_item, mostrar_estatisticas, segundos_desde(inicio) - e.t_conectado);
             else if (!mostrar_estatisticas && segundos_desde(inicio) - t_video < 6.0)
                 desenhar_aviso_menu();
             g_capturando = false;
@@ -1785,13 +1776,19 @@ int main(int argc, char *argv[]) {
                     passo = conta.refresh_token ? PASSO_STREAMING : PASSO_LOGIN;
                     break;
                 case PASSO_LOGIN:
+                    g_gamertag[0] = '\0'; // outra conta pode entrar
+                    ui_definir_conta(NULL);
                     passo = passo_login(&conta, aviso_login);
                     aviso_login = NULL;
                     recem_logada = (passo == PASSO_STREAMING);
                     break;
                 case PASSO_STREAMING:
                     auth_streaming_liberar(&streaming);
+                    snprintf(streaming.gamertag, sizeof streaming.gamertag, "%s", g_gamertag);
                     passo = passo_streaming(&conta, &streaming, recem_logada, &aviso_login);
+                    if (streaming.gamertag[0])
+                        snprintf(g_gamertag, sizeof g_gamertag, "%s", streaming.gamertag);
+                    ui_definir_conta(g_gamertag);
                     recem_logada = false;
                     g_streaming_obtido = time(NULL);
                     g_forcar_renovacao = false;
