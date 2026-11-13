@@ -600,6 +600,7 @@ static AuthStatus obter_streaming_novo(AuthConta *conta, AuthStreaming *novo) {
 }
 
 static void keepalive_esperar(void);
+static void mostrar_conexao(const char *status, const char *detalhe, const char *rodape);
 
 static void aplicar_streaming_novo(AuthStreaming *atual, AuthStreaming *novo) {
     keepalive_esperar(); // o keepalive em voo lê o token atual
