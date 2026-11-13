@@ -317,6 +317,8 @@ O tempo que o console leva para preparar a sessão (2,5 s acordado, ~9 s em repo
 | Login (sair da conta com X) | Código grande; A abre o navegador com o código preenchido | |
 | Diagnóstico (−) e voltar | Console de texto e de volta às telas novas | |
 
+**v0.10.1:** logo próprio do projeto (`assets/logo/`): anel bicolor com o N vermelho e a diagonal verde do X. Vira o ícone do `.nro` e aparece nas telas (cabeçalho e no centro da tela de conexão, com ondas vermelhas e verdes). O verde da interface passa a ser o do logo.
+
 O log registra `main: conexao instavel (...)`, `main: conexao voltou sozinha em X s`, `main: ... reconectando`, `main: reconectado (tentativa N)` e, se for o caso, `abrindo uma sessao nova`.
 
 As próximas fases recebem seus checklists aqui quando começarem.

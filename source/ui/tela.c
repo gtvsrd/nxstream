@@ -24,8 +24,9 @@
 #define RGB(r, g, b) (0xFF000000u | ((uint32_t)(b) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(r))
 #define COR_FUNDO_TOPO  RGB(0x1C, 0x1C, 0x1C)
 #define COR_FUNDO_BASE  RGB(0x0C, 0x0C, 0x0C)
-#define COR_VERDE       RGB(0x10, 0x7C, 0x10)  // verde do Xbox
-#define COR_VERDE_CLARO RGB(0x5D, 0xC2, 0x1E)  // verde para texto no fundo escuro
+#define COR_VERDE       RGB(0x2B, 0xD4, 0x6A)  // verde do logo
+#define COR_VERDE_CLARO RGB(0x2B, 0xD4, 0x6A)
+#define COR_VERMELHO    RGB(0xF0, 0x35, 0x3D)  // vermelho do logo
 #define COR_TEXTO       RGB(0xFF, 0xFF, 0xFF)
 #define COR_TEXTO2      RGB(0xB8, 0xB8, 0xB8)
 #define COR_TEXTO3      RGB(0x80, 0x80, 0x80)
@@ -178,29 +179,6 @@ static void retangulo(int x, int y, int w, int h, float raio, uint32_t cor) {
             float cobre = limitar(raio + 0.5f - sqrtf(dx * dx + dy * dy));
             if (cobre > 0)
                 misturar(i, j, cor, cobre);
-        }
-}
-
-// Triângulo de "play" apontando para a direita, centrado em (cx, cy)
-static void triangulo(float cx, float cy, float tam, uint32_t cor, float alfa) {
-    float ax = cx - tam * 0.38f, ay = cy - tam * 0.5f;
-    float bx = cx - tam * 0.38f, by = cy + tam * 0.5f;
-    float qx = cx + tam * 0.5f, qy = cy;
-    float vx[3] = {ax, bx, qx}, vy[3] = {ay, by, qy};
-    for (int y = (int)(cy - tam * 0.5f) - 1; y <= (int)(cy + tam * 0.5f) + 1; y++)
-        for (int x = (int)(ax) - 1; x <= (int)(qx) + 1; x++) {
-            float px = x + 0.5f, py = y + 0.5f, menor = 1e9f;
-            for (int k = 0; k < 3; k++) {
-                float x1 = vx[k], y1 = vy[k], x2 = vx[(k + 1) % 3], y2 = vy[(k + 1) % 3];
-                float ex = x2 - x1, ey = y2 - y1, len = sqrtf(ex * ex + ey * ey);
-                // distância com sinal até a aresta (positiva do lado de dentro)
-                float d = ((px - x1) * ey - (py - y1) * ex) / len;
-                if (d < menor)
-                    menor = d;
-            }
-            float cobre = limitar(menor + 0.5f);
-            if (cobre > 0)
-                misturar(x, y, cor, cobre * alfa);
         }
 }
 
@@ -359,13 +337,104 @@ static int altura_paragrafo(int largura_max, int tam, const char *s) {
 // ---------------------------------------------------------------------------
 // Partes comuns
 // ---------------------------------------------------------------------------
-static void simbolo(float cx, float cy, float r) {
-    circulo(cx, cy, r, COR_VERDE, 1.0f);
-    triangulo(cx + r * 0.08f, cy, r * 0.9f, COR_TEXTO, 1.0f);
+// ---------------------------------------------------------------------------
+// Logo (assets/logo/nxstream-logo.svg): anel bicolor, N vermelho e a diagonal
+// verde do X. Mesma geometria do SVG, em coordenadas 0..100, testada ponto a
+// ponto com 4x4 amostras por pixel. Desenhar custa caro, então cada tamanho é
+// desenhado uma vez numa máscara (cobertura de vermelho e de verde) e reusado.
+// ---------------------------------------------------------------------------
+
+// 0 = nada, 1 = vermelho, 2 = verde. `pequeno`: traço mais grosso (até 64 px).
+static int logo_ponto(float x, float y, bool pequeno) {
+    const float w = pequeno ? 11.0f : 8.0f, h = w / 2;
+    const float bx0 = pequeno ? 26.5f : 28.0f, bx1 = 100 - bx0;  // caixa das letras
+    const float by0 = pequeno ? 25.5f : 27.0f, by1 = 100 - by0;
+    const float dx = x - 50, dy = y - 50;
+    bool na_caixa = x >= bx0 && x <= bx1 && y >= by0 && y <= by1;
+    // Diagonal verde (do canto de cima à direita ao de baixo à esquerda)
+    float d_verde = 0.7231f * dx + 0.6906f * dy;
+    if (na_caixa && fabsf(d_verde) <= h)
+        return 2;
+    // N vermelho: hastes + diagonal, sem as pontas que passariam do traço verde
+    if (na_caixa && !(x <= 40 && d_verde > h) && !(x >= 60 && d_verde < -h)) {
+        if (fabsf(x - 32) <= h || fabsf(x - 68) <= h || fabsf(0.7262f * dx - 0.6880f * dy) <= h)
+            return 1;
+    }
+    // Anel: vermelho de 144,6° a 302,8°; verde de -35,4° a 122,8°
+    float r = sqrtf(dx * dx + dy * dy);
+    if (r >= 42 - h && r <= 42 + h) {
+        float a = atan2f(dy, dx) * (180.0f / (float)M_PI);
+        if (a < 0)
+            a += 360;
+        if (a >= 144.6f && a <= 302.8f)
+            return 1;
+        if (a >= 324.6f || a <= 122.8f)
+            return 2;
+    }
+    return 0;
+}
+
+typedef struct {
+    int tam;                     // lado em pixels (0 = livre)
+    unsigned char *verm, *verde; // cobertura 0..255
+} MascaraLogo;
+
+static MascaraLogo g_logos[4];
+
+static const MascaraLogo *logo_mascara(int tam) {
+    for (int i = 0; i < 4; i++)
+        if (g_logos[i].tam == tam)
+            return &g_logos[i];
+    MascaraLogo *m = NULL;
+    for (int i = 0; i < 4 && !m; i++)
+        if (!g_logos[i].tam)
+            m = &g_logos[i];
+    if (!m)
+        return NULL;
+    m->verm = calloc((size_t)tam * tam, 1);
+    m->verde = calloc((size_t)tam * tam, 1);
+    if (!m->verm || !m->verde) {
+        free(m->verm);
+        free(m->verde);
+        m->verm = m->verde = NULL;
+        return NULL;
+    }
+    m->tam = tam;
+    bool pequeno = tam <= 64;
+    float esc = 100.0f / tam;
+    for (int py = 0; py < tam; py++)
+        for (int px = 0; px < tam; px++) {
+            int nv = 0, ng = 0;
+            for (int sy = 0; sy < 4; sy++)
+                for (int sx = 0; sx < 4; sx++) {
+                    int c = logo_ponto((px + (sx + 0.5f) / 4) * esc, (py + (sy + 0.5f) / 4) * esc, pequeno);
+                    nv += c == 1;
+                    ng += c == 2;
+                }
+            m->verm[py * tam + px] = (unsigned char)(nv * 255 / 16);
+            m->verde[py * tam + px] = (unsigned char)(ng * 255 / 16);
+        }
+    return m;
+}
+
+// Logo com `tam` pixels de lado, centrado em (cx, cy)
+static void logo(int cx, int cy, int tam) {
+    const MascaraLogo *m = logo_mascara(tam);
+    if (!m)
+        return;
+    int x0 = cx - tam / 2, y0 = cy - tam / 2;
+    for (int y = 0; y < tam; y++)
+        for (int x = 0; x < tam; x++) {
+            unsigned char v = m->verm[y * tam + x], g = m->verde[y * tam + x];
+            if (v)
+                misturar(x0 + x, y0 + y, COR_VERMELHO, v / 255.0f);
+            if (g)
+                misturar(x0 + x, y0 + y, COR_VERDE, g / 255.0f);
+        }
 }
 
 static void cabecalho(void) {
-    simbolo(66, 50, 17);
+    logo(64, 50, 40);
     texto(94, 33, 28, COR_TEXTO, "NXStream", 0);
     texto(1216, 39, 18, COR_TEXTO3, "v" APP_VERSION, 2);
 }
@@ -410,15 +479,20 @@ static void rodape(const char *r) {
 // Telas
 // ---------------------------------------------------------------------------
 static void tela_status(double t) {
-    const float cx = UI_LARGURA / 2.0f, cy = 270, r = 62;
-    // Duas ondas saindo do símbolo e o símbolo "respirando"
+    const float cx = UI_LARGURA / 2.0f, cy = 268;
+    const int tam = 168;           // o anel do logo tem raio de ~0,46 do lado
+    const float r = tam * 0.46f;
+    // Ondas saindo do logo, alternando as duas cores dele
     for (int k = 0; k < 2; k++) {
         float p = (float)fmod(t / 2.0 + k * 0.5, 1.0);
-        anel(cx, cy, r * (1.0f + 1.1f * p), 3.0f, COR_VERDE_CLARO, 0.45f * (1 - p) * (1 - p));
+        int volta = (int)floor(t / 2.0 + k * 0.5);
+        anel(cx, cy, r * (1.0f + 0.9f * p), 2.5f, ((volta + k) & 1) ? COR_VERMELHO : COR_VERDE,
+             0.40f * (1 - p) * (1 - p));
     }
-    float pulso = 1.0f + 0.045f * (float)sin(t * 2 * M_PI / 1.6);
-    circulo(cx, cy, r * pulso + 10, COR_VERDE, 0.18f);
-    simbolo(cx, cy, r * pulso);
+    // Um brilho que "respira" atrás do logo
+    float pulso = 0.5f + 0.5f * (float)sin(t * 2 * M_PI / 1.6);
+    circulo(cx, cy, r - 6, COR_TEXTO, 0.03f + 0.04f * pulso);
+    logo((int)cx, (int)cy, tam);
 
     int y = 392;
     if (g_t.titulo[0]) {

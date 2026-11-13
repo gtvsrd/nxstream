@@ -9,7 +9,8 @@
 - Branches `fase-2c`, `fase-2c3` e `fase-3` já estão contidas na `main`/`fase-4` e podem ser apagadas.
 - Resultados de cada teste, versão por versão: `docs/DESENVOLVIMENTO.md` (fases 2c.2, 2c.3, 3 e 4).
 - **v0.10.0** (fase-4): interface gráfica simples no estilo do app do Xbox (`docs/telas/`) e tela de reconexão imediata ao acordar. A v0.9.3 reconectou 3 de 3 vezes em 12–13 s.
-- Próximo passo: o usuário testar a v0.10.0 no dia a dia (repouso, Wi-Fi, HOME, sessão longa) e mandar os logs; com a fase 4 validada, juntar `fase-4` na `main` e seguir para a fase 5 (vibração, mapeamento configurável, opções).
+- **v0.10.1**: logo próprio (`assets/logo/`), no ícone do app e nas telas.
+- Próximo passo: o usuário testar a v0.10.1 no dia a dia (repouso, Wi-Fi, HOME, sessão longa) e mandar os logs; com a fase 4 validada, juntar `fase-4` na `main` e seguir para a fase 5 (vibração, mapeamento configurável, opções).
 - Dicas registradas: para atualizar, copiar só o `nxstream.nro` (o `token.json` guarda o login entre versões); o preto em 16 (faixa limitada) é o correto no OLED.
 
 ## Objetivo

@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo/nxstream-logo-256.png" width="160" alt="NXStream logo"></p>
+
 # NXStream
 
 ![Platform](https://img.shields.io/badge/platform-Nintendo%20Switch-e60012)

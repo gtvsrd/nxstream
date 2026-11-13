@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="1024" height="1024">
+  <!-- Ícone do app: logo sobre fundo preto, com margem -->
+  <defs>
+    <clipPath id="n"><polygon points="28,27 60,27 60,33.73 66.44,27 72,27 72,73 40,73 40,66.27 33.56,73 28,73"/></clipPath>
+    <clipPath id="x"><rect x="28" y="27" width="44" height="46"/></clipPath>
+  </defs>
+  <rect width="100" height="100" fill="#000000"/>
+  <g transform="translate(9 9) scale(0.82)">
+    <path d="M15.8 74.3 A42 42 0 0 1 72.8 14.7" fill="none" stroke="#F0353D" stroke-width="8"/>
+    <path d="M84.2 25.7 A42 42 0 0 1 27.2 85.3" fill="none" stroke="#2BD46A" stroke-width="8"/>
+    <path d="M32 100 V31 L68 69 V0" fill="none" stroke="#F0353D" stroke-width="8" stroke-linejoin="miter" stroke-miterlimit="10" clip-path="url(#n)"/>
+    <path d="M81.8 16.7 L18.2 83.3" fill="none" stroke="#2BD46A" stroke-width="8" clip-path="url(#x)"/>
+  </g>
+</svg>
