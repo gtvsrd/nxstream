@@ -1,7 +1,8 @@
-// NXStream - Fase 2c: login, lista de consoles, conexão com o console e vídeo na tela
+// NXStream - login, lista de consoles, conexão com o console e vídeo na tela
 //
-// Interface em texto simples (console do libnx); com o vídeo na tela (fase 2c.3)
-// o console é desligado e o texto vai para uma camada por cima do vídeo. Fluxo:
+// Interface gráfica simples (ui/tela, v0.10.0) inspirada no app do Xbox; o
+// console de texto do libnx fica para o diagnóstico. Com o vídeo na tela, o
+// texto (estatísticas, menu) vai para uma camada por cima dele. Fluxo:
 //   INICIO -> (sem token salvo) LOGIN -> STREAMING -> LISTA
 //   INICIO -> (com token salvo) STREAMING -> LISTA
 //   LISTA -> (A no console) SESSAO -> LISTA
@@ -29,6 +30,7 @@
 #include "media/audio.h"
 #include "input/controle.h"
 #include "ui/sobreposicao.h"
+#include "ui/tela.h"
 #include "net/rtc_comum.h"
 #include "net/rtc_diag.h"
 
@@ -112,20 +114,64 @@ static void tp(const char *fmt, ...) {
         fputs(buf, stdout);
 }
 
-// Volta para o console de texto (desliga a GPU, que usa a mesma janela).
-// Precisa vir antes de fechar a conexão: os quadros na tela são do decodificador.
+// A janela do app é usada por um de três de cada vez: o console de texto
+// (diagnóstico), a interface gráfica (ui/tela) ou a GPU com o vídeo.
+static bool g_console_ativo = false;
+
+static void soltar_janela(void) {
+    if (video_tela_ativa())
+        video_tela_encerrar(); // solta os quadros do decodificador
+    if (ui_ativa())
+        ui_encerrar();
+    if (g_console_ativo) {
+        consoleExit(NULL);
+        g_console_ativo = false;
+    }
+}
+
+// Console de texto (diagnóstico e telas de emergência)
 static void modo_texto(void) {
-    if (!video_tela_ativa())
+    if (g_console_ativo)
         return;
-    video_tela_encerrar();
+    soltar_janela();
     consoleInit(NULL);
+    g_console_ativo = true;
+}
+
+// Interface gráfica. Também tira o vídeo da frente: precisa vir antes de fechar
+// a conexão, porque os quadros na tela são do decodificador.
+static void modo_ui(void) {
+    if (ui_ativa())
+        return;
+    soltar_janela();
+    if (!ui_iniciar()) {
+        LOG("main: interface grafica indisponivel; usando o console de texto");
+        modo_texto();
+    }
+}
+
+// Mostra a tela atual já (antes de uma operação que trava por alguns segundos)
+static void mostrar_agora(void) {
+    if (ui_ativa())
+        ui_desenhar();
+    else if (g_console_ativo)
+        consoleUpdate(NULL);
 }
 
 // Um quadro: processa o sistema e o controle. Retorna os botões apertados.
 // *fechar fica true quando o sistema pede para encerrar o app.
 static u64 quadro(bool *fechar) {
-    if (!video_tela_ativa()) // com o vídeo, quem mostra a tela é video_tela_desenhar()
+    // Com o vídeo, quem mostra a tela é video_tela_desenhar(). A interface é
+    // redesenhada a cada quadro (animação) e espera o vsync; fora de foco (HOME)
+    // não desenha, só ritma o laço.
+    if (ui_ativa()) {
+        if (g_em_foco)
+            ui_desenhar();
+        else
+            svcSleepThread(16000000ULL);
+    } else if (g_console_ativo) {
         consoleUpdate(NULL);
+    }
     if (!appletMainLoop()) {
         *fechar = true;
         return 0;
@@ -174,22 +220,42 @@ static void cabecalho(void) {
     tp("================================================================\n\n");
 }
 
+// Tela de espera (símbolo pulsando) mostrada na hora: vem antes de chamadas que travam
 static void mostrar_aguarde(const char *mensagem) {
+    modo_ui();
+    if (ui_ativa()) {
+        ui_status(mensagem, NULL, NULL, NULL);
+    } else {
+        cabecalho();
+        printf("%s\n", mensagem);
+    }
+    mostrar_agora();
+}
+
+// Tela de mensagem (erro, aviso, pergunta); no console de texto se a interface faltar
+static void mostrar_mensagem(UiTipo tipo, const char *titulo, const char *detalhe, const char *rodape) {
+    modo_ui();
+    if (ui_ativa()) {
+        ui_mensagem(tipo, titulo, detalhe, rodape);
+        return;
+    }
     cabecalho();
-    printf("%s\n", mensagem);
-    consoleUpdate(NULL);
+    printf("%s%s" COR_FIM "\n\n", tipo == UI_ERRO ? COR_ERRO : COR_DESTAQ, titulo);
+    if (detalhe && detalhe[0])
+        printf("%s\n\n", detalhe);
+    // "A=Tentar de novo|+=Fechar" -> "A = Tentar de novo   + = Fechar"
+    for (const char *r = rodape; r && *r; r++) {
+        if (*r == '=') printf(" = ");
+        else if (*r == '|') printf("   ");
+        else putchar(*r);
+    }
+    printf("\n");
 }
 
 // Tela de erro com opções. Retorna o botão escolhido (0 = app fechando).
 static u64 mostrar_erro(const char *titulo, const char *detalhe, bool permite_sair_conta) {
-    cabecalho();
-    printf(COR_ERRO "%s" COR_FIM "\n\n", titulo);
-    if (detalhe && detalhe[0])
-        printf("%s\n\n", detalhe);
-    printf("A = tentar de novo\n");
-    if (permite_sair_conta)
-        printf("X = sair da conta\n");
-    printf("+ = fechar o app\n");
+    mostrar_mensagem(UI_ERRO, titulo, detalhe,
+                     permite_sair_conta ? "A=Tentar de novo|X=Sair da conta|+=Fechar" : "A=Tentar de novo|+=Fechar");
     u64 mascara = HidNpadButton_A | HidNpadButton_Plus;
     if (permite_sair_conta)
         mascara |= HidNpadButton_X;
@@ -206,13 +272,31 @@ static const char *endereco_curto(const char *url) {
 // ---------------------------------------------------------------------------
 // Passo: login por código
 // ---------------------------------------------------------------------------
+
+// Abre a página de login no navegador do Switch, já com o código preenchido
+// (parâmetro otc). Trava até o usuário fechar o navegador.
+static bool abrir_pagina_login(const AuthCodigo *codigo) {
+    char url[512];
+    snprintf(url, sizeof url, "%s?otc=%s", codigo->endereco, codigo->codigo_usuario);
+    WebCommonConfig cfg;
+    WebCommonReply resposta;
+    Result rc = webPageCreate(&cfg, url);
+    if (R_SUCCEEDED(rc))
+        rc = webConfigSetWhitelist(&cfg, "^http");
+    if (R_SUCCEEDED(rc))
+        rc = webConfigShow(&cfg, &resposta);
+    LOG("main: navegador para o login %s (0x%x)", R_SUCCEEDED(rc) ? "fechado" : "falhou", rc);
+    g_tick_anterior = armGetSystemTick(); // o tempo no navegador não é suspensão
+    return R_SUCCEEDED(rc);
+}
+
 static Passo passo_login(AuthConta *conta, const char *aviso) {
     for (;;) {
-        mostrar_aguarde("Gerando codigo de login...");
+        mostrar_aguarde("Gerando o código de login...");
         AuthCodigo codigo;
         AuthStatus st = auth_codigo_iniciar(&codigo);
         if (st != AUTH_OK) {
-            u64 b = mostrar_erro("Nao foi possivel gerar o codigo de login.", auth_ultimo_erro(), false);
+            u64 b = mostrar_erro("Não foi possível gerar o código de login.", auth_ultimo_erro(), false);
             if (b != HidNpadButton_A)
                 return PASSO_SAIR;
             continue;
@@ -222,9 +306,10 @@ static Passo passo_login(AuthConta *conta, const char *aviso) {
         int intervalo = codigo.intervalo_s;
         double proxima = intervalo;
         int ultimo_segundo = -1;
-        bool sem_rede = false;
+        bool sem_rede = false, navegador_falhou = false;
         const char *motivo_fim = NULL;
         bool fechar = false;
+        modo_ui();
 
         while (!fechar && !motivo_fim) {
             double passou = segundos_desde(inicio);
@@ -232,19 +317,25 @@ static Passo passo_login(AuthConta *conta, const char *aviso) {
 
             if ((int)passou != ultimo_segundo) {
                 ultimo_segundo = (int)passou;
-                cabecalho();
-                if (aviso) printf(COR_DESTAQ "%s" COR_FIM "\n\n", aviso);
-                printf("Para entrar com sua conta Microsoft:\n\n");
-                printf("  1. No celular ou PC, acesse:\n\n");
-                printf("       " COR_DESTAQ "%s" COR_FIM "\n\n", endereco_curto(codigo.endereco));
-                printf("  2. Digite o codigo:\n\n");
-                printf("       " COR_DESTAQ "%s" COR_FIM "\n\n", codigo.codigo_usuario);
-                printf("  3. Entre com a conta do seu Xbox e confirme.\n\n");
-                printf(COR_FRACA "Aguardando login... (codigo expira em %d:%02d)" COR_FIM "\n",
-                       restante > 0 ? restante / 60 : 0, restante > 0 ? restante % 60 : 0);
+                char status[128];
                 if (sem_rede)
-                    printf(COR_ERRO "Sem conexao no momento, tentando de novo..." COR_FIM "\n");
-                printf("\n+ = fechar o app\n");
+                    snprintf(status, sizeof status, "Sem conexão no momento, tentando de novo...");
+                else if (navegador_falhou)
+                    snprintf(status, sizeof status, "Não foi possível abrir o navegador; use o celular");
+                else
+                    snprintf(status, sizeof status, "Aguardando login · o código expira em %d:%02d",
+                             restante > 0 ? restante / 60 : 0, restante > 0 ? restante % 60 : 0);
+                if (ui_ativa()) {
+                    ui_codigo(aviso, endereco_curto(codigo.endereco), codigo.codigo_usuario, status,
+                              "A=Abrir a página no Switch|+=Fechar");
+                } else {
+                    cabecalho();
+                    if (aviso) printf(COR_DESTAQ "%s" COR_FIM "\n\n", aviso);
+                    printf("No celular ou PC, acesse " COR_DESTAQ "%s" COR_FIM "\n\n",
+                           endereco_curto(codigo.endereco));
+                    printf("e digite o codigo " COR_DESTAQ "%s" COR_FIM "\n\n%s\n\n+ = fechar o app\n",
+                           codigo.codigo_usuario, status);
+                }
             }
 
             if (restante <= 0) {
@@ -273,15 +364,19 @@ static Passo passo_login(AuthConta *conta, const char *aviso) {
                 proxima = segundos_desde(inicio) + intervalo;
             }
 
-            if (quadro(&fechar) & HidNpadButton_Plus)
+            u64 b = quadro(&fechar);
+            if (b & HidNpadButton_Plus)
                 return PASSO_SAIR;
+            if (b & HidNpadButton_A) {
+                navegador_falhou = !abrir_pagina_login(&codigo);
+                proxima = 0;          // ao voltar, confere o login na hora
+                ultimo_segundo = -1;
+            }
         }
         if (fechar)
             return PASSO_SAIR;
 
-        cabecalho();
-        printf(COR_ERRO "%s" COR_FIM "\n\n", motivo_fim);
-        printf("A = gerar outro codigo\n+ = fechar o app\n");
+        mostrar_mensagem(UI_AVISO, motivo_fim, NULL, "A=Gerar outro código|+=Fechar");
         if (esperar_botao(HidNpadButton_A | HidNpadButton_Plus) != HidNpadButton_A)
             return PASSO_SAIR;
         aviso = NULL;
@@ -301,11 +396,11 @@ static Passo passo_streaming(AuthConta *conta, AuthStreaming *streaming, bool co
         if (st == AUTH_INVALIDO) {
             auth_apagar(NX_ARQ_TOKEN);
             auth_conta_liberar(conta);
-            *aviso_login = "Sua sessao expirou. Faca login de novo.";
+            *aviso_login = "Sua sessão expirou. Faça login de novo.";
             return PASSO_LOGIN;
         }
         if (st != AUTH_OK) {
-            u64 b = mostrar_erro("Nao foi possivel entrar na conta.", auth_ultimo_erro(), true);
+            u64 b = mostrar_erro("Não foi possível entrar na conta.", auth_ultimo_erro(), true);
             if (b == HidNpadButton_X) {
                 auth_apagar(NX_ARQ_TOKEN);
                 auth_conta_liberar(conta);
@@ -320,7 +415,7 @@ static Passo passo_streaming(AuthConta *conta, AuthStreaming *streaming, bool co
     mostrar_aguarde("Conectando ao Xbox Live...");
     AuthStatus st = auth_streaming(conta, streaming);
     if (st != AUTH_OK) {
-        u64 b = mostrar_erro("Nao foi possivel acessar o Xbox Live.", auth_ultimo_erro(), true);
+        u64 b = mostrar_erro("Não foi possível acessar o Xbox Live.", auth_ultimo_erro(), true);
         if (b == HidNpadButton_X) {
             auth_apagar(NX_ARQ_TOKEN);
             auth_conta_liberar(conta);
@@ -335,9 +430,8 @@ static Passo passo_streaming(AuthConta *conta, AuthStreaming *streaming, bool co
 // Passo: lista de consoles
 // ---------------------------------------------------------------------------
 static bool confirmar_sair_da_conta(void) {
-    cabecalho();
-    printf("Sair da conta? Na proxima vez sera preciso fazer login de novo.\n\n");
-    printf("A = sim, sair da conta\nB = cancelar\n");
+    mostrar_mensagem(UI_AVISO, "Sair da conta?", "Na próxima vez será preciso fazer login de novo.",
+                     "A=Sair da conta|B=Cancelar");
     return esperar_botao(HidNpadButton_A | HidNpadButton_B) == HidNpadButton_A;
 }
 
@@ -349,7 +443,7 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
     mostrar_aguarde("Procurando seus consoles...");
     XConsoles consoles;
     if (!xapi_listar_consoles(streaming, &consoles)) {
-        u64 b = mostrar_erro("Nao foi possivel listar seus consoles.", xapi_ultimo_erro(), true);
+        u64 b = mostrar_erro("Não foi possível listar seus consoles.", xapi_ultimo_erro(), true);
         if (b == HidNpadButton_X && confirmar_sair_da_conta()) {
             auth_apagar(NX_ARQ_TOKEN);
             auth_conta_liberar(conta);
@@ -377,11 +471,18 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
             }
             if ((int)(falta * 4) != ultimo) {
                 ultimo = (int)(falta * 4);
-                cabecalho();
-                printf("Conectando a " COR_DESTAQ "%s" COR_FIM " (%s, %s) em %.0f s...\n\n", x->nome,
-                       xapi_tipo_amigavel(x->tipo), xapi_estado_amigavel(x->estado), falta + 0.49);
-                printf(COR_FRACA "E o unico console da conta: a conexao e automatica." COR_FIM "\n\n");
-                printf("A = conectar agora   B = ficar na lista\n");
+                char titulo[96], status[64], detalhe[160];
+                snprintf(titulo, sizeof titulo, "Conectando a %s", x->nome);
+                snprintf(status, sizeof status, "Em %.0f s", falta + 0.49);
+                snprintf(detalhe, sizeof detalhe, "%s · %s\nÉ o único console da conta: a conexão é automática.",
+                         xapi_tipo_amigavel(x->tipo), xapi_estado_amigavel(x->estado));
+                modo_ui();
+                if (ui_ativa()) {
+                    ui_status(titulo, status, detalhe, "A=Conectar agora|B=Ficar na lista");
+                } else {
+                    cabecalho();
+                    printf("%s %s\n\nA = conectar agora   B = ficar na lista\n", titulo, status);
+                }
             }
             u64 b = quadro(&fechar);
             if (fechar)
@@ -397,33 +498,32 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
     int sel = 0;
     const char *mensagem = NULL;
     for (;;) {
-        cabecalho();
-        if (streaming->gamertag[0])
-            printf("Conta: " COR_OK "%s" COR_FIM "\n\n", streaming->gamertag);
-        else
-            printf("Conta: " COR_OK "conectada" COR_FIM "\n\n");
-
-        if (consoles.total == 0) {
-            printf(COR_DESTAQ "Nenhum console encontrado nesta conta." COR_FIM "\n\n");
-            printf("No Xbox, ative em: Configuracoes > Dispositivos e conexoes >\n");
-            printf("Recursos remotos > Habilitar recursos remotos.\n\n");
-        } else {
-            printf("Seus consoles:\n\n");
-            for (int i = 0; i < consoles.total; i++) {
-                const XConsole *x = &consoles.itens[i];
-                printf("%s %-24.24s %-16s %s\n" COR_FIM, i == sel ? COR_DESTAQ " >" : "  ",
-                       x->nome, xapi_tipo_amigavel(x->tipo), xapi_estado_amigavel(x->estado));
-            }
-            printf("\n");
+        char conta_txt[96];
+        snprintf(conta_txt, sizeof conta_txt, "Conta: %s", streaming->gamertag[0] ? streaming->gamertag : "conectada");
+        UiItem itens[UI_MAX_ITENS];
+        int total = consoles.total < UI_MAX_ITENS ? consoles.total : UI_MAX_ITENS;
+        for (int i = 0; i < total; i++) {
+            const XConsole *x = &consoles.itens[i];
+            snprintf(itens[i].nome, sizeof itens[i].nome, "%s", x->nome);
+            snprintf(itens[i].detalhe, sizeof itens[i].detalhe, "%s · %s", xapi_tipo_amigavel(x->tipo),
+                     xapi_estado_amigavel(x->estado));
+            itens[i].estado = !strcmp(x->estado, "On") ? 1 : !strcmp(x->estado, "ConnectedStandby") ? 2 : 0;
         }
-
-        if (mensagem)
-            printf("%s\n\n", mensagem);
-
-        if (consoles.total > 0)
-            printf("A = conectar   ");
-        printf("Y = atualizar   X = sair da conta   + = fechar\n");
-        printf(COR_FRACA "- = diagnostico WebRTC" COR_FIM "\n");
+        const char *vazia = "Nenhum console encontrado nesta conta.\nNo Xbox, ative em: Configurações > "
+                            "Dispositivos e conexões > Recursos remotos > Habilitar recursos remotos.";
+        modo_ui();
+        if (ui_ativa()) {
+            ui_lista("Seus consoles", conta_txt, itens, total, sel, total ? mensagem : vazia,
+                     total ? "A=Conectar|Y=Atualizar|X=Sair da conta|-=Diagnóstico|+=Fechar"
+                           : "Y=Atualizar|X=Sair da conta|-=Diagnóstico|+=Fechar");
+        } else {
+            cabecalho();
+            printf("%s\n\n", conta_txt);
+            for (int i = 0; i < total; i++)
+                printf("%s %s (%s)\n" COR_FIM, i == sel ? COR_DESTAQ " >" : "  ", itens[i].nome, itens[i].detalhe);
+            printf("\n%s\nA = conectar   Y = atualizar   X = sair da conta   - = diagnostico   + = fechar\n",
+                   total ? (mensagem ? mensagem : "") : vazia);
+        }
 
         u64 b = esperar_botao(HidNpadButton_A | HidNpadButton_Y | HidNpadButton_X | HidNpadButton_Plus |
                               HidNpadButton_Minus | HidNpadButton_AnyUp | HidNpadButton_AnyDown);
@@ -467,11 +567,7 @@ static Passo erro_sessao(const char *titulo, const char *detalhe) {
         LOG("main: tentativa falhou: %s %s", titulo, detalhe ? detalhe : "");
         return PASSO_RECONECTAR;
     }
-    cabecalho();
-    printf(COR_ERRO "%s" COR_FIM "\n\n", titulo);
-    if (detalhe && detalhe[0])
-        printf("%s\n\n", detalhe);
-    printf("A = tentar de novo\nB = voltar para a lista\n+ = fechar o app\n");
+    mostrar_mensagem(UI_ERRO, titulo, detalhe, "A=Tentar de novo|B=Voltar para a lista|+=Fechar");
     u64 b = esperar_botao(HidNpadButton_A | HidNpadButton_B | HidNpadButton_Plus);
     return b == HidNpadButton_A ? PASSO_SESSAO : b == HidNpadButton_B ? PASSO_LISTA : PASSO_SAIR;
 }
@@ -520,7 +616,12 @@ static void garantir_streaming(AuthConta *conta, AuthStreaming *s) {
         return;
     LOG("main: acesso ao streaming %s (obtido ha %ld s); renovando",
         g_forcar_renovacao ? "recusado (HTTP 401)" : "vencendo", (long)(time(NULL) - g_streaming_obtido));
-    mostrar_aguarde("Renovando o acesso ao Xbox Live...");
+    if (g_reconectando || g_console.nome[0]) {
+        mostrar_conexao("Renovando o acesso ao Xbox Live", NULL, NULL);
+        mostrar_agora();
+    } else {
+        mostrar_aguarde("Renovando o acesso ao Xbox Live...");
+    }
     AuthStreaming novo = {0};
     AuthStatus st = obter_streaming_novo(conta, &novo);
     if (st == AUTH_OK) {
@@ -648,7 +749,7 @@ static void keepalive_esperar(void) {
 }
 
 static void encerrar_sessao(const AuthStreaming *streaming, const XSessao *sessao) {
-    mostrar_aguarde("Encerrando a sessao...");
+    mostrar_aguarde("Encerrando a sessão...");
     keepalive_esperar(); // não encerrar com um keepalive ainda em voo
     xapi_sessao_encerrar(streaming, sessao);
 }
@@ -671,10 +772,27 @@ typedef enum { ET_OFERTA, ET_RESPOSTA, ET_CANDIDATOS, ET_CONECTANDO, ET_CONECTAD
 #define CONEXAO_LIMITE_CONECTAR_S   20
 #define CONEXAO_INTERVALO_CONSULTA  0.25
 
+// Título das telas de conexão: "Conectando a XBOX" ou "Reconectando a XBOX"
+static const char *titulo_conexao(void) {
+    static char t[96];
+    snprintf(t, sizeof t, "%s a %s", g_reconectando ? "Reconectando" : "Conectando", g_console.nome);
+    return t;
+}
+
+static void mostrar_conexao(const char *status, const char *detalhe, const char *rodape) {
+    modo_ui();
+    if (ui_ativa()) {
+        ui_status(titulo_conexao(), status, detalhe, rodape);
+    } else {
+        cabecalho();
+        printf("%s\n\n%s\n%s\n", titulo_conexao(), status ? status : "", detalhe ? detalhe : "");
+    }
+}
+
 static Passo falha_conexao(const AuthStreaming *s, const XSessao *sessao,
                            const char *titulo, const char *detalhe) {
     LOG("main: conexao: %s %s", titulo, detalhe ? detalhe : "");
-    modo_texto();
+    modo_ui();
     conexao_encerrar();
     if (detalhe && strstr(detalhe, "HTTP 401"))
         g_forcar_renovacao = true;
@@ -685,9 +803,15 @@ static Passo falha_conexao(const AuthStreaming *s, const XSessao *sessao,
 }
 
 // A conexão caiu depois de conectada: solta a tela e a conexão (a sessão continua)
-static Passo cair_para_reconexao(const char *motivo) {
+static Passo cair_para_reconexao(const char *motivo, bool repouso) {
     LOG("main: %s; reconectando", motivo);
-    modo_texto();
+    // A tela de reconexão aparece já: antes o último quadro do vídeo ficava
+    // parado na tela até a sessão nova começar (até ~5 s ao voltar do repouso)
+    modo_ui();
+    g_reconectando = true;
+    mostrar_conexao(repouso ? "Voltando do repouso" : "A conexão caiu", "Abrindo uma sessão nova com o console",
+                    NULL);
+    mostrar_agora();
     conexao_encerrar();
     return PASSO_RECONECTAR;
 }
@@ -738,13 +862,11 @@ static void desenhar_aviso_menu(void) {
 }
 
 static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double tempo_preparo, int tentativa) {
-    if (tentativa > 0) {
-        char t[96];
-        snprintf(t, sizeof t, "Reconectando ao console (tentativa %d)...", tentativa);
-        mostrar_aguarde(t);
-    } else {
-        mostrar_aguarde("Montando a conexao com o console...");
-    }
+    char tent[48] = "";
+    if (tentativa > 1)
+        snprintf(tent, sizeof tent, "Tentativa %d de 5", tentativa);
+    mostrar_conexao("Montando a conexão", tent, NULL);
+    mostrar_agora();
     if (!conexao_criar()) {
         ConexaoEstado e;
         conexao_ler(&e);
@@ -949,7 +1071,7 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                         char m[96];
                         snprintf(m, sizeof m, "conexao caiu (%s ha %.1f s)", conexao_nome_estado(e.estado),
                                  agora - t_queda);
-                        return cair_para_reconexao(m);
+                        return cair_para_reconexao(m, false);
                     }
                 } else if (t_queda >= 0) {
                     LOG("main: conexao voltou sozinha em %.1f s", agora - t_queda);
@@ -960,7 +1082,7 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                     char m[96];
                     snprintf(m, sizeof m, "voltou de %.0f s em repouso", g_ultimo_congelamento);
                     g_ultimo_congelamento = 0;
-                    return cair_para_reconexao(m);
+                    return cair_para_reconexao(m, true);
                 }
                 bool forcar = false;
                 if (g_ultimo_congelamento > 0) {
@@ -1018,7 +1140,19 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                 g_capturando = true;
             }
         }
-        if (redesenhar && (!em_video || mostrar_estatisticas)) {
+        if (redesenhar && !em_video) {
+            // Antes do vídeo: tela de conexão com o símbolo pulsando
+            static const char *nomes[] = {"Preparando a conexão", "Aguardando o console",
+                                          "Trocando endereços de rede", "Conectando", "Abrindo o vídeo"};
+            char detalhe[160];
+            int n = snprintf(detalhe, sizeof detalhe, "Etapa %d de 5", (int)etapa + 1);
+            if (tentativa > 1)
+                n += snprintf(detalhe + n, sizeof detalhe - n, " · tentativa %d de 5", tentativa);
+            if (video_erro[0])
+                snprintf(detalhe + n, sizeof detalhe - n, "\nErro na tela: %s", video_erro);
+            mostrar_conexao(nomes[etapa], detalhe, "B=Desconectar|+=Fechar");
+        }
+        if (redesenhar && em_video && mostrar_estatisticas) {
             char extra[64];
             cabecalho();
             tp("Console: " COR_DESTAQ "%s" COR_FIM " (%s)   sessao pronta em %.0f s\n\n", g_console.nome,
@@ -1126,13 +1260,13 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
             decod_ler(&d);
             if (d.decodificados > 0) {
                 video_tentou = true;
-                consoleExit(NULL); // o console e a GPU usam a mesma janela
+                soltar_janela(); // a interface e a GPU usam a mesma janela
                 if (video_tela_iniciar()) {
                     t_video = segundos_desde(inicio);
                     LOG("main: video na tela %.1f s apos conectar", t_video - e.t_conectado);
                     ultimo_quadro = -1; // monta a camada de texto já no próximo quadro
                 } else {
-                    consoleInit(NULL);
+                    modo_ui();
                     snprintf(video_erro, sizeof video_erro, "%s", video_tela_erro());
                     LOG("main: video: %s", video_erro);
                 }
@@ -1259,7 +1393,7 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
             }
         }
         if (acao) {
-            modo_texto(); // solta os quadros da tela antes de fechar o decodificador
+            modo_ui(); // solta os quadros da tela antes de fechar o decodificador
             conexao_encerrar();
             encerrar_sessao(streaming, sessao);
             return acao == 2 ? PASSO_SAIR : PASSO_LISTA;
@@ -1270,9 +1404,8 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
 // Abre a sessão e espera ela ficar pronta. Retorna PASSO_SESSAO se deu certo
 // (ou o passo seguinte: erro, lista, sair).
 static Passo abrir_sessao(AuthConta *conta, AuthStreaming *streaming, XSessao *sessao_saida, double *preparo) {
-    char texto[160];
-    snprintf(texto, sizeof texto, "Abrindo sessao com %s...", g_console.nome);
-    mostrar_aguarde(texto);
+    mostrar_conexao("Abrindo a sessão", NULL, NULL);
+    mostrar_agora();
 
     XSessao sessao;
     if (!xapi_sessao_iniciar(streaming, g_console.server_id, &sessao))
@@ -1340,13 +1473,12 @@ static Passo abrir_sessao(AuthConta *conta, AuthStreaming *streaming, XSessao *s
 
         if ((int)passou != ultimo_segundo) {
             ultimo_segundo = (int)passou;
-            cabecalho();
-            printf("Console: " COR_DESTAQ "%s" COR_FIM " (%s)\n\n", g_console.nome,
-                   xapi_tipo_amigavel(g_console.tipo));
-            printf("%s... %d s\n\n", xapi_sessao_estado_texto(estado), (int)passou);
-            printf(COR_FRACA "Se o console estava em repouso, ele acorda no modo de\n"
-                   "streaming (sem ligar a TV). Pode levar alguns segundos." COR_FIM "\n\n");
-            printf("B = cancelar\n");
+            char detalhe[200];
+            snprintf(detalhe, sizeof detalhe, "%s · %d s%s", xapi_tipo_amigavel(g_console.tipo), (int)passou,
+                     estado == XSESSAO_PREPARANDO
+                         ? "\nSe o console estava em repouso, ele acorda sem ligar a TV."
+                         : "");
+            mostrar_conexao(xapi_sessao_estado_texto(estado), detalhe, "B=Cancelar");
         }
 
         u64 b = quadro(&fechar);
@@ -1380,12 +1512,11 @@ static Passo esperar_reconexao(int tentativa, double espera) {
         int marca = (int)(falta * 4);
         if (marca != ultimo) {
             ultimo = marca;
-            cabecalho();
-            printf(COR_DESTAQ "A conexao com %s caiu." COR_FIM "\n\n", g_console.nome);
-            printf("Reconectando em %.0f s (tentativa %d de %d)...\n\n", falta + 0.49, tentativa,
-                   RECONEXAO_TENTATIVAS);
-            printf(COR_FRACA "Uma sessao nova e aberta com o console (leva poucos segundos)." COR_FIM "\n\n");
-            printf("B = desistir e voltar para a lista\n");
+            char status[64], detalhe[64];
+            snprintf(status, sizeof status, "Nova tentativa em %.0f s", falta + 0.49);
+            snprintf(detalhe, sizeof detalhe, "Tentativa %d de %d", tentativa, RECONEXAO_TENTATIVAS);
+            g_reconectando = true;
+            mostrar_conexao(status, detalhe, "B=Voltar para a lista");
         }
         u64 b = quadro(&fechar);
         if (fechar)
@@ -1458,7 +1589,14 @@ static Passo passo_sessao(AuthConta *conta, AuthStreaming *streaming) {
         g_reconectando = tentativa > 0;
         g_chegou_a_conectar = false;
         p = passo_conectar(streaming, &sessao, tempo_preparo, tentativa);
-        renovacao_concluir(streaming, true); // nada de thread mexendo na conta daqui em diante
+        // nada de thread mexendo na conta daqui em diante; a espera anima a tela
+        if (g_ren.rodando && p == PASSO_RECONECTAR) {
+            mostrar_conexao("Renovando o acesso ao Xbox Live", NULL, NULL);
+            bool fechar = false;
+            while (!__atomic_load_n(&g_ren.pronto, __ATOMIC_ACQUIRE) && !fechar)
+                quadro(&fechar);
+        }
+        renovacao_concluir(streaming, true);
         g_ren.ultima_tentativa = 0;
         if (p != PASSO_RECONECTAR) {
             g_reconectando = false;
@@ -1470,6 +1608,11 @@ static Passo passo_sessao(AuthConta *conta, AuthStreaming *streaming) {
         // Fecha a sessão antiga (não aceita outra conexão) e abre outra. O token
         // é renovado antes se tiver vencido (senão o próprio encerramento dá 401).
         g_tick_queda = armGetSystemTick();
+        {   // keepalive de antes do repouso ainda em voo: espera animando a tela
+            bool fechar = false;
+            while (g_ka.rodando && !__atomic_load_n(&g_ka.pronto, __ATOMIC_ACQUIRE) && !fechar)
+                quadro(&fechar);
+        }
         keepalive_esperar();
         garantir_streaming(conta, streaming);
         encerrar_em_segundo_plano(streaming, &sessao);
@@ -1589,7 +1732,6 @@ static Passo passo_diag(void) {
 int main(int argc, char *argv[]) {
     (void)argc; (void)argv;
 
-    consoleInit(NULL);
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
     padInitializeDefault(&g_controle);
     g_tick_anterior = armGetSystemTick();
@@ -1618,14 +1760,14 @@ int main(int argc, char *argv[]) {
     http_definir_ao_terminar(ao_terminar_http);
 
     if (appletGetAppletType() != AppletType_Application) {
-        cabecalho();
-        printf(COR_ERRO "O NXStream precisa ser aberto em title mode." COR_FIM "\n\n");
-        printf("Segure R ao abrir um jogo e escolha o NXStream no menu.\n\n+ = fechar\n");
+        mostrar_mensagem(UI_ERRO, "O NXStream precisa ser aberto em title mode.",
+                         "Segure R ao abrir um jogo e escolha o NXStream no menu.", "+=Fechar");
         LOG("main: aberto em applet mode, encerrando");
         esperar_botao(HidNpadButton_Plus);
     } else if (R_FAILED(rc_rede) || !http_iniciar()) {
-        cabecalho();
-        printf(COR_ERRO "Falha ao iniciar a rede (0x%x)." COR_FIM "\n\n+ = fechar\n", rc_rede);
+        char det[64];
+        snprintf(det, sizeof det, "Código 0x%x. Confira se o Wi-Fi está ligado.", rc_rede);
+        mostrar_mensagem(UI_ERRO, "Falha ao iniciar a rede.", det, "+=Fechar");
         esperar_botao(HidNpadButton_Plus);
     } else {
         AuthConta conta = {0};
@@ -1686,6 +1828,6 @@ int main(int argc, char *argv[]) {
     appletUnhook(&cookie);
     log_fechar();
     socketExit();
-    consoleExit(NULL);
+    soltar_janela();
     return 0;
 }

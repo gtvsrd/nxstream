@@ -300,6 +300,23 @@ O tempo que o console leva para preparar a sessão (2,5 s acordado, ~9 s em repo
 | Repouso longo (horas) | Reconecta na 1ª tentativa, sem "encerrar sessao respondeu HTTP 401" | |
 | Conectar pela lista (abrir o app) | Mais rápido que antes, principalmente a etapa "Resposta do console" | |
 
+**Resultado da v0.9.3 (log de 13/11):** 3 de 3 reconexões na 1ª tentativa, em 12–13 s (antes 19–48 s). O que sobra é o console acordando (~9 s em "Provisioning"), a renovação do acesso depois de 4 h (~4 s) e a conexão (~1,5 s). Problema visto: ao voltar do repouso, o último quadro do vídeo ficava parado na tela por alguns segundos antes da tela de reconexão (a renovação do acesso e um keepalive de antes do repouso eram esperados com a tela congelada).
+
+**v0.10.0: interface gráfica.** Telas novas no estilo do app do Xbox (fundo escuro, verde, fonte do Switch), desenhadas pela CPU no framebuffer (`source/ui/tela.c`, texto com stb_truetype). Imagens de referência (geradas no PC com `make -C tests/ui`, com outra fonte) em `docs/telas/`.
+- Login: endereço e código grandes; **A abre a página da Microsoft no navegador do Switch** com o código já preenchido.
+- Conexão e reconexão: símbolo pulsando com o estado embaixo ("Preparando o console", "Autorizando acesso ao console"...).
+- Lista de consoles em cartões, erros e perguntas com ícone, botões no rodapé.
+- **A tela de reconexão aparece na hora** em que a conexão cai ou o Switch acorda, e as esperas (renovação, keepalive antigo) animam a tela.
+- O diagnóstico WebRTC (−) continua no console de texto.
+
+| Teste (v0.10.0) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Abrir o app | Telas novas, texto com acentos, símbolo pulsando ao conectar | |
+| Repouso e acordar | A tela "Reconectando" aparece logo, sem ficar no último quadro | |
+| Lista de consoles (B na conexão automática) | Cartões, cima/baixo muda a seleção | |
+| Login (sair da conta com X) | Código grande; A abre o navegador com o código preenchido | |
+| Diagnóstico (−) e voltar | Console de texto e de volta às telas novas | |
+
 O log registra `main: conexao instavel (...)`, `main: conexao voltou sozinha em X s`, `main: ... reconectando`, `main: reconectado (tentativa N)` e, se for o caso, `abrindo uma sessao nova`.
 
 As próximas fases recebem seus checklists aqui quando começarem.
