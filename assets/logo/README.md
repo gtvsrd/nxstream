@@ -12,6 +12,6 @@ Anel bicolor com o **N** em vermelho e a diagonal do **X** em verde, cortando o 
 
 Cores: vermelho `#F0353D`, verde `#2BD46A`, fundo `#000000`.
 
-No app, o logo é desenhado pelo próprio código (`logo_ponto()` em `source/ui/tela.c`, com a mesma geometria do SVG). Se o desenho mudar, atualize os dois.
+No app, as telas desenham o próprio `NXStream-logo-512.png`, embutido em `source/ui/logo_png.h` e reduzido para cada tamanho.
 
-Para gerar os PNGs de novo: `rsvg-convert -w 256 -h 256 NXStream-logo.svg -o NXStream-logo-256.png` (e assim por diante).
+Se o desenho mudar, edite os SVG e rode `sh scripts/gerar-logo.sh` na raiz: ele refaz todos os PNG, o `icon.jpg` e o `logo_png.h`.

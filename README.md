@@ -6,7 +6,7 @@
 <img src="https://img.shields.io/badge/platform-Nintendo%20Switch-e60012" alt="Platform">
 <img src="https://img.shields.io/badge/language-C-blue" alt="Language">
 <img src="https://img.shields.io/badge/license-GPL--3.0-green" alt="License">
-<img src="https://img.shields.io/badge/version-0.10.3-2bd46a" alt="Version">
+<img src="https://img.shields.io/badge/version-0.10.4-2bd46a" alt="Version">
 <img src="https://img.shields.io/badge/status-beta-orange" alt="Status">
 </p>
 
@@ -95,7 +95,7 @@ make -C tests/ui              # renders the interface screens to images on the P
 
 ## Built with
 
-[libnx](https://github.com/switchbrew/libnx) · [libdatachannel](https://github.com/paullouisageneau/libdatachannel) (WebRTC, ported to the Switch) · [mbedTLS](https://github.com/Mbed-TLS/mbedtls) · [FFmpeg](https://ffmpeg.org/) with NVDEC · [deko3d](https://github.com/devkitPro/deko3d) · [libopus](https://opus-codec.org/) · [libcurl](https://curl.se/) · [cJSON](https://github.com/DaveGamble/cJSON) · [stb_truetype](https://github.com/nothings/stb)
+[libnx](https://github.com/switchbrew/libnx) · [libdatachannel](https://github.com/paullouisageneau/libdatachannel) (WebRTC, ported to the Switch) · [mbedTLS](https://github.com/Mbed-TLS/mbedtls) · [FFmpeg](https://ffmpeg.org/) with NVDEC · [deko3d](https://github.com/devkitPro/deko3d) · [libopus](https://opus-codec.org/) · [libcurl](https://curl.se/) · [cJSON](https://github.com/DaveGamble/cJSON) · [stb_truetype and stb_image](https://github.com/nothings/stb)
 
 ## License
 

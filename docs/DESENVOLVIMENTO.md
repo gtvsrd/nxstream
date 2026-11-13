@@ -334,6 +334,8 @@ O tempo que o console leva para preparar a sessão (2,5 s acordado, ~9 s em repo
 | Gamertag | Aparece no canto de cima à direita e na lista | |
 | Menu no streaming | Cartão gráfico; cima/baixo, A e B funcionam como antes | |
 
+**v0.10.4:** as telas passam a desenhar **o próprio arquivo** `assets/logo/NXStream-logo-512.png`, embutido no app (`source/ui/logo_png.h`) e reduzido para cada tamanho, em vez de redesenhar o logo por código. Conferido no PC: o logo da tela de conexão é igual, pixel a pixel, ao PNG do repositório reduzido para 200 px. Os anéis animados em volta do logo saíram (pareciam fazer parte dele, como se fosse outra versão); agora o logo "respira", crescendo e encolhendo alguns pixels. `scripts/gerar-logo.sh` refaz os PNG, o `icon.jpg` e o `logo_png.h` a partir dos SVG.
+
 O log registra `main: conexao instavel (...)`, `main: conexao voltou sozinha em X s`, `main: ... reconectando`, `main: reconectado (tentativa N)` e, se for o caso, `abrindo uma sessao nova`.
 
 As próximas fases recebem seus checklists aqui quando começarem.

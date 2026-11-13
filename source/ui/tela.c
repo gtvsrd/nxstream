@@ -12,7 +12,14 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #define STBTT_STATIC
 #include "../../third_party/stb/stb_truetype.h"
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_STATIC
+#define STBI_ONLY_PNG
+#define STBI_NO_STDIO
+#include "../../third_party/stb/stb_image.h"
 #pragma GCC diagnostic pop
+
+#include "ui/logo_png.h"
 
 #ifndef APP_VERSION
 #define APP_VERSION "?"
@@ -26,7 +33,6 @@
 #define COR_FUNDO_BASE  RGB(0x0C, 0x0C, 0x0C)
 #define COR_VERDE       RGB(0x2B, 0xD4, 0x6A)  // verde do logo
 #define COR_VERDE_CLARO RGB(0x2B, 0xD4, 0x6A)
-#define COR_VERMELHO    RGB(0xF0, 0x35, 0x3D)  // vermelho do logo
 #define COR_TEXTO       RGB(0xFF, 0xFF, 0xFF)
 #define COR_TEXTO2      RGB(0xB8, 0xB8, 0xB8)
 #define COR_TEXTO3      RGB(0x80, 0x80, 0x80)
@@ -150,19 +156,6 @@ static void circulo(float cx, float cy, float r, uint32_t cor, float alfa) {
         for (int x = x0; x < x1; x++) {
             float dx = x + 0.5f - cx, dy = y + 0.5f - cy;
             float cobre = limitar(r + 0.5f - sqrtf(dx * dx + dy * dy));
-            if (cobre > 0)
-                misturar(x, y, cor, cobre * alfa);
-        }
-}
-
-static void anel(float cx, float cy, float r, float espessura, uint32_t cor, float alfa) {
-    float ext = r + espessura / 2, in = r - espessura / 2;
-    int x0 = (int)(cx - ext - 1), x1 = (int)(cx + ext + 2), y0 = (int)(cy - ext - 1), y1 = (int)(cy + ext + 2);
-    for (int y = y0; y < y1; y++)
-        for (int x = x0; x < x1; x++) {
-            float dx = x + 0.5f - cx, dy = y + 0.5f - cy;
-            float d = sqrtf(dx * dx + dy * dy);
-            float cobre = limitar(ext + 0.5f - d) * limitar(d - in + 0.5f);
             if (cobre > 0)
                 misturar(x, y, cor, cobre * alfa);
         }
@@ -338,99 +331,94 @@ static int altura_paragrafo(int largura_max, int tam, const char *s) {
 // Partes comuns
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// Logo (assets/logo/NXStream-logo.svg): anel bicolor, N vermelho e a diagonal
-// verde do X. Mesma geometria do SVG, em coordenadas 0..100, testada ponto a
-// ponto com 6x6 amostras por pixel. Desenhar custa caro, então cada tamanho é
-// desenhado uma vez numa máscara (cobertura de vermelho e de verde) e reusado.
+// Logo: o próprio arquivo assets/logo/NXStream-logo-512.png, embutido no app
+// (logo_png.h, gerado por scripts/gerar-logo.sh). É decodificado uma vez e
+// reduzido, por média de área, para cada tamanho pedido; cada tamanho fica
+// guardado para não refazer a conta a cada quadro.
+// (Até a v0.10.3 o logo era redesenhado por código com a geometria do SVG.)
 // ---------------------------------------------------------------------------
-
-// 0 = nada, 1 = vermelho, 2 = verde. Uma geometria só, a do NXStream-logo.svg
-// (a v0.10.1 usava a versão de traço grosso no cabeçalho, que parecia outro logo).
-static int logo_ponto(float x, float y) {
-    const float w = 8.0f, h = w / 2;
-    const float bx0 = 28.0f, bx1 = 100 - bx0;  // caixa das letras
-    const float by0 = 27.0f, by1 = 100 - by0;
-    const float dx = x - 50, dy = y - 50;
-    bool na_caixa = x >= bx0 && x <= bx1 && y >= by0 && y <= by1;
-    // Diagonal verde (do canto de cima à direita ao de baixo à esquerda)
-    float d_verde = 0.7231f * dx + 0.6906f * dy;
-    if (na_caixa && fabsf(d_verde) <= h)
-        return 2;
-    // N vermelho: hastes + diagonal, sem as pontas que passariam do traço verde
-    if (na_caixa && !(x <= 40 && d_verde > h) && !(x >= 60 && d_verde < -h)) {
-        if (fabsf(x - 32) <= h || fabsf(x - 68) <= h || fabsf(0.7262f * dx - 0.6880f * dy) <= h)
-            return 1;
-    }
-    // Anel: vermelho de 144,6° a 302,8°; verde de -35,4° a 122,8°
-    float r = sqrtf(dx * dx + dy * dy);
-    if (r >= 42 - h && r <= 42 + h) {
-        float a = atan2f(dy, dx) * (180.0f / (float)M_PI);
-        if (a < 0)
-            a += 360;
-        if (a >= 144.6f && a <= 302.8f)
-            return 1;
-        if (a >= 324.6f || a <= 122.8f)
-            return 2;
-    }
-    return 0;
-}
+static unsigned char *g_logo_px; // RGBA, g_logo_lado x g_logo_lado
+static int g_logo_lado;
 
 typedef struct {
-    int tam;                     // lado em pixels (0 = livre)
-    unsigned char *verm, *verde; // cobertura 0..255
-} MascaraLogo;
+    int tam;            // lado em pixels (0 = livre)
+    unsigned char *px;  // RGBA com alfa pré-multiplicado
+} LogoReduzido;
 
-static MascaraLogo g_logos[4];
+#define LOGO_CACHE 12
+static LogoReduzido g_logos[LOGO_CACHE];
 
-static const MascaraLogo *logo_mascara(int tam) {
-    for (int i = 0; i < 4; i++)
+static const LogoReduzido *logo_reduzido(int tam) {
+    for (int i = 0; i < LOGO_CACHE; i++)
         if (g_logos[i].tam == tam)
             return &g_logos[i];
-    MascaraLogo *m = NULL;
-    for (int i = 0; i < 4 && !m; i++)
-        if (!g_logos[i].tam)
-            m = &g_logos[i];
-    if (!m)
-        return NULL;
-    m->verm = calloc((size_t)tam * tam, 1);
-    m->verde = calloc((size_t)tam * tam, 1);
-    if (!m->verm || !m->verde) {
-        free(m->verm);
-        free(m->verde);
-        m->verm = m->verde = NULL;
-        return NULL;
+    if (!g_logo_px) {
+        int w, h, canais;
+        g_logo_px = stbi_load_from_memory(LOGO_PNG, (int)sizeof LOGO_PNG, &w, &h, &canais, 4);
+        if (!g_logo_px || w != h)
+            return NULL;
+        g_logo_lado = w;
     }
-    m->tam = tam;
-    float esc = 100.0f / tam;
-    for (int py = 0; py < tam; py++)
-        for (int px = 0; px < tam; px++) {
-            int nv = 0, ng = 0;
-            for (int sy = 0; sy < 6; sy++)
-                for (int sx = 0; sx < 6; sx++) {
-                    int c = logo_ponto((px + (sx + 0.5f) / 6) * esc, (py + (sy + 0.5f) / 6) * esc);
-                    nv += c == 1;
-                    ng += c == 2;
+    LogoReduzido *r = NULL;
+    for (int i = 0; i < LOGO_CACHE && !r; i++)
+        if (!g_logos[i].tam)
+            r = &g_logos[i];
+    if (!r || tam < 8 || tam > g_logo_lado)
+        return NULL;
+    r->px = malloc((size_t)tam * tam * 4);
+    if (!r->px)
+        return NULL;
+    // Média de área: cada pixel de destino cobre um quadrado de `passo` pixels da origem
+    const float passo = (float)g_logo_lado / tam;
+    for (int dy = 0; dy < tam; dy++)
+        for (int dx = 0; dx < tam; dx++) {
+            float x0 = dx * passo, x1 = x0 + passo, y0 = dy * passo, y1 = y0 + passo;
+            float sr = 0, sg = 0, sb = 0, sa = 0, peso = 0;
+            for (int sy = (int)y0; sy < g_logo_lado && sy < y1; sy++) {
+                float py = (sy + 1 < y1 ? sy + 1 : y1) - (sy > y0 ? sy : y0);
+                for (int sx = (int)x0; sx < g_logo_lado && sx < x1; sx++) {
+                    float pxl = (sx + 1 < x1 ? sx + 1 : x1) - (sx > x0 ? sx : x0);
+                    const unsigned char *o = &g_logo_px[(sy * g_logo_lado + sx) * 4];
+                    float p = pxl * py, a = o[3] / 255.0f;
+                    sr += o[0] * a * p;
+                    sg += o[1] * a * p;
+                    sb += o[2] * a * p;
+                    sa += o[3] * p;
+                    peso += p;
                 }
-            m->verm[py * tam + px] = (unsigned char)(nv * 255 / 36);
-            m->verde[py * tam + px] = (unsigned char)(ng * 255 / 36);
+            }
+            unsigned char *d = &r->px[(dy * tam + dx) * 4];
+            d[0] = (unsigned char)(sr / peso + 0.5f);
+            d[1] = (unsigned char)(sg / peso + 0.5f);
+            d[2] = (unsigned char)(sb / peso + 0.5f);
+            d[3] = (unsigned char)(sa / peso + 0.5f);
         }
-    return m;
+    r->tam = tam;
+    return r;
 }
 
 // Logo com `tam` pixels de lado, centrado em (cx, cy)
 static void logo(int cx, int cy, int tam) {
-    const MascaraLogo *m = logo_mascara(tam);
-    if (!m)
+    const LogoReduzido *r = logo_reduzido(tam);
+    if (!r)
         return;
     int x0 = cx - tam / 2, y0 = cy - tam / 2;
-    for (int y = 0; y < tam; y++)
+    for (int y = 0; y < tam; y++) {
+        if (y0 + y < 0 || y0 + y >= UI_ALTURA)
+            continue;
         for (int x = 0; x < tam; x++) {
-            unsigned char v = m->verm[y * tam + x], g = m->verde[y * tam + x];
-            if (v)
-                misturar(x0 + x, y0 + y, COR_VERMELHO, v / 255.0f);
-            if (g)
-                misturar(x0 + x, y0 + y, COR_VERDE, g / 255.0f);
+            const unsigned char *o = &r->px[(y * tam + x) * 4];
+            if (!o[3] || x0 + x < 0 || x0 + x >= UI_LARGURA)
+                continue;
+            uint32_t *p = &g_px[(y0 + y) * g_passo + x0 + x];
+            uint32_t d = *p;
+            int ia = 255 - o[3]; // cores já multiplicadas pelo alfa
+            uint32_t rr = o[0] + ((d & 0xFF) * ia + 127) / 255;
+            uint32_t gg = o[1] + (((d >> 8) & 0xFF) * ia + 127) / 255;
+            uint32_t bb = o[2] + (((d >> 16) & 0xFF) * ia + 127) / 255;
+            *p = 0xFF000000u | (bb << 16) | (gg << 8) | rr;
         }
+    }
 }
 
 static char g_conta[64]; // gamertag mostrada no cabeçalho ("" = nenhuma)
@@ -507,15 +495,9 @@ static void rodape(const char *r) {
 // ---------------------------------------------------------------------------
 static void tela_status(double t) {
     const float cx = UI_LARGURA / 2.0f, cy = 262;
-    const int tam = 200;           // o anel do logo tem raio de ~0,46 do lado
-    const float r = tam * 0.46f;
-    // Ondas saindo do logo, alternando as duas cores dele
-    for (int k = 0; k < 2; k++) {
-        float p = (float)fmod(t / 2.0 + k * 0.5, 1.0);
-        int volta = (int)floor(t / 2.0 + k * 0.5);
-        anel(cx, cy, r * (1.0f + 0.9f * p), 2.5f, ((volta + k) & 1) ? COR_VERMELHO : COR_VERDE,
-             0.40f * (1 - p) * (1 - p));
-    }
+    // O logo "respira": cresce e encolhe alguns pixels. Nada é desenhado em
+    // volta dele (os anéis da v0.10.3 pareciam fazer parte do logo).
+    int tam = 200 + 2 * (int)lroundf(4.0f * (float)sin(t * 2 * M_PI / 2.4));
     logo((int)cx, (int)cy, tam);
 
     int y = 400;

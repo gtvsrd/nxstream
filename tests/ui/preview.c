@@ -29,7 +29,7 @@ int main(int argc, char **argv) {
     ui_status("Conectando a XBOX", "Preparando o console",
               "Xbox Series X · em repouso · 6 s\nSe o console estava em repouso, ele acorda sem ligar a TV.",
               "B=Cancelar");
-    ui_renderizar(px, UI_LARGURA, 0.3); salvar("1_status");
+    ui_renderizar(px, UI_LARGURA, 0.0); salvar("1_status");
 
     ui_status("Reconectando a XBOX", "Nova tentativa em 2 s", "Tentativa 2 de 5", "B=Voltar para a lista");
     ui_renderizar(px, UI_LARGURA, 1.1); salvar("2_reconectando");
