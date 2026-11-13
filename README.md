@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/logo/nxstream-logo-256.png" width="160" alt="NXStream logo"></p>
+<p align="center"><img src="assets/logo/NXStream-logo-256.png" width="160" alt="NXStream logo"></p>
 
 # NXStream
 
@@ -37,11 +37,11 @@
 
 ## Download
 
-Every push is built automatically by GitHub Actions. Open the latest run under the **Actions** tab and download the `nxstream-nro` artifact.
+Every push is built automatically by GitHub Actions. Open the latest run under the **Actions** tab and download the `NXStream-nro` artifact.
 
 ## Usage
 
-1. Copy `nxstream.nro` to `/switch/nxstream/` on your SD card.
+1. Copy `NXStream.nro` to `/switch/NXStream/` on your SD card.
 2. Launch it in **title mode** (hold **R** while launching a game). Applet mode (album) is not supported.
 
 ## Building locally

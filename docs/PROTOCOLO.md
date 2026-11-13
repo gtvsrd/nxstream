@@ -48,8 +48,8 @@ Fonte: [`xal-node`](https://github.com/unknownskl/xal-node) (`src/msal.ts`), a b
 Observações:
 - O `client_id` é o público do app Xbox, o mesmo usado por xal-node/Greenlight.
 - **A Microsoft troca o refresh token a cada renovação.** O app salva o novo sempre que renova, senão o login "some" na abertura seguinte.
-- Só o refresh token é salvo em disco (`/switch/nxstream/token.json`). Os demais são obtidos a cada abertura. Nenhum token é escrito no log.
-- O HTTPS usa o TLS nativo do Switch (libcurl do devkitPro com backend libnx), com os certificados do próprio sistema. Se algum servidor falhar na verificação, colocar um `cacert.pem` em `/switch/nxstream/` faz o app usá-lo no lugar.
+- Só o refresh token é salvo em disco (`/switch/NXStream/token.json`). Os demais são obtidos a cada abertura. Nenhum token é escrito no log.
+- O HTTPS usa o TLS nativo do Switch (libcurl do devkitPro com backend libnx), com os certificados do próprio sistema. Se algum servidor falhar na verificação, colocar um `cacert.pem` em `/switch/NXStream/` faz o app usá-lo no lugar.
 
 ## 2. API de streaming do console (fases 1 e 2)
 

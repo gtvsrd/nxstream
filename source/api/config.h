@@ -9,12 +9,12 @@
 // Arquivos no cartão SD
 // ---------------------------------------------------------------------------
 #ifdef __SWITCH__
-#define NX_PASTA_APP        "sdmc:/switch/nxstream"
+#define NX_PASTA_APP        "sdmc:/switch/NXStream"
 #else
 #define NX_PASTA_APP        "."
 #endif
 #define NX_ARQ_TOKEN        NX_PASTA_APP "/token.json"
-#define NX_ARQ_LOG          NX_PASTA_APP "/nxstream.log"
+#define NX_ARQ_LOG          NX_PASTA_APP "/NXStream.log"
 // Opcional: se existir, o HTTPS usa estes certificados em vez dos do sistema
 #define NX_ARQ_CERTIFICADOS NX_PASTA_APP "/cacert.pem"
 

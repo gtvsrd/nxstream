@@ -338,7 +338,7 @@ static int altura_paragrafo(int largura_max, int tam, const char *s) {
 // Partes comuns
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// Logo (assets/logo/nxstream-logo.svg): anel bicolor, N vermelho e a diagonal
+// Logo (assets/logo/NXStream-logo.svg): anel bicolor, N vermelho e a diagonal
 // verde do X. Mesma geometria do SVG, em coordenadas 0..100, testada ponto a
 // ponto com 4x4 amostras por pixel. Desenhar custa caro, então cada tamanho é
 // desenhado uma vez numa máscara (cobertura de vermelho e de verde) e reusado.

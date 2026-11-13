@@ -3,14 +3,14 @@
 #
 # Compila a libdatachannel no MESMO commit usado no Switch, com os patches de
 # compat/patches/aplicar.py (os específicos do Switch ficam desligados; o da
-# limpeza é ligado por NXSTREAM_TESTE_PC) e roda tests/limpeza/teste.c:
+# limpeza é ligado por NXStream_TESTE_PC) e roda tests/limpeza/teste.c:
 # conexão com as mesmas trilhas e canais do app, fechada na mesma ordem, e
 # rtcCleanup(). Falha se rtcCleanup() travar ou demorar mais de 5 s.
 #
 # Precisa de: git, cmake, g++, libssl-dev.  Uso: sh tests/limpeza/rodar.sh
 set -eu
 RAIZ=$(cd "$(dirname "$0")/../.." && pwd)
-TRABALHO=${TMPDIR:-/tmp}/nxstream-teste-limpeza
+TRABALHO=${TMPDIR:-/tmp}/NXStream-teste-limpeza
 LDC_COMMIT=$(sed -n 's/^LDC_COMMIT=//p' "$RAIZ/scripts/compilar-deps.sh")
 
 rm -rf "$TRABALHO" && mkdir -p "$TRABALHO" && cd "$TRABALHO"
@@ -22,7 +22,7 @@ git -C ldc submodule update --quiet --init --depth 1 deps/libjuice deps/libsrtp 
 python3 "$RAIZ/compat/patches/aplicar.py" ldc
 
 cmake -S ldc -B ldc/build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF \
-    -DNO_WEBSOCKET=ON -DNO_EXAMPLES=ON -DNO_TESTS=ON -DCMAKE_CXX_FLAGS=-DNXSTREAM_TESTE_PC > cmake.log
+    -DNO_WEBSOCKET=ON -DNO_EXAMPLES=ON -DNO_TESTS=ON -DCMAKE_CXX_FLAGS=-DNXStream_TESTE_PC > cmake.log
 cmake --build ldc/build -j"$(nproc)" > build.log 2>&1 || { tail -30 build.log; exit 1; }
 
 B=ldc/build

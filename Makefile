@@ -13,7 +13,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 #---------------------------------------------------------------------------------
 # Configuração do projeto
 #---------------------------------------------------------------------------------
-TARGET      := nxstream
+TARGET      := NXStream
 BUILD       := build
 SOURCES     := source source/core source/auth source/api source/net source/media source/ui source/input compat/src third_party/cjson
 DATA        := data
@@ -25,7 +25,7 @@ INCLUDES    := source deps/prefix/include compat/include third_party/cjson
 
 APP_TITLE   := NXStream
 APP_AUTHOR  := gtvsrd
-APP_VERSION := 0.10.1
+APP_VERSION := 0.10.2
 
 #---------------------------------------------------------------------------------
 # Flags de compilação

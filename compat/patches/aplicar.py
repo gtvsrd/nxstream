@@ -96,10 +96,10 @@ struct sockaddr_conn {"""
 # espera o resultado dela normalmente. Custo: uma estrutura de thread não
 # liberada por execução do app.
 #
-# NXSTREAM_TESTE_PC liga a mesma alteração no PC para o teste automático
+# NXStream_TESTE_PC liga a mesma alteração no PC para o teste automático
 # tests/limpeza (reproduz o travamento da v0.5.1 e confirma a correção).
 LDC_DETACH_ORIGINAL = "\t\tt.detach();\n"
-LDC_DETACH_SWITCH = """#if defined(__SWITCH__) || defined(NXSTREAM_TESTE_PC)
+LDC_DETACH_SWITCH = """#if defined(__SWITCH__) || defined(NXStream_TESTE_PC)
 \t\t/* NXStream: thread de limpeza mantida viva (detach falha na libnx, join trava) */
 \t\t(void)new std::thread(std::move(t));
 #else

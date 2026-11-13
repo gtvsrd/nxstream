@@ -6,7 +6,7 @@
 
 Todo push dispara o workflow [`build.yml`](../.github/workflows/build.yml), que compila dentro do container oficial `devkitpro/devkita64` e publica o `.nro`. As dependências do WebRTC (`scripts/compilar-deps.sh`) ficam em cache e só são recompiladas quando o script ou a camada `compat/` mudam.
 
-Para baixar: aba **Actions** → execução mais recente → seção **Artifacts** → `nxstream-nro` (um `.zip` com o `nxstream.nro`). É preciso estar logado no GitHub.
+Para baixar: aba **Actions** → execução mais recente → seção **Artifacts** → `NXStream-nro` (um `.zip` com o `NXStream.nro`). É preciso estar logado no GitHub.
 
 ### Local (opcional)
 
@@ -17,7 +17,7 @@ Para baixar: aba **Actions** → execução mais recente → seção **Artifacts
 
 ## Testar no Switch
 
-1. Copie `nxstream.nro` para `/switch/nxstream/` no cartão SD.
+1. Copie `NXStream.nro` para `/switch/NXStream/` no cartão SD.
 2. Abra em **title mode**: segure **R** ao iniciar qualquer jogo instalado e escolha o NXStream no menu do homebrew. Pelo álbum (applet mode) o app tem pouca memória e o streaming não vai funcionar.
 3. Anote o resultado e, se algo der errado, mande o arquivo de log (ver abaixo).
 
@@ -25,17 +25,17 @@ Para baixar: aba **Actions** → execução mais recente → seção **Artifacts
 
 Quando o app fecha com erro, o Atmosphère salva um relatório em `/atmosphere/crash_reports/` no cartão SD. Para traduzir os endereços em funções e linhas:
 
-1. Baixe o artifact `nxstream-elf-para-crash-reports` do **mesmo** build do `.nro` que travou.
-2. Com o devkitPro instalado: `sh scripts/traduzir-crash.sh nxstream.elf <relatorio>.log`
+1. Baixe o artifact `NXStream-elf-para-crash-reports` do **mesmo** build do `.nro` que travou.
+2. Com o devkitPro instalado: `sh scripts/traduzir-crash.sh NXStream.elf <relatorio>.log`
 
 O script confere se o `Module Id` do relatório bate com o `.elf` antes de traduzir.
 
 ## Logs
 
-- **No cartão SD:** `/switch/nxstream/nxstream.log`, com horário de cada evento. O arquivo cresce a cada uso; pode ser apagado a qualquer momento.
+- **No cartão SD:** `/switch/NXStream/NXStream.log`, com horário de cada evento. O arquivo cresce a cada uso; pode ser apagado a qualquer momento.
 - **Ao vivo no PC (nxlink):** no menu do homebrew, aperte **Y** para entrar no modo de rede. No PC, com as ferramentas do devkitPro instaladas, rode:
   ```sh
-  nxlink -s nxstream.nro
+  nxlink -s NXStream.nro
   ```
   O `.nro` é enviado ao Switch pela rede e as mensagens do app aparecem no terminal. Evita tirar o cartão SD a cada teste.
 
@@ -85,7 +85,7 @@ make -C tests
 
 Sleep/resume com o app na lista: retoma em ~0,5 s.
 
-Se algo falhar, mande o arquivo `/switch/nxstream/nxstream.log` (ele não contém tokens).
+Se algo falhar, mande o arquivo `/switch/NXStream/NXStream.log` (ele não contém tokens).
 
 ### Fase 2a: sessão de streaming (v0.2.3)
 
@@ -150,7 +150,7 @@ Na lista, escolha o console com **A**. Depois de "Sessao pronta", a tela mostra 
 
 **v0.4.4:** ✅ todas as etapas, sem erros. Achados no log, corrigidos na v0.4.5: ao fechar o app, `rtcCleanup()` lançava `std::system_error` (pego pelo novo registro de exceções; era o motivo de os logs anteriores terminarem sem "encerrado"); ao desconectar, ~1000 avisos "dropping incoming message" porque as trilhas eram apagadas antes de fechar a conexão.
 
-Se alguma etapa falhar, mande o `nxstream.log`: ele contém a oferta, a resposta SDP do console, todos os candidatos e as mensagens dos canais.
+Se alguma etapa falhar, mande o `NXStream.log`: ele contém a oferta, a resposta SDP do console, todos os candidatos e as mensagens dos canais.
 
 ### Fase 2c.1: quadros de vídeo (v0.5.2)
 
@@ -318,6 +318,8 @@ O tempo que o console leva para preparar a sessão (2,5 s acordado, ~9 s em repo
 | Diagnóstico (−) e voltar | Console de texto e de volta às telas novas | |
 
 **v0.10.1:** logo próprio do projeto (`assets/logo/`): anel bicolor com o N vermelho e a diagonal verde do X. Vira o ícone do `.nro` e aparece nas telas (cabeçalho e no centro da tela de conexão, com ondas vermelhas e verdes). O verde da interface passa a ser o do logo.
+
+**v0.10.2:** o nome passa a ser escrito sempre **NXStream** (arquivos do logo, `NXStream.nro`, artefatos do CI, pasta `/switch/NXStream/` no SD). O cartão SD não diferencia maiúsculas de minúsculas, então a pasta antiga `/switch/nxstream/` continua valendo: o login salvo e o log seguem funcionando, sem mover nada. Pelo mesmo motivo, copiar o `NXStream.nro` substitui o `nxstream.nro` antigo.
 
 O log registra `main: conexao instavel (...)`, `main: conexao voltou sozinha em X s`, `main: ... reconectando`, `main: reconectado (tentativa N)` e, se for o caso, `abrindo uma sessao nova`.
 
