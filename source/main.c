@@ -838,7 +838,7 @@ static void desenhar_menu(int item, bool estatisticas, double conectado_ha) {
     const char *nomes[MENU_ITENS] = {"Voltar ao jogo", "Botão Xbox (guia)",
                                      estatisticas ? "Esconder estatísticas" : "Mostrar estatísticas",
                                      "Desconectar", "Fechar o NXStream"};
-    char sub[96];
+    char sub[192];
     int seg = conectado_ha > 0 ? (int)conectado_ha : 0;
     if (seg >= 3600)
         snprintf(sub, sizeof sub, "%s · conectado há %d h %02d min", g_console.nome, seg / 3600, seg % 3600 / 60);
