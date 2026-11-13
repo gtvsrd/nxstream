@@ -4,13 +4,13 @@
 
 > Parte do trabalho das fases 2c.3 a 4 foi feita numa conversa do Claude que era do blog (Arcar.se). Este resumo junta tudo aqui, para a conversa do NXStream continuar.
 
-- **`main`** = **v0.8.1**, a última versão testada e aprovada: imagem na tela pela GPU (deko3d, sem cópia), controle do Switch, som do Xbox, menu (+ e − por 1 s), botão Xbox (+ segurado e clique no −), 21 min jogando sem quedas.
-- **`fase-4`** = **v0.9.3**, em teste no dia a dia: v0.8.2 (áudio acompanha a diferença de relógio, sem cortes), reconexão automática (sempre com sessão nova, acesso renovado antes de vencer em 4 h, conexões HTTPS reaproveitadas), HOME sem pausar, conexão automática quando a conta tem um só console, ícone do app. A v0.9.2 reconectou 4 de 4 vezes na 1ª tentativa, inclusive depois de horas em repouso.
+- **`main`** = **v0.10.2** (13/11/2026): juntada com a `fase-4` a pedido do usuário, antes do fim dos testes da fase 4. Inclui tudo da v0.8.1 (imagem pela GPU, controle, som, menu com + e − por 1 s, botão Xbox) mais reconexão automática, HOME sem pausar, interface gráfica e logo próprio.
+- **`fase-4`** = mesma versão da `main`; os testes da fase 4 continuam no dia a dia.
 - Branches `fase-2c`, `fase-2c3` e `fase-3` já estão contidas na `main`/`fase-4` e podem ser apagadas.
 - Resultados de cada teste, versão por versão: `docs/DESENVOLVIMENTO.md` (fases 2c.2, 2c.3, 3 e 4).
 - **v0.10.0** (fase-4): interface gráfica simples no estilo do app do Xbox (`docs/telas/`) e tela de reconexão imediata ao acordar. A v0.9.3 reconectou 3 de 3 vezes em 12–13 s.
 - **v0.10.1**: logo próprio (`assets/logo/`), no ícone do app e nas telas.
-- Próximo passo: o usuário testar a v0.10.1 no dia a dia (repouso, Wi-Fi, HOME, sessão longa) e mandar os logs; com a fase 4 validada, juntar `fase-4` na `main` e seguir para a fase 5 (vibração, mapeamento configurável, opções).
+- Próximo passo: o usuário testar a v0.10.2 no dia a dia (repouso, Wi-Fi, HOME, sessão longa) e mandar os logs; com a fase 4 validada, juntar `fase-4` na `main` e seguir para a fase 5 (vibração, mapeamento configurável, opções).
 - Dicas registradas: para atualizar, copiar só o `NXStream.nro` (o `token.json` guarda o login entre versões); o preto em 16 (faixa limitada) é o correto no OLED.
 
 ## Objetivo
