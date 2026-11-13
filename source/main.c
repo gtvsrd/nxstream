@@ -31,6 +31,7 @@
 #include "input/controle.h"
 #include "ui/sobreposicao.h"
 #include "ui/tela.h"
+#include "cJSON.h"
 #include "net/rtc_comum.h"
 #include "net/rtc_diag.h"
 
@@ -436,10 +437,105 @@ static bool confirmar_sair_da_conta(void) {
     return esperar_botao(HidNpadButton_A | HidNpadButton_B) == HidNpadButton_A;
 }
 
+// ---------------------------------------------------------------------------
+// Abertura rápida (v0.10.5). Um arquivo pequeno no SD guarda a gamertag e, quando
+// a conta tem um só console, os dados dele. Na abertura seguinte o app pula a
+// consulta da lista (~1 s) e a contagem de 2 s e já abre a sessão; a gamertag
+// também não precisa ser pedida de novo. Não guarda nenhum token.
+// ---------------------------------------------------------------------------
+static XConsole g_console_salvo; // server_id vazio = nenhum
+static bool g_console_salvo_unico = false;
+
+static void conta_salvar(void) {
+    cJSON *raiz = cJSON_CreateObject();
+    cJSON_AddStringToObject(raiz, "gamertag", g_gamertag);
+    if (g_console_salvo.server_id[0]) {
+        cJSON *c = cJSON_AddObjectToObject(raiz, "console");
+        cJSON_AddStringToObject(c, "nome", g_console_salvo.nome);
+        cJSON_AddStringToObject(c, "id", g_console_salvo.server_id);
+        cJSON_AddStringToObject(c, "tipo", g_console_salvo.tipo);
+        cJSON_AddBoolToObject(c, "unico", g_console_salvo_unico);
+    }
+    char *txt = cJSON_PrintUnformatted(raiz);
+    cJSON_Delete(raiz);
+    FILE *f = txt ? fopen(NX_ARQ_CONTA, "w") : NULL;
+    if (f) {
+        fputs(txt, f);
+        fclose(f);
+    }
+    free(txt);
+}
+
+static void conta_ler(void) {
+    char buf[1024];
+    FILE *f = fopen(NX_ARQ_CONTA, "r");
+    if (!f)
+        return;
+    size_t n = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    cJSON *raiz = cJSON_Parse(buf);
+    if (!raiz)
+        return;
+    const cJSON *g = cJSON_GetObjectItemCaseSensitive(raiz, "gamertag");
+    if (cJSON_IsString(g))
+        snprintf(g_gamertag, sizeof g_gamertag, "%s", g->valuestring);
+    const cJSON *c = cJSON_GetObjectItemCaseSensitive(raiz, "console");
+    const cJSON *nome = cJSON_GetObjectItemCaseSensitive(c, "nome");
+    const cJSON *id = cJSON_GetObjectItemCaseSensitive(c, "id");
+    const cJSON *tipo = cJSON_GetObjectItemCaseSensitive(c, "tipo");
+    if (cJSON_IsString(nome) && cJSON_IsString(id) && id->valuestring[0]) {
+        memset(&g_console_salvo, 0, sizeof g_console_salvo);
+        snprintf(g_console_salvo.nome, sizeof g_console_salvo.nome, "%s", nome->valuestring);
+        snprintf(g_console_salvo.server_id, sizeof g_console_salvo.server_id, "%s", id->valuestring);
+        if (cJSON_IsString(tipo))
+            snprintf(g_console_salvo.tipo, sizeof g_console_salvo.tipo, "%s", tipo->valuestring);
+        g_console_salvo_unico = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(c, "unico"));
+    }
+    cJSON_Delete(raiz);
+    LOG("main: conta salva lida (gamertag %s, console %s%s)", g_gamertag[0] ? "sim" : "nao",
+        g_console_salvo.server_id[0] ? g_console_salvo.nome : "nenhum",
+        g_console_salvo_unico ? ", unico" : "");
+}
+
+static void conta_esquecer(void) {
+    remove(NX_ARQ_CONTA);
+    g_gamertag[0] = '\0';
+    memset(&g_console_salvo, 0, sizeof g_console_salvo);
+    g_console_salvo_unico = false;
+}
+
+// Guarda o que a lista mostrou (só regrava o arquivo se algo mudou)
+static void conta_lembrar_consoles(const XConsoles *consoles) {
+    XConsole novo;
+    memset(&novo, 0, sizeof novo);
+    bool unico = consoles->total == 1;
+    if (unico) {
+        snprintf(novo.nome, sizeof novo.nome, "%s", consoles->itens[0].nome);
+        snprintf(novo.server_id, sizeof novo.server_id, "%s", consoles->itens[0].server_id);
+        snprintf(novo.tipo, sizeof novo.tipo, "%s", consoles->itens[0].tipo);
+    }
+    if (unico == g_console_salvo_unico && !strcmp(novo.server_id, g_console_salvo.server_id) &&
+        !strcmp(novo.nome, g_console_salvo.nome) && !strcmp(novo.tipo, g_console_salvo.tipo))
+        return;
+    g_console_salvo = novo;
+    g_console_salvo_unico = unico;
+    conta_salvar();
+}
+
 static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
     // gsToken vencendo (dura ~4 h): obtém outro antes de usar
     if (streaming->duracao_s > 0 && time(NULL) - g_streaming_obtido > streaming->duracao_s - 120)
         return PASSO_STREAMING;
+
+    // Abertura rápida: a conta tinha um só console da última vez. Abre a sessão
+    // direto; B na tela de conexão volta para a lista (que aí é consultada).
+    if (!g_auto_conexao_feita && g_console_salvo_unico && g_console_salvo.server_id[0]) {
+        g_auto_conexao_feita = true;
+        g_console = g_console_salvo;
+        LOG("main: abertura rapida: direto para %s (console salvo, sem consultar a lista)", g_console.nome);
+        return PASSO_SESSAO;
+    }
 
     mostrar_aguarde("Procurando seus consoles...");
     XConsoles consoles;
@@ -453,46 +549,16 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
         return b == HidNpadButton_Plus || b == 0 ? PASSO_SAIR : PASSO_LISTA;
     }
 
+    conta_lembrar_consoles(&consoles);
+
     // Só um console na conta: na primeira vez depois do login/abertura do app,
-    // conecta sozinho (2 s para desistir com B). Depois de desconectar, a lista
-    // fica parada como antes.
+    // conecta sozinho, sem espera (até a v0.10.4 havia 2 s para desistir; agora
+    // o B da tela de conexão faz isso). Depois de desconectar, a lista fica parada.
     if (!g_auto_conexao_feita && consoles.total == 1) {
         g_auto_conexao_feita = true;
-        const XConsole *x = &consoles.itens[0];
-        u64 inicio = armGetSystemTick();
-        bool fechar = false;
-        int ultimo = -1;
-        for (;;) {
-            double falta = 2.0 - segundos_desde(inicio);
-            if (falta <= 0) {
-                g_console = *x;
-                LOG("main: console escolhido automaticamente (unico na conta): %s (%s)", g_console.nome,
-                    g_console.estado);
-                return PASSO_SESSAO;
-            }
-            if ((int)(falta * 4) != ultimo) {
-                ultimo = (int)(falta * 4);
-                char titulo[96], status[64], detalhe[160];
-                snprintf(titulo, sizeof titulo, "Conectando a %s", x->nome);
-                snprintf(status, sizeof status, "Em %.0f s", falta + 0.49);
-                snprintf(detalhe, sizeof detalhe, "%s · %s\nÉ o único console da conta: a conexão é automática.",
-                         xapi_tipo_amigavel(x->tipo), xapi_estado_amigavel(x->estado));
-                modo_ui();
-                if (ui_ativa()) {
-                    ui_status(titulo, status, detalhe, "A=Conectar agora|B=Ficar na lista");
-                } else {
-                    cabecalho();
-                    printf("%s %s\n\nA = conectar agora   B = ficar na lista\n", titulo, status);
-                }
-            }
-            u64 b = quadro(&fechar);
-            if (fechar)
-                return PASSO_SAIR;
-            if (b & HidNpadButton_A)
-                inicio = armGetSystemTick() - armNsToTicks(3000000000ULL); // já
-            if (b & HidNpadButton_B)
-                break;
-        }
+        g_console = consoles.itens[0];
+        LOG("main: console escolhido automaticamente (unico na conta): %s (%s)", g_console.nome, g_console.estado);
+        return PASSO_SESSAO;
     }
     g_auto_conexao_feita = true;
 
@@ -542,6 +608,8 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
             auth_apagar(NX_ARQ_TOKEN);
             auth_conta_liberar(conta);
             LOG("main: usuario saiu da conta");
+            conta_esquecer();
+            ui_definir_conta(NULL);
             g_auto_conexao_feita = false; // depois do próximo login, conecta sozinho de novo
             return PASSO_LOGIN;
         }
@@ -1773,10 +1841,14 @@ int main(int argc, char *argv[]) {
                 case PASSO_INICIO:
                     conta.refresh_token = auth_carregar_refresh(NX_ARQ_TOKEN);
                     LOG("main: token salvo %s", conta.refresh_token ? "encontrado" : "nao encontrado");
+                    if (conta.refresh_token) {
+                        conta_ler();
+                        ui_definir_conta(g_gamertag);
+                    }
                     passo = conta.refresh_token ? PASSO_STREAMING : PASSO_LOGIN;
                     break;
                 case PASSO_LOGIN:
-                    g_gamertag[0] = '\0'; // outra conta pode entrar
+                    conta_esquecer(); // outra conta pode entrar
                     ui_definir_conta(NULL);
                     passo = passo_login(&conta, aviso_login);
                     aviso_login = NULL;
@@ -1786,8 +1858,10 @@ int main(int argc, char *argv[]) {
                     auth_streaming_liberar(&streaming);
                     snprintf(streaming.gamertag, sizeof streaming.gamertag, "%s", g_gamertag);
                     passo = passo_streaming(&conta, &streaming, recem_logada, &aviso_login);
-                    if (streaming.gamertag[0])
+                    if (streaming.gamertag[0] && strcmp(g_gamertag, streaming.gamertag) != 0) {
                         snprintf(g_gamertag, sizeof g_gamertag, "%s", streaming.gamertag);
+                        conta_salvar();
+                    }
                     ui_definir_conta(g_gamertag);
                     recem_logada = false;
                     g_streaming_obtido = time(NULL);

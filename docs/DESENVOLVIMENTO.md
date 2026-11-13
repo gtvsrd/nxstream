@@ -336,6 +336,19 @@ O tempo que o console leva para preparar a sessão (2,5 s acordado, ~9 s em repo
 
 **v0.10.4:** as telas passam a desenhar **o próprio arquivo** `assets/logo/NXStream-logo-512.png`, embutido no app (`source/ui/logo_png.h`) e reduzido para cada tamanho, em vez de redesenhar o logo por código. Conferido no PC: o logo da tela de conexão é igual, pixel a pixel, ao PNG do repositório reduzido para 200 px. Os anéis animados em volta do logo saíram (pareciam fazer parte dele, como se fosse outra versão); agora o logo "respira", crescendo e encolhendo alguns pixels. `scripts/gerar-logo.sh` refaz os PNG, o `icon.jpg` e o `logo_png.h` a partir dos SVG.
 
+**Resultado da v0.10.1 (log de 13/11, 1 h de uso):** tudo saudável. 60 quadros/s, ~5,5 Mbps, decodificação em 2,1 ms, 0 erros; áudio sem pacotes perdidos; reconexão depois de 17 min em repouso na 1ª tentativa, em 12,4 s (7,3 s deles o console acordando); HOME voltando sem reconectar. Da abertura do app até o vídeo: 19 s (3 s de login, 1 s da lista, 2 s da contagem da conexão automática, 9,3 s do console acordando, 2 s de conexão).
+
+**v0.10.5: abertura mais rápida.**
+- Sem a contagem de 2 s da conexão automática: com um só console, conecta na hora. O **B** da tela de conexão continua voltando para a lista.
+- O app guarda em `/switch/NXStream/conta.json` a gamertag e, se a conta tem um só console, os dados dele (nenhum token). Na abertura seguinte ele pula a consulta da lista (~1 s) e não pede a gamertag de novo (~0,5 s). No log: `main: abertura rapida: direto para XBOX`.
+- Esperado: ~3 s a menos da abertura até o vídeo (a partir da 2ª abertura). Sair da conta apaga o arquivo. Se um segundo console entrar na conta, ele aparece ao voltar para a lista (B), e a abertura rápida se desliga sozinha.
+
+| Teste (v0.10.5) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| 1ª abertura depois de atualizar | Lista consultada, conecta sem contagem | |
+| 2ª abertura | "Conectando a XBOX" logo depois do login, sem "Procurando seus consoles" | |
+| B durante "Preparando o console" | Volta para a lista de consoles | |
+
 O log registra `main: conexao instavel (...)`, `main: conexao voltou sozinha em X s`, `main: ... reconectando`, `main: reconectado (tentativa N)` e, se for o caso, `abrindo uma sessao nova`.
 
 As próximas fases recebem seus checklists aqui quando começarem.

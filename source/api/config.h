@@ -15,6 +15,7 @@
 #endif
 #define NX_ARQ_TOKEN        NX_PASTA_APP "/token.json"
 #define NX_ARQ_LOG          NX_PASTA_APP "/NXStream.log"
+#define NX_ARQ_CONTA        NX_PASTA_APP "/conta.json"   // gamertag e último console (sem tokens)
 // Opcional: se existir, o HTTPS usa estes certificados em vez dos do sistema
 #define NX_ARQ_CERTIFICADOS NX_PASTA_APP "/cacert.pem"
 
