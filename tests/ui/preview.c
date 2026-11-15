@@ -22,7 +22,7 @@ int main(int argc, char **argv) {
     FILE *f = fopen(argc > 1 ? argv[1] : "", "rb");
     if (!f) { fprintf(stderr, "fonte?\n"); return 1; }
     fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
-    unsigned char *ttf = malloc(n); fread(ttf, 1, n, f); fclose(f);
+    unsigned char *ttf = malloc(n); if (fread(ttf, 1, n, f) != (size_t)n) return 1; fclose(f);
     ui_definir_fonte(ttf);
 
     ui_definir_conta("Gamertag123");
@@ -34,9 +34,11 @@ int main(int argc, char **argv) {
     ui_status("Reconectando a XBOX", "Nova tentativa em 2 s", "Tentativa 2 de 5", "B=Voltar para a lista");
     ui_renderizar(px, UI_LARGURA, 1.1); salvar("2_reconectando");
 
+    ui_definir_conta(NULL); // no login ainda não há conta
     ui_codigo(NULL, "microsoft.com/link", "ABCD1234", "Aguardando login · o código expira em 14:32",
               "A=Abrir a página no Switch|+=Fechar");
     ui_renderizar(px, UI_LARGURA, 0.5); salvar("3_codigo");
+    ui_definir_conta("Gamertag123");
 
     ui_mensagem(UI_ERRO, "Não foi possível abrir a sessão.",
                 "xapi: criar sessao respondeu HTTP 503: {\"code\":\"ServiceUnavailable\"} Confira se o console "

@@ -77,3 +77,4 @@ A fase 2 é a mais pesada e arriscada, porque junta WebRTC, criptografia e decod
 - [ARQUITETURA.md](ARQUITETURA.md): módulos, threads, máquina de estados e bibliotecas
 - [PROTOCOLO.md](PROTOCOLO.md): como o Remote Play funciona (autenticação, API, WebRTC)
 - [DESENVOLVIMENTO.md](DESENVOLVIMENTO.md): build, testes no Switch, logs e convenções
+- [TELAS.md](TELAS.md): todas as telas do app

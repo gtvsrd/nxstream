@@ -16,7 +16,7 @@ Built from scratch with a focus on reliability: it reconnects by itself after th
 
 <p align="center">
 <img src="docs/telas/1_status.png" width="49%" alt="Connecting screen">
-<img src="docs/telas/6_lista.png" width="49%" alt="Console list">
+<img src="docs/telas/9_estatisticas.png" width="49%" alt="Statistics while streaming">
 </p>
 
 ## Features
@@ -27,9 +27,20 @@ Built from scratch with a focus on reliability: it reconnects by itself after th
 - **Automatic reconnection:** after sleep or a network drop, a new session is opened and the stream comes back by itself (usually 8–13 s, mostly the console waking up)
 - **HOME keeps running:** the stream stays connected while you are on the HOME menu
 - **Long sessions:** the Xbox Live access token is renewed in the background before it expires (every 4 h)
-- **Simple interface** in Brazilian Portuguese, with the Switch's own font
+- **Simple interface** in Brazilian Portuguese, with the Switch's own font: animated connection screen, console list with your gamertag, in-game menu and a statistics card with a live bitrate graph
 - **Sign-in once:** Microsoft account login by code (on your phone or in the Switch's browser), saved on the SD card
 - **Automatic connection** when your account has a single console; wakes a console in standby without turning on the TV
+
+## Screenshots
+
+| | | |
+|---|---|---|
+| ![Sign-in](docs/telas/3_codigo.png) | ![Console list](docs/telas/6_lista.png) | ![Connecting](docs/telas/1_status.png) |
+| Sign-in by code | Console list with your gamertag | Connecting (animated logo, session state) |
+| ![Reconnecting](docs/telas/2_reconectando.png) | ![In-game menu](docs/telas/8_menu_video.png) | ![Statistics](docs/telas/9_estatisticas.png) |
+| Automatic reconnection | In-game menu (hold + and −) | Statistics card with a 60 s bitrate graph |
+
+Rendered from the app's own UI code on a PC (`make -C tests/ui`); on the Switch the system font is used. More in [docs/TELAS.md](docs/TELAS.md).
 
 ## Requirements
 
@@ -51,7 +62,7 @@ Built from scratch with a focus on reliability: it reconnects by itself after th
 
 | While streaming | Action |
 |---|---|
-| Hold **+** and **−** for 1 s | Menu: back to game, Xbox button, stats, disconnect, quit |
+| Hold **+** and **−** for 1 s | Menu: back to game, Xbox button, statistics card, disconnect, quit |
 | Hold **+** and tap **−** | Xbox (guide) button |
 | Tap **+** | Xbox Menu button |
 | **HOME** | Leave the app; the stream keeps running in the background |
@@ -75,6 +86,7 @@ On the console list, **−** opens a WebRTC diagnostic and **X** signs out.
 - [Architecture](docs/ARQUITETURA.md): modules, threads, session state machine, libraries
 - [Protocol](docs/PROTOCOLO.md): how Xbox Remote Play works (auth, API, WebRTC) and what was learned from real logs
 - [Development](docs/DESENVOLVIMENTO.md): building, testing on the Switch, logs, crash reports, test results per version
+- [Screens](docs/TELAS.md): every screen of the app
 - [Logo](assets/logo/README.md): logo files and colors
 
 ## Troubleshooting

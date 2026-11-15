@@ -31,7 +31,7 @@ flowchart LR
 | `audio` | `source/media/` | `audio`: RTP → Opus (libopus se o build encontrar; senão o Opus do FFmpeg) → fila de até 200 ms (mantida perto de 60 ms) → thread de saída com blocos de 20 ms no `audout` |
 | `input` | `source/input/` | `controle`: botões e analógicos do Switch → controle do Xbox, por posição (B do Switch = A do Xbox). `pacote_input`: monta o pacote do canal `input` (testado no PC). Um pacote por quadro de tela, com os metadados dos quadros exibidos. Depois: vibração e mapeamento configurável (fase 5) |
 | `session` | `source/session/` | Máquina de estados que coordena tudo, incluindo reconexão |
-| `ui` | `source/ui/` | `tela` (v0.10.0): interface gráfica desenhada pela CPU no framebuffer do libnx, com a fonte do sistema (stb_truetype) e o logo em PNG embutido (stb_image): status com símbolo pulsando, login por código, mensagens e lista. A janela é de um de cada vez: interface, console de texto (só o diagnóstico) ou GPU (vídeo). `sobreposicao`: terminal 80x45 com a mesma fonte e cores do console, desenhado numa imagem RGBA por cima do vídeo (estatísticas, menu, avisos) |
+| `ui` | `source/ui/` | `tela` (v0.10.0): interface gráfica desenhada pela CPU no framebuffer do libnx, com a fonte do sistema (stb_truetype) e o logo em PNG embutido (stb_image): status com o logo pulsando, login por código, mensagens, lista, menu e cartão de estatísticas do streaming (ver [TELAS.md](TELAS.md)). A janela é de um de cada vez: interface, console de texto (só o diagnóstico) ou GPU (vídeo). `sobreposicao`: imagem RGBA por cima do vídeo, onde entram o menu e o cartão de estatísticas (desenhados pela `tela`) e avisos curtos em texto |
 
 Regra geral: **`auth`, `xbox_api` e a montagem de pacotes de `input` não dependem do libnx** (só de libcurl, cJSON e C padrão). Assim compilam também no PC, e a lógica é testada no CI sem precisar do Switch.
 
@@ -40,6 +40,7 @@ Regra geral: **`auth`, `xbox_api` e a montagem de pacotes de `input` não depend
 | Thread | Função |
 |---|---|
 | Principal | Desenha a tela, roda `appletMainLoop()` e recebe eventos do sistema (sleep, resume, foco) |
+| Chamada de rede (v0.10.6) | Durante as telas animadas, cada chamada HTTP (login, lista, estado da sessão, SDP, candidatos) roda numa thread curta enquanto a principal segue desenhando a 60 quadros/s (`chamar()` em `main.c`) |
 | Rede | WebRTC: recebe pacotes de vídeo e áudio, envia dados |
 | Vídeo | Decodifica quadros e entrega para a thread principal desenhar |
 | Áudio | Decodifica Opus e alimenta a saída de som |
