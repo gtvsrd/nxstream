@@ -349,6 +349,18 @@ O tempo que o console leva para preparar a sessão (2,5 s acordado, ~9 s em repo
 | 2ª abertura | "Conectando a XBOX" logo depois do login, sem "Procurando seus consoles" | |
 | B durante "Preparando o console" | Volta para a lista de consoles | |
 
+**Resultado da v0.10.5 (logs de 13 a 15/11):** abertura rápida funcionando (`abertura rapida: direto para XBOX`), gamertag obtida, renovação do acesso depois de 12 h em repouso e reconexões na 1ª tentativa (6,5 a 14 s). Streaming sem erros.
+
+**v0.10.6:**
+- **Inicialização sem trancos.** Cada chamada de rede (login, lista, estado da sessão a cada segundo, troca de SDP e candidatos) parava o laço principal por 0,2 a 3 s, e a animação congelava a cada consulta. Agora as chamadas rodam numa thread (`chamar()` em `main.c`) e a tela segue a 60 quadros/s. O logo também "respira" em tamanhos fracionários (antes pulava de 2 em 2 px).
+- **Estatísticas gráficas** (menu › Mostrar estatísticas): cartão no canto de cima à esquerda, sem escurecer o jogo, com resolução e quadros/s, taxa com gráfico dos últimos 60 s, decodificação, quadros pulados/repetidos, áudio e sessão (`docs/telas/9_estatisticas.png`). Cada linha tem uma bolinha verde, amarela ou vermelha.
+
+| Teste (v0.10.6) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Abrir o app | Logo pulsando liso, sem travadas a cada segundo, do login até o vídeo | |
+| Reconectar depois do repouso | Mesma animação lisa | |
+| Menu › Mostrar estatísticas | Cartão no canto, gráfico da taxa enchendo da direita para a esquerda | |
+
 O log registra `main: conexao instavel (...)`, `main: conexao voltou sozinha em X s`, `main: ... reconectando`, `main: reconectado (tentativa N)` e, se for o caso, `abrindo uma sessao nova`.
 
 As próximas fases recebem seus checklists aqui quando começarem.

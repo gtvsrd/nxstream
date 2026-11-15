@@ -421,6 +421,53 @@ static void logo(int cx, int cy, int tam) {
     }
 }
 
+// Logo em tamanho fracionário (para a animação ficar contínua): amostragem
+// bilinear da versão de 256 px. Crescer 0,3 px por quadro fica suave; os
+// tamanhos inteiros da v0.10.4 pulavam de 2 em 2 px e davam trancos.
+static void logo_suave(float cx, float cy, float tam) {
+    const LogoReduzido *b = logo_reduzido(256);
+    if (!b)
+        return;
+    const int L = 256;
+    float x0 = cx - tam / 2, y0 = cy - tam / 2, esc = L / tam;
+    int ix0 = (int)floorf(x0), iy0 = (int)floorf(y0), ix1 = (int)ceilf(x0 + tam), iy1 = (int)ceilf(y0 + tam);
+    for (int y = iy0; y < iy1; y++) {
+        if (y < 0 || y >= UI_ALTURA)
+            continue;
+        float sy = (y + 0.5f - y0) * esc - 0.5f;
+        int ya = (int)floorf(sy);
+        float fy = sy - ya;
+        for (int x = ix0; x < ix1; x++) {
+            if (x < 0 || x >= UI_LARGURA)
+                continue;
+            float sx = (x + 0.5f - x0) * esc - 0.5f;
+            int xa = (int)floorf(sx);
+            float fx = sx - xa;
+            float acc[4] = {0, 0, 0, 0};
+            for (int k = 0; k < 4; k++) {
+                int xx = xa + (k & 1), yy = ya + (k >> 1);
+                if (xx < 0 || yy < 0 || xx >= L || yy >= L)
+                    continue;
+                float w = ((k & 1) ? fx : 1 - fx) * ((k >> 1) ? fy : 1 - fy);
+                const unsigned char *o = &b->px[(yy * L + xx) * 4];
+                acc[0] += o[0] * w;
+                acc[1] += o[1] * w;
+                acc[2] += o[2] * w;
+                acc[3] += o[3] * w;
+            }
+            if (acc[3] < 0.5f)
+                continue;
+            uint32_t *p = &g_px[y * g_passo + x];
+            uint32_t d = *p;
+            float ia = 1.0f - acc[3] / 255.0f; // cores já multiplicadas pelo alfa
+            uint32_t rr = (uint32_t)(acc[0] + (d & 0xFF) * ia + 0.5f);
+            uint32_t gg = (uint32_t)(acc[1] + ((d >> 8) & 0xFF) * ia + 0.5f);
+            uint32_t bb = (uint32_t)(acc[2] + ((d >> 16) & 0xFF) * ia + 0.5f);
+            *p = 0xFF000000u | ((bb > 255 ? 255 : bb) << 16) | ((gg > 255 ? 255 : gg) << 8) | (rr > 255 ? 255 : rr);
+        }
+    }
+}
+
 static char g_conta[64]; // gamertag mostrada no cabeçalho ("" = nenhuma)
 
 void ui_definir_conta(const char *gamertag) {
@@ -497,8 +544,8 @@ static void tela_status(double t) {
     const float cx = UI_LARGURA / 2.0f, cy = 262;
     // O logo "respira": cresce e encolhe alguns pixels. Nada é desenhado em
     // volta dele (os anéis da v0.10.3 pareciam fazer parte do logo).
-    int tam = 200 + 2 * (int)lroundf(4.0f * (float)sin(t * 2 * M_PI / 2.4));
-    logo((int)cx, (int)cy, tam);
+    float tam = 200.0f + 8.0f * (float)sin(t * 2 * M_PI / 2.4);
+    logo_suave(cx, cy, tam);
 
     int y = 400;
     if (g_t.titulo[0]) {
@@ -616,6 +663,127 @@ void ui_menu_video(uint32_t *pixels, int passo, const char *titulo, const char *
     }
     preencher(x + 28, y + h - base + 4, w - 56, 1, COR_LINHA);
     rodape_em(rodape_txt, x + w - 36, y + h - base + 24);
+}
+
+// Número com vírgula decimal ("5,4")
+static void num(char *buf, size_t tam, const char *fmt, double v) {
+    snprintf(buf, tam, fmt, v);
+    for (char *p = buf; *p; p++)
+        if (*p == '.')
+            *p = ',';
+}
+
+static void linha_est(int x, int y, int w, const char *rotulo, const char *valor, uint32_t cor_ponto) {
+    circulo((float)(x + 6), (float)(y + 12), 5, cor_ponto, 1.0f);
+    texto(x + 20, y, 19, COR_TEXTO2, rotulo, 0);
+    texto(x + w, y, 19, COR_TEXTO, valor, 2);
+}
+
+void ui_estatisticas_video(uint32_t *pixels, int passo, const UiEstatisticas *e) {
+    g_px = pixels;
+    g_passo = passo;
+    const int x = 24, y = 24, w = 440, pad = 22;
+    const int h = 398;
+    retangulo(x - 1, y - 1, w + 2, h + 2, 19, COR_LINHA);
+    retangulo(x, y, w, h, 18, RGB(0x14, 0x14, 0x14));
+
+    // Cabeçalho
+    logo(x + pad + 16, y + 32, 32);
+    texto(x + pad + 42, y + 18, 22, COR_TEXTO, "Estatísticas", 0);
+    char buf[96];
+    int s = e->conectado_s > 0 ? e->conectado_s : 0;
+    if (s >= 3600) snprintf(buf, sizeof buf, "há %d h %02d min", s / 3600, s % 3600 / 60);
+    else if (s >= 60) snprintf(buf, sizeof buf, "há %d min", s / 60);
+    else snprintf(buf, sizeof buf, "há %d s", s);
+    texto(x + w - pad, y + 21, 18, COR_TEXTO3, buf, 2);
+    preencher(x + pad, y + 60, w - 2 * pad, 1, COR_LINHA);
+
+    const int lx = x + pad, lw = w - 2 * pad;
+    int ly = y + 74;
+    char a[32], b[32];
+
+    // Vídeo
+    snprintf(buf, sizeof buf, "%d×%d · %.0f quadros/s", e->largura, e->altura, e->fps);
+    linha_est(lx, ly, lw, "Vídeo", buf, e->fps >= 55 ? COR_VERDE : e->fps >= 30 ? COR_AVISO : COR_ERRO);
+    ly += 32;
+
+    // Taxa + gráfico dos últimos 60 s
+    num(a, sizeof a, "%.1f Mbps", e->mbps);
+    linha_est(lx, ly, lw, "Taxa", a, e->mbps > 0.3f ? COR_VERDE : COR_AVISO);
+    ly += 32;
+    const int gx = lx, gy = ly, gw = lw, gh = 54;
+    retangulo(gx, gy, gw, gh, 8, RGB(0x1C, 0x1C, 0x1C));
+    float maximo = 1.0f;
+    for (int i = 0; i < e->hist_total; i++)
+        if (e->hist_mbps[i] > maximo)
+            maximo = e->hist_mbps[i];
+    const float escala = maximo * 1.15f;
+    if (e->hist_total >= 2) {
+        const int ax = gx + 8, aw = gw - 16, base_y = gy + gh - 6, alt = gh - 12;
+        const float passo_x = (float)aw / (UI_HIST - 1);
+        const int primeiro = UI_HIST - e->hist_total; // alinha à direita: o mais novo na borda
+        float ant_y = -1;
+        for (int xx = ax; xx <= ax + aw; xx++) {
+            float f = (xx - ax) / passo_x - primeiro; // posição em amostras
+            if (f < 0)
+                continue;
+            int k = (int)f;
+            float fr = f - k;
+            float v0 = e->hist_mbps[k < e->hist_total ? k : e->hist_total - 1];
+            float v1 = e->hist_mbps[k + 1 < e->hist_total ? k + 1 : e->hist_total - 1];
+            float vy = base_y - alt * ((v0 + (v1 - v0) * fr) / escala);
+            for (int yy = (int)vy + 1; yy < base_y; yy++) // área
+                misturar(xx, yy, COR_VERDE, 0.20f);
+            // linha: preenche o vão vertical até o ponto da coluna anterior
+            float y_de = ant_y < 0 ? vy : ant_y;
+            float lo = y_de < vy ? y_de : vy, hi = y_de < vy ? vy : y_de;
+            for (float yy = lo - 1.0f; yy <= hi + 1.0f; yy += 1.0f) {
+                float d = yy < lo ? lo - yy : yy > hi ? yy - hi : 0;
+                misturar(xx, (int)yy, COR_VERDE, d >= 1.0f ? 0.0f : 1.0f - d * 0.6f);
+            }
+            ant_y = vy;
+        }
+    }
+    ly += gh + 6;
+    texto(gx + 2, ly, 14, COR_TEXTO3, "últimos 60 s", 0);
+    num(a, sizeof a, "máx %.1f Mbps", maximo);
+    texto(gx + gw - 2, ly, 14, COR_TEXTO3, a, 2);
+    ly += 28;
+
+    // Decodificação
+    num(a, sizeof a, "%.1f ms", e->decod_ms);
+    num(b, sizeof b, "%.1f", e->decod_ms_max);
+    snprintf(buf, sizeof buf, "%s · máx %s · %s", a, b, e->hardware ? "NVDEC" : "CPU");
+    linha_est(lx, ly, lw, "Decodificação", buf,
+              e->decod_ms < 12 ? COR_VERDE : e->decod_ms < 16.7f ? COR_AVISO : COR_ERRO);
+    ly += 32;
+
+    // Tela
+    snprintf(buf, sizeof buf, "%lu pulados · %lu repetidos", e->pulados, e->repetidos);
+    linha_est(lx, ly, lw, "Tela", buf, COR_VERDE);
+    ly += 32;
+
+    // Áudio
+    if (e->audio_ativo)
+        snprintf(buf, sizeof buf, "fila %d ms · %lu perdidos", e->audio_fila_ms, e->audio_perdidos);
+    else
+        snprintf(buf, sizeof buf, "desligado");
+    linha_est(lx, ly, lw, "Áudio", buf, !e->audio_ativo ? COR_ERRO : e->audio_perdidos ? COR_AVISO : COR_VERDE);
+    ly += 32;
+
+    // Conexão
+    bool ka_ok = e->keepalive_status >= 200 && e->keepalive_status < 300;
+    if (e->keepalive_status < 0)
+        snprintf(buf, sizeof buf, "aguardando o 1º keepalive");
+    else if (ka_ok)
+        snprintf(buf, sizeof buf, "ativa · keepalive há %d s", e->keepalive_ha_s);
+    else
+        snprintf(buf, sizeof buf, "keepalive falhou (HTTP %ld)", e->keepalive_status);
+    linha_est(lx, ly, lw, "Sessão", buf, e->keepalive_status < 0 ? COR_TEXTO3 : ka_ok ? COR_VERDE : COR_ERRO);
+    ly += 36;
+
+    preencher(x + pad, ly, w - 2 * pad, 1, COR_LINHA);
+    texto(x + w / 2, ly + 10, 16, COR_TEXTO3, "Segure + e − por 1 s para o menu", 1);
 }
 
 void ui_renderizar(uint32_t *pixels, int passo, double t) {

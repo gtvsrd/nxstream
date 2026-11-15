@@ -13,7 +13,8 @@
 - **v0.10.3**: logo corrigido dentro do app, ícone sem manchas, gamertag no cabeçalho e menu gráfico no streaming.
 - **v0.10.4**: as telas usam o próprio PNG do logo (embutido), sem anéis em volta.
 - **v0.10.5**: abertura mais rápida (sem contagem, console e gamertag lembrados no SD).
-- Próximo passo: o usuário testar a v0.10.5 no dia a dia (repouso, Wi-Fi, HOME, sessão longa) e mandar os logs; com a fase 4 validada, juntar `fase-4` na `main` e seguir para a fase 5 (vibração, mapeamento configurável, opções).
+- **v0.10.6**: inicialização sem trancos (rede em segundo plano) e estatísticas gráficas.
+- Próximo passo: o usuário testar a v0.10.6 no dia a dia (repouso, Wi-Fi, HOME, sessão longa) e mandar os logs; com a fase 4 validada, juntar `fase-4` na `main` e seguir para a fase 5 (vibração, mapeamento configurável, opções).
 - Dicas registradas: para atualizar, copiar só o `NXStream.nro` (o `token.json` guarda o login entre versões); o preto em 16 (faixa limitada) é o correto no OLED.
 
 ## Objetivo

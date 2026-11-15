@@ -53,6 +53,26 @@ void ui_definir_conta(const char *gamertag);
 void ui_menu_video(uint32_t *pixels, int passo, const char *titulo, const char *subtitulo,
                    const char *const *itens, int total, int selecionado, const char *rodape);
 
+// Estatísticas por cima do vídeo (v0.10.6): cartão no canto de cima à esquerda.
+#define UI_HIST 60
+typedef struct {
+    char  console[64];
+    int   conectado_s;
+    int   largura, altura;
+    float fps, fps_decod, mbps;
+    float decod_ms, decod_ms_max;
+    bool  hardware;
+    unsigned long pulados, repetidos;  // tela: quadros que não apareceram / atualizações repetidas
+    bool  audio_ativo;
+    int   audio_fila_ms;
+    unsigned long audio_perdidos, audio_faltas;
+    long  keepalive_status;            // -1 = ainda não enviado
+    int   keepalive_ha_s;
+    float hist_mbps[UI_HIST];          // últimos segundos, o mais antigo primeiro
+    int   hist_total;
+} UiEstatisticas;
+void ui_estatisticas_video(uint32_t *pixels, int passo, const UiEstatisticas *e);
+
 // Redesenha a tela atual e a mostra (espera o vsync).
 void ui_desenhar(void);
 

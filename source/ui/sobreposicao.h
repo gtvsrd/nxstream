@@ -25,6 +25,9 @@ void sobre_printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 #define SOBRE_MENU_MAX 8
 void sobre_menu(const char *titulo, const char *subtitulo, const char *const *itens, int total,
                 int selecionado, const char *rodape);
+// Cartão gráfico de estatísticas (canto de cima à esquerda). Vale até o próximo sobre_limpar().
+#include "ui/tela.h"
+void sobre_estatisticas(const UiEstatisticas *e);
 // Move o cursor (coluna e linha a partir de 0)
 void sobre_cursor(int coluna, int linha);
 // Há algo para mostrar? (false = não desenhar a camada)

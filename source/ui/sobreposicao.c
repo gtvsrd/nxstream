@@ -31,6 +31,10 @@ typedef struct {
 } Menu;
 static Menu g_menu, g_menu_desenhado;
 
+// Cartão de estatísticas (v0.10.6)
+static bool g_est_ativo, g_est_desenhado_ativo;
+static UiEstatisticas g_est, g_est_desenhado;
+
 // Mesmas cores do console do libnx (console_sw.c): 8 normais e 8 fortes
 static const uint32_t CORES[16] = {
     0x000000, 0x800000, 0x008000, 0x808000, 0x000080, 0x800080, 0x008080, 0xC0C0C0,
@@ -45,6 +49,12 @@ void sobre_limpar(uint8_t fundo) {
     g_cor = 7;
     g_negrito = false;
     memset(&g_menu, 0, sizeof g_menu);
+    g_est_ativo = false;
+}
+
+void sobre_estatisticas(const UiEstatisticas *e) {
+    g_est = *e;
+    g_est_ativo = true;
 }
 
 void sobre_menu(const char *titulo, const char *subtitulo, const char *const *itens, int total,
@@ -135,12 +145,13 @@ void sobre_printf(const char *fmt, ...) {
 }
 
 bool sobre_visivel(void) {
-    return g_algum_texto || g_fundo > 0 || g_menu.ativo;
+    return g_algum_texto || g_fundo > 0 || g_menu.ativo || g_est_ativo;
 }
 
 bool sobre_mudou(void) {
     return g_nunca_renderizou || g_fundo != g_fundo_desenhado || memcmp(g_tela, g_desenhada, sizeof g_tela) != 0 ||
-           memcmp(&g_menu, &g_menu_desenhado, sizeof g_menu) != 0;
+           memcmp(&g_menu, &g_menu_desenhado, sizeof g_menu) != 0 || g_est_ativo != g_est_desenhado_ativo ||
+           (g_est_ativo && memcmp(&g_est, &g_est_desenhado, sizeof g_est) != 0);
 }
 
 void sobre_renderizar(uint32_t *pixels, int passo) {
@@ -172,6 +183,10 @@ void sobre_renderizar(uint32_t *pixels, int passo) {
             }
         }
     }
+    if (g_est_ativo)
+        ui_estatisticas_video(pixels, passo, &g_est);
+    g_est_desenhado = g_est;
+    g_est_desenhado_ativo = g_est_ativo;
     if (g_menu.ativo) {
         const char *itens[SOBRE_MENU_MAX];
         for (int i = 0; i < g_menu.total; i++)

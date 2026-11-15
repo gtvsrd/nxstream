@@ -67,5 +67,20 @@ int main(int argc, char **argv) {
                            "Fechar o NXStream"};
     ui_menu_video(px, UI_LARGURA, "NXStream", "XBOX · conectado há 12 min", opcoes, 5, 0, "A=Escolher|B=Voltar");
     salvar("8_menu_video");
+
+    // Estatísticas por cima do vídeo
+    for (int i = 0; i < UI_LARGURA * UI_ALTURA; i++) {
+        int x = i % UI_LARGURA, y = i / UI_LARGURA;
+        px[i] = 0xFF000000u | ((uint32_t)(40 + y / 12) << 16) | ((uint32_t)(30 + x / 20) << 8) | (uint32_t)(20 + x / 40);
+    }
+    UiEstatisticas st = {0};
+    snprintf(st.console, sizeof st.console, "XBOX");
+    st.conectado_s = 754; st.largura = 1280; st.altura = 720; st.fps = 60; st.fps_decod = 60; st.mbps = 5.4f;
+    st.decod_ms = 2.1f; st.decod_ms_max = 2.7f; st.hardware = true; st.pulados = 43; st.repetidos = 54;
+    st.audio_ativo = true; st.audio_fila_ms = 40; st.keepalive_status = 200; st.keepalive_ha_s = 12;
+    st.hist_total = 60;
+    for (int i = 0; i < 60; i++) st.hist_mbps[i] = 4.5f + 1.5f * (float)((i * 37 % 11) / 10.0) + (i > 40 ? 1.2f : 0);
+    ui_estatisticas_video(px, UI_LARGURA, &st);
+    salvar("9_estatisticas");
     return 0;
 }

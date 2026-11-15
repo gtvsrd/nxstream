@@ -272,6 +272,85 @@ static const char *endereco_curto(const char *url) {
 }
 
 // ---------------------------------------------------------------------------
+// Chamadas de rede sem travar a animação (v0.10.6). Antes, cada consulta HTTP
+// (login, lista, estado da sessão a cada 1 s, SDP, candidatos) parava o laço
+// principal por 0,2 a 3 s, e a tela de inicialização dava trancos. Agora a
+// chamada roda numa thread e o laço segue desenhando a 60 quadros/s até ela
+// terminar. Só uma chamada por vez; o resultado volta em `r`.
+// ---------------------------------------------------------------------------
+typedef enum {
+    CH_RENOVAR, CH_STREAMING, CH_LISTAR, CH_SESSAO_INICIAR, CH_SESSAO_ESTADO, CH_TOKEN_CONSOLE,
+    CH_SESSAO_CONECTAR, CH_ENVIAR_SDP, CH_RECEBER_SDP, CH_ENVIAR_ICE, CH_RECEBER_ICE, CH_OBTER_NOVO,
+} TipoChamada;
+
+static AuthStatus obter_streaming_novo(AuthConta *conta, AuthStreaming *novo);
+
+typedef struct {
+    TipoChamada tipo;
+    AuthConta *conta;
+    AuthStreaming *streaming;
+    XSessao *sessao;
+    const char *texto;   // server_id, oferta, token ou ufrag
+    void *saida;         // XConsoles*, char** (token/resposta), XCandidatos*
+    const void *entrada; // XCandidatos* locais
+    char *detalhe;
+    size_t tam;
+    long r;
+    volatile bool pronto;
+} Chamada;
+
+static void chamada_executar(Chamada *c) {
+    switch (c->tipo) {
+        case CH_RENOVAR:         c->r = auth_renovar(c->conta); break;
+        case CH_STREAMING:       c->r = auth_streaming(c->conta, c->streaming); break;
+        case CH_LISTAR:          c->r = xapi_listar_consoles(c->streaming, (XConsoles *)c->saida); break;
+        case CH_SESSAO_INICIAR:  c->r = xapi_sessao_iniciar(c->streaming, c->texto, c->sessao); break;
+        case CH_SESSAO_ESTADO:   c->r = xapi_sessao_estado(c->streaming, c->sessao, c->detalhe, (int)c->tam); break;
+        case CH_TOKEN_CONSOLE:   c->r = auth_token_console(c->conta, (char **)c->saida); break;
+        case CH_SESSAO_CONECTAR: c->r = xapi_sessao_conectar(c->streaming, c->sessao, c->texto); break;
+        case CH_ENVIAR_SDP:      c->r = xapi_sessao_enviar_sdp(c->streaming, c->sessao, c->texto); break;
+        case CH_RECEBER_SDP:     c->r = xapi_sessao_receber_sdp(c->streaming, c->sessao, (char **)c->saida); break;
+        case CH_ENVIAR_ICE:
+            c->r = xapi_sessao_enviar_ice(c->streaming, c->sessao, (const XCandidatos *)c->entrada, c->texto);
+            break;
+        case CH_RECEBER_ICE:     c->r = xapi_sessao_receber_ice(c->streaming, c->sessao, (XCandidatos *)c->saida); break;
+        case CH_OBTER_NOVO:      c->r = obter_streaming_novo(c->conta, c->streaming); break;
+    }
+}
+
+static void *thread_chamada(void *arg) {
+    Chamada *c = arg;
+    chamada_executar(c);
+    __atomic_store_n(&c->pronto, true, __ATOMIC_RELEASE);
+    return NULL;
+}
+
+// Executa a chamada mantendo a tela animada. Sem interface gráfica (vídeo na
+// tela ou console de texto) ou sem thread, executa direto, como antes.
+static long chamar(Chamada c) {
+    c.pronto = false;
+    if (!ui_ativa()) {
+        chamada_executar(&c);
+        return c.r;
+    }
+    pthread_t t;
+    pthread_attr_t at;
+    pthread_attr_init(&at);
+    pthread_attr_setstacksize(&at, 512 * 1024); // curl + TLS + JSON
+    bool criada = pthread_create(&t, &at, thread_chamada, &c) == 0;
+    pthread_attr_destroy(&at);
+    if (!criada) {
+        chamada_executar(&c);
+        return c.r;
+    }
+    bool fechar = false;
+    while (!__atomic_load_n(&c.pronto, __ATOMIC_ACQUIRE))
+        quadro(&fechar); // botões apertados durante a espera ficam para depois
+    pthread_join(t, NULL);
+    return c.r;
+}
+
+// ---------------------------------------------------------------------------
 // Passo: login por código
 // ---------------------------------------------------------------------------
 
@@ -394,7 +473,7 @@ static Passo passo_streaming(AuthConta *conta, AuthStreaming *streaming, bool co
     // A Microsoft troca o refresh token a cada renovação, então salva de novo.
     if (!conta_recem_logada) {
         mostrar_aguarde("Entrando na sua conta...");
-        AuthStatus st = auth_renovar(conta);
+        AuthStatus st = (AuthStatus)chamar((Chamada){.tipo = CH_RENOVAR, .conta = conta});
         if (st == AUTH_INVALIDO) {
             auth_apagar(NX_ARQ_TOKEN);
             auth_conta_liberar(conta);
@@ -415,7 +494,7 @@ static Passo passo_streaming(AuthConta *conta, AuthStreaming *streaming, bool co
     }
 
     mostrar_aguarde("Conectando ao Xbox Live...");
-    AuthStatus st = auth_streaming(conta, streaming);
+    AuthStatus st = (AuthStatus)chamar((Chamada){.tipo = CH_STREAMING, .conta = conta, .streaming = streaming});
     if (st != AUTH_OK) {
         u64 b = mostrar_erro("Não foi possível acessar o Xbox Live.", auth_ultimo_erro(), true);
         if (b == HidNpadButton_X) {
@@ -539,7 +618,7 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
 
     mostrar_aguarde("Procurando seus consoles...");
     XConsoles consoles;
-    if (!xapi_listar_consoles(streaming, &consoles)) {
+    if (!chamar((Chamada){.tipo = CH_LISTAR, .streaming = streaming, .saida = &consoles})) {
         u64 b = mostrar_erro("Não foi possível listar seus consoles.", xapi_ultimo_erro(), true);
         if (b == HidNpadButton_X && confirmar_sair_da_conta()) {
             auth_apagar(NX_ARQ_TOKEN);
@@ -697,7 +776,7 @@ static void garantir_streaming(AuthConta *conta, AuthStreaming *s) {
         mostrar_aguarde("Renovando o acesso ao Xbox Live...");
     }
     AuthStreaming novo = {0};
-    AuthStatus st = obter_streaming_novo(conta, &novo);
+    AuthStatus st = (AuthStatus)chamar((Chamada){.tipo = CH_OBTER_NOVO, .conta = conta, .streaming = &novo});
     if (st == AUTH_OK) {
         aplicar_streaming_novo(s, &novo);
         LOG("main: acesso ao streaming renovado");
@@ -828,13 +907,6 @@ static void encerrar_sessao(const AuthStreaming *streaming, const XSessao *sessa
     xapi_sessao_encerrar(streaming, sessao);
 }
 
-static void tempo_texto(char *buf, size_t tam, int s) {
-    if (s >= 3600)
-        snprintf(buf, tam, "%d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60);
-    else
-        snprintf(buf, tam, "%d:%02d", s / 60, s % 60);
-}
-
 // ---------------------------------------------------------------------------
 // Conexão WebRTC com o console (fase 2b, parte 2)
 // docs/PROTOCOLO.md, seção 3: oferta -> resposta -> candidatos -> conexão -> handshake
@@ -890,15 +962,6 @@ static Passo cair_para_reconexao(const char *motivo, bool repouso) {
     return PASSO_RECONECTAR;
 }
 
-static void linha_etapa(const char *nome, EtapaConexao atual, EtapaConexao esta, double t, const char *extra) {
-    if (atual > esta)
-        tp("  %-26s " COR_OK "ok" COR_FIM " %5.1f s  %s\n", nome, t, extra ? extra : "");
-    else if (atual == esta)
-        tp("  %-26s " COR_DESTAQ "..." COR_FIM "\n", nome);
-    else
-        tp("  %-26s " COR_FRACA "-" COR_FIM "\n", nome);
-}
-
 // Menu do vídeo (+ e - segurados por 1 s)
 enum { MENU_VOLTAR, MENU_XBOX, MENU_ESTATISTICAS, MENU_DESCONECTAR, MENU_FECHAR, MENU_ITENS };
 
@@ -948,6 +1011,8 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
     double ultimo_pedido_chave = -10;
     unsigned long decod_janela = 0;
     double fps_decod = 0;
+    float hist_mbps[UI_HIST]; // taxa de cada segundo, para o gráfico das estatísticas
+    int hist_inicio = 0, hist_total = 0;
     double t_log_video = 0;
     long status_keepalive = -1;
     int ka_ok = 0, ka_falhas = 0;
@@ -987,7 +1052,8 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
             case ET_OFERTA:
                 if (e.oferta_pronta && e.coleta_completa) {
                     char *oferta = conexao_oferta();
-                    bool ok = oferta && xapi_sessao_enviar_sdp(streaming, sessao, oferta);
+                    bool ok = oferta && chamar((Chamada){.tipo = CH_ENVIAR_SDP, .streaming = streaming,
+                                                         .sessao = sessao, .texto = oferta});
                     free(oferta);
                     if (!ok)
                         return falha_conexao(streaming, sessao, "O console nao recebeu a oferta.", xapi_ultimo_erro());
@@ -1003,7 +1069,8 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
             case ET_RESPOSTA:
                 if (na_etapa >= proxima_consulta) {
                     char *resposta = NULL;
-                    int st = xapi_sessao_receber_sdp(streaming, sessao, &resposta);
+                    int st = (int)chamar((Chamada){.tipo = CH_RECEBER_SDP, .streaming = streaming,
+                                                   .sessao = sessao, .saida = &resposta});
                     proxima_consulta = segundos_desde(inicio_etapa) + CONEXAO_INTERVALO_CONSULTA;
                     if (st < 0)
                         return falha_conexao(streaming, sessao, "O console nao aceitou a oferta.", xapi_ultimo_erro());
@@ -1014,7 +1081,8 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                             conexao_ler(&e);
                             return falha_conexao(streaming, sessao, "A resposta do console nao foi aceita.", e.erro);
                         }
-                        if (!xapi_sessao_enviar_ice(streaming, sessao, &e.locais, e.ufrag))
+                        if (!chamar((Chamada){.tipo = CH_ENVIAR_ICE, .streaming = streaming, .sessao = sessao,
+                                              .entrada = &e.locais, .texto = e.ufrag}))
                             return falha_conexao(streaming, sessao, "O console nao recebeu os candidatos de rede.",
                                                  xapi_ultimo_erro());
                         t_etapa[ET_RESPOSTA] = segundos_desde(inicio);
@@ -1029,7 +1097,8 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
 
             case ET_CANDIDATOS:
                 if (na_etapa >= proxima_consulta) {
-                    int st = xapi_sessao_receber_ice(streaming, sessao, &remotos);
+                    int st = (int)chamar((Chamada){.tipo = CH_RECEBER_ICE, .streaming = streaming,
+                                                   .sessao = sessao, .saida = &remotos});
                     proxima_consulta = segundos_desde(inicio_etapa) + CONEXAO_INTERVALO_CONSULTA;
                     if (st < 0)
                         return falha_conexao(streaming, sessao, "Falha ao receber os candidatos do console.",
@@ -1082,6 +1151,13 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                     decod_ler(&d);
                     fps_decod = (d.decodificados - decod_janela) / dt;
                     decod_janela = d.decodificados;
+                    if (hist_total < UI_HIST) {
+                        hist_mbps[(hist_inicio + hist_total) % UI_HIST] = (float)mbps;
+                        hist_total++;
+                    } else {
+                        hist_mbps[hist_inicio] = (float)mbps;
+                        hist_inicio = (hist_inicio + 1) % UI_HIST;
+                    }
                     t_janela = agora;
                     // Uma linha a cada 10 s no log, para comparar com o que a tela mostra
                     if (agora - t_log_video >= 10.0) {
@@ -1196,7 +1272,7 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
             ultimo_quadro = marca;
             menu_mudou = false;
             if (em_video) {
-                sobre_limpar(mostrar_estatisticas || menu_aberto ? 150 : 0);
+                sobre_limpar(menu_aberto ? 150 : 0); // o cartão de estatísticas tem fundo próprio
                 g_capturando = true;
             }
         }
@@ -1213,97 +1289,35 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
             mostrar_conexao(nomes[etapa], detalhe, "B=Desconectar|+=Fechar");
         }
         if (redesenhar && em_video && mostrar_estatisticas) {
-            char extra[64];
-            cabecalho();
-            tp("Console: " COR_DESTAQ "%s" COR_FIM " (%s)   sessao pronta em %.0f s\n\n", g_console.nome,
-                   xapi_tipo_amigavel(g_console.tipo), tempo_preparo);
-            tp("Conectando ao console:\n");
-            snprintf(extra, sizeof extra, "(%d candidatos locais)", e.locais.total);
-            linha_etapa("1. Oferta local", etapa, ET_OFERTA, t_etapa[ET_OFERTA], extra);
-            linha_etapa("2. Resposta do console", etapa, ET_RESPOSTA, t_etapa[ET_RESPOSTA], NULL);
-            snprintf(extra, sizeof extra, "(%d do console, %d aceitos)", remotos.total, remotos_aceitos);
-            linha_etapa("3. Candidatos de rede", etapa, ET_CANDIDATOS, t_etapa[ET_CANDIDATOS], extra);
-            linha_etapa("4. Conexao WebRTC", etapa, ET_CONECTANDO, t_etapa[ET_CONECTANDO], NULL);
-            if (e.handshake_ok)
-                tp("  %-26s " COR_OK "ok" COR_FIM " %5.1f s\n", "5. Handshake dos canais", e.t_handshake);
-            else
-                tp("  %-26s %s\n", "5. Handshake dos canais",
-                       etapa == ET_CONECTADO ? COR_DESTAQ "..." COR_FIM : COR_FRACA "-" COR_FIM);
-            tp("\nCanais:");
-            for (int c = 0; c < NUM_CANAIS; c++)
-                tp("  %s %s", conexao_nome_canal((Canal)c),
-                       e.canal_aberto[c] ? COR_OK "aberto" COR_FIM : COR_FRACA "-" COR_FIM);
-            tp("\n");
-
-            if (etapa == ET_CONECTADO) {
-                char t_con[16];
-                tempo_texto(t_con, sizeof t_con, (int)(segundos_desde(inicio) - e.t_conectado));
-                tp("\n" COR_OK "CONECTADO" COR_FIM " ha %s\n", t_con);
-                tp("\nVideo:\n");
-                if (e.sps_valido)
-                    tp("  Resolucao: " COR_DESTAQ "%dx%d" COR_FIM "  (H.264 %s, nivel %d.%d)\n",
-                           e.sps.largura, e.sps.altura, h264_nome_perfil(e.sps.perfil),
-                           e.sps.nivel / 10, e.sps.nivel % 10);
-                else
-                    tp("  Resolucao: " COR_FRACA "aguardando o primeiro SPS" COR_FIM "\n");
-                tp("  Quadros:   %s%.0f/s" COR_FIM "  %.1f Mbps  (%lu no total, %.1f MB)\n",
-                       fps >= 50 ? COR_OK : fps >= 25 ? COR_DESTAQ : COR_ERRO, fps, mbps, e.quadros,
-                       e.bytes_video / 1048576.0);
-                tp("  Chave:     %lu", e.quadros_chave);
-                if (e.quadros_chave)
-                    tp("  (primeiro em %.1f s apos conectar)", e.t_primeiro_chave - e.t_conectado);
-                if (e.pedidos_quadro_chave)
-                    tp("  [%lu pedido(s)]", e.pedidos_quadro_chave);
-                tp("\n  Maior quadro: %.1f KB   Audio: %lu pacotes\n", e.maior_quadro / 1024.0,
-                       e.pacotes_audio);
-
-                DecodEstado d;
-                decod_ler(&d);
-                tp("\nDecodificacao:\n");
-                if (!d.ativo && d.decodificados == 0) {
-                    tp("  " COR_ERRO "Decodificador nao iniciou" COR_FIM " (detalhes no log)\n");
-                } else {
-                    tp("  %s%s" COR_FIM "\n", d.hardware ? COR_OK : COR_DESTAQ, d.descricao);
-                    tp("  Decodificados: %s%.0f/s" COR_FIM "  (%lu no total)",
-                           fps_decod >= 50 ? COR_OK : fps_decod >= 25 ? COR_DESTAQ : COR_ERRO, fps_decod,
-                           d.decodificados);
-                    if (d.largura)
-                        tp("  %dx%d %s", d.largura, d.altura, d.formato);
-                    tp("\n  Tempo:  %s%.1f ms" COR_FIM " medio, %.1f ms maximo  (limite p/ 60/s: 16,7 ms)\n",
-                           d.ms_medio < 12 ? COR_OK : d.ms_medio < 16.7 ? COR_DESTAQ : COR_ERRO, d.ms_medio,
-                           d.ms_maximo);
-                    tp("  Erros: %s%lu" COR_FIM "   Descartados: %lu   Fila: %d\n",
-                           d.erros ? COR_ERRO : COR_OK, d.erros, d.descartados, d.fila);
-                    tp("  Tela: %lu pulados, %lu repetidos\n", d.nao_exibidos, d.repetidos);
-                }
-                tp("\n");
-                if (status_keepalive < 0)
-                    tp("Keepalive: primeiro envio em %d s\n",
-                           SESSAO_INTERVALO_KEEPALIVE_S - (int)segundos_desde(ultimo_keepalive));
-                else
-                    tp("Keepalive: %s (HTTP %ld) ha %d s  [%d ok, %d falhas]\n",
-                           (status_keepalive >= 200 && status_keepalive < 300) ? COR_OK "ok" COR_FIM
-                                                                                : COR_ERRO "falhou" COR_FIM,
-                           status_keepalive, (int)segundos_desde(ultimo_keepalive), ka_ok, ka_falhas);
-                if (apos_sleep[0])
-                    tp("%s\n", apos_sleep);
-                AudioEstado a;
-                audio_ler(&a);
-                if (!a.ativo)
-                    tp("Audio: " COR_ERRO "desligado" COR_FIM " (detalhes no log)\n");
-                else
-                    tp("Audio: %s, %lu pacotes, %lu perdidos, fila %d ms, %lu faltas\n", a.descricao, a.pacotes,
-                       a.perdidos, a.fila_ms, a.faltas);
-                tp("Controle: %lu pacotes enviados ao Xbox\n", pacotes_input);
-                if (video_erro[0])
-                    tp(COR_ERRO "Tela: %s" COR_FIM " (detalhes no log)\n", video_erro);
-                else if (!em_video)
-                    tp(COR_FRACA "O video aparece assim que o primeiro quadro for decodificado." COR_FIM "\n");
-            }
-            if (em_video)
-                tp("\nSegure + e - por 1 s: menu (desconectar, fechar, botao Xbox)\n");
-            else
-                tp("\nB = desconectar   + = desconectar e fechar\n");
+            // Cartão gráfico (v0.10.6); antes era uma tela inteira de texto
+            UiEstatisticas st;
+            memset(&st, 0, sizeof st); // o cartão só é redesenhado se algo mudar (memcmp)
+            snprintf(st.console, sizeof st.console, "%s", g_console.nome);
+            st.conectado_s = (int)(segundos_desde(inicio) - e.t_conectado);
+            DecodEstado d;
+            decod_ler(&d);
+            st.largura = d.largura ? d.largura : (e.sps_valido ? e.sps.largura : 0);
+            st.altura = d.altura ? d.altura : (e.sps_valido ? e.sps.altura : 0);
+            st.fps = (float)fps;
+            st.fps_decod = (float)fps_decod;
+            st.mbps = (float)mbps;
+            st.decod_ms = (float)d.ms_medio;
+            st.decod_ms_max = (float)d.ms_maximo;
+            st.hardware = d.hardware;
+            st.pulados = d.nao_exibidos;
+            st.repetidos = d.repetidos;
+            AudioEstado a;
+            audio_ler(&a);
+            st.audio_ativo = a.ativo;
+            st.audio_fila_ms = a.fila_ms;
+            st.audio_perdidos = a.perdidos;
+            st.audio_faltas = a.faltas;
+            st.keepalive_status = status_keepalive;
+            st.keepalive_ha_s = status_keepalive < 0 ? 0 : (int)segundos_desde(ultimo_keepalive);
+            st.hist_total = hist_total;
+            for (int i = 0; i < hist_total; i++)
+                st.hist_mbps[i] = hist_mbps[(hist_inicio + i) % UI_HIST];
+            sobre_estatisticas(&st);
         }
         if (redesenhar && em_video) {
             if (menu_aberto)
@@ -1468,7 +1482,8 @@ static Passo abrir_sessao(AuthConta *conta, AuthStreaming *streaming, XSessao *s
     mostrar_agora();
 
     XSessao sessao;
-    if (!xapi_sessao_iniciar(streaming, g_console.server_id, &sessao))
+    if (!chamar((Chamada){.tipo = CH_SESSAO_INICIAR, .streaming = streaming, .texto = g_console.server_id,
+                          .sessao = &sessao}))
         return erro_sessao("Nao foi possivel abrir a sessao.", xapi_ultimo_erro());
 
     // --- 1. Preparação: consulta o estado até ficar pronta -----------------
@@ -1493,7 +1508,8 @@ static Passo abrir_sessao(AuthConta *conta, AuthStreaming *streaming, XSessao *s
             // Intervalo contado do início da consulta (antes contava do fim e,
             // com ~1 s por requisição, a consulta saía a cada 2 s)
             proxima = passou + SESSAO_INTERVALO_ESTADO_S;
-            estado = xapi_sessao_estado(streaming, &sessao, detalhe, sizeof detalhe);
+            estado = (XSessaoEstado)chamar((Chamada){.tipo = CH_SESSAO_ESTADO, .streaming = streaming,
+                                                     .sessao = &sessao, .detalhe = detalhe, .tam = sizeof detalhe});
             LOG("main: sessao: %s (%.0f s)", detalhe[0] ? detalhe : xapi_sessao_estado_texto(estado), passou);
 
             if (estado == XSESSAO_ERRO) {
@@ -1518,11 +1534,12 @@ static Passo abrir_sessao(AuthConta *conta, AuthStreaming *streaming, XSessao *s
                 }
                 tentativas_connect++;
                 char *token = NULL;
-                if (auth_token_console(conta, &token) != AUTH_OK) {
+                if (chamar((Chamada){.tipo = CH_TOKEN_CONSOLE, .conta = conta, .saida = &token}) != AUTH_OK) {
                     encerrar_sessao(streaming, &sessao);
                     return erro_sessao("Nao foi possivel autorizar o acesso ao console.", auth_ultimo_erro());
                 }
-                bool ok = xapi_sessao_conectar(streaming, &sessao, token);
+                bool ok = chamar((Chamada){.tipo = CH_SESSAO_CONECTAR, .streaming = streaming, .sessao = &sessao,
+                                           .texto = token});
                 free(token);
                 if (!ok) {
                     encerrar_sessao(streaming, &sessao);
