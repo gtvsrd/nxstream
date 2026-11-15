@@ -15,6 +15,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC
 #define STBI_ONLY_PNG
+#define STBI_NO_GIF
 #define STBI_NO_STDIO
 #include "../../third_party/stb/stb_image.h"
 #pragma GCC diagnostic pop

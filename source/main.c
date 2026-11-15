@@ -1128,7 +1128,7 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                             g_tick_queda ? segundos_desde(g_tick_queda) : 0.0);
                     ultimo_keepalive = armGetSystemTick();
                     g_ultimo_congelamento = 0;
-                    LOG("main: conectado ao console em %.2f s", e.t_conectado);
+                    LOG("main: conectado ao console em %.2f s (oferta %.1f s, resposta %.1f s, candidatos %.1f s, %d candidato(s) aceito(s))", e.t_conectado, t_etapa[ET_OFERTA], t_etapa[ET_RESPOSTA], t_etapa[ET_CANDIDATOS], remotos_aceitos);
                 } else if (e.falhou) {
                     return falha_conexao(streaming, sessao, "A conexao com o console falhou.",
                                          "Confira se o Switch e o Xbox estao na mesma rede.");
