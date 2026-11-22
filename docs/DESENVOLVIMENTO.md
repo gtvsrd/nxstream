@@ -361,6 +361,13 @@ O tempo que o console leva para preparar a sessão (2,5 s acordado, ~9 s em repo
 | Reconectar depois do repouso | Mesma animação lisa | |
 | Menu › Mostrar estatísticas | Cartão no canto, gráfico da taxa enchendo da direita para a esquerda | |
 
+**Resultado da v0.10.6 (log de 15 a 22/11, 7 aberturas e 7 reconexões):** tudo na 1ª tentativa. Abertura até o vídeo em ~14 s (3 s de login, 7–9 s do console acordando, 2 s de conexão); reconexões em 6–17 s, inclusive depois de 35 h em repouso. Streaming: 0 erros de decodificação, 0 pacotes de áudio perdidos. Ponto a melhorar: em 3 aberturas a fila do decodificador encheu logo depois de entrar num jogo (imagem parada ~0,3 s até o próximo quadro-chave), sempre durante uma rajada de dezenas de mensagens `canRecordChanged` do console, cada uma gravada no log.
+
+**v0.10.7:**
+- Fila do decodificador de 8 para 24 quadros: uma parada curta não obriga mais a descartar tudo e esperar um quadro-chave.
+- Mensagens repetidas do console vão para o log só na 1ª vez e a cada 100, com um resumo ao desconectar (`conexao: message ... recebida N vezes`).
+- Keepalive no log só no 1º e a cada 10 min (falhas continuam sempre).
+
 O log registra `main: conexao instavel (...)`, `main: conexao voltou sozinha em X s`, `main: ... reconectando`, `main: reconectado (tentativa N)` e, se for o caso, `abrindo uma sessao nova`.
 
 As próximas fases recebem seus checklists aqui quando começarem.

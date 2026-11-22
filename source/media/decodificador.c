@@ -13,7 +13,11 @@
 // Fila de quadros entre a thread de rede e a de decodificação. Pequena de
 // propósito: se encher, é porque a decodificação não acompanha, e acumular só
 // aumentaria o atraso. Nesse caso tudo é descartado até o próximo quadro-chave.
-#define FILA_TAMANHO 8
+// v0.10.7: de 8 para 24. Uma parada curta do decodificador (troca de jogo no
+// console) enchia a fila de 8 e fazia descartar tudo até o próximo quadro-chave,
+// com a imagem parada por ~0,3 s. Com 24 a fila absorve a parada; como cada
+// quadro leva ~2 ms, o atraso acumulado some em poucos milissegundos.
+#define FILA_TAMANHO 24
 
 typedef struct {
     uint8_t *dados;
@@ -70,7 +74,7 @@ void decod_enviar(const uint8_t *dados, size_t tamanho, bool quadro_chave, uint3
         g_esperando_chave = true;
         g_estado.precisa_chave = true;
         pthread_mutex_unlock(&g_trava);
-        LOG("decod: fila cheia, quadros descartados ate o proximo quadro-chave");
+        LOG("decod: fila cheia (%d quadros), descartados ate o proximo quadro-chave", FILA_TAMANHO);
         return;
     }
     // O FFmpeg exige uma margem de zeros no fim do pacote

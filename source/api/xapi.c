@@ -166,9 +166,11 @@ long xapi_sessao_keepalive(const AuthStreaming *s, const XSessao *sessao) {
         return 0;
 
     long status = r.status;
-    if (status >= 200 && status < 300)
-        LOG("xapi: keepalive ok (HTTP %ld) %.200s", status, r.corpo ? r.corpo : "");
-    else
+    static unsigned long oks = 0; // um keepalive a cada 30 s: no log o 1º e depois a cada 10 min
+    if (status >= 200 && status < 300) {
+        if (++oks == 1 || oks % 20 == 0)
+            LOG("xapi: keepalive ok (HTTP %ld, %lu ate agora) %.200s", status, oks, r.corpo ? r.corpo : "");
+    } else
         log_erro("keepalive", &r);
     http_resposta_liberar(&r);
     return status;

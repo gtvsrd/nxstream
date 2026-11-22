@@ -296,12 +296,39 @@ static void ao_canal_fechado(int id, void *ptr) {
     LOG("conexao: canal %s fechado", CANAIS[c].nome);
 }
 
+// Mensagens repetidas do console (v0.10.7). Ao abrir um jogo ele manda dezenas
+// de "canRecordChanged" no mesmo segundo; cada uma virava uma linha gravada no
+// SD de dentro da thread de rede, e nos 3 logs em que a fila do decodificador
+// encheu (quadros descartados) foi justamente durante uma rajada dessas. Agora
+// cada tipo vai para o log na 1ª vez e depois a cada 100.
+#define MSG_TIPOS 24
+static struct { char alvo[96]; unsigned long n; } g_msgs[MSG_TIPOS];
+static int g_num_msgs = 0;
+
+static unsigned long contar_message(const char *alvo) {
+    for (int i = 0; i < g_num_msgs; i++)
+        if (!strcmp(g_msgs[i].alvo, alvo))
+            return ++g_msgs[i].n;
+    if (g_num_msgs < MSG_TIPOS) {
+        snprintf(g_msgs[g_num_msgs].alvo, sizeof g_msgs[g_num_msgs].alvo, "%s", alvo);
+        g_msgs[g_num_msgs].n = 1;
+        g_num_msgs++;
+    }
+    return 1;
+}
+
 static void tratar_message(const char *dados, int tamanho) {
     cJSON *raiz = cJSON_ParseWithLength(dados, (size_t)tamanho);
     const cJSON *tipo = cJSON_GetObjectItemCaseSensitive(raiz, "type");
     const cJSON *alvo = cJSON_GetObjectItemCaseSensitive(raiz, "target");
     const char *t = cJSON_IsString(tipo) ? tipo->valuestring : "?";
-    LOG("conexao: <- message: %s %s", t, cJSON_IsString(alvo) ? alvo->valuestring : "");
+    char chave[96];
+    snprintf(chave, sizeof chave, "%s %s", t, cJSON_IsString(alvo) ? alvo->valuestring : "");
+    unsigned long n = contar_message(chave); // só esta thread mexe na tabela
+    if (n == 1)
+        LOG("conexao: <- message: %s", chave);
+    else if (n % 100 == 0)
+        LOG("conexao: <- message: %s (%lu vezes)", chave, n);
     if (!strcmp(t, "HandshakeAck")) {
         pthread_mutex_lock(&g_trava);
         bool primeira = !g_estado.handshake_ok;
@@ -556,4 +583,9 @@ void conexao_encerrar(void) {
     free(g_oferta);
     g_oferta = NULL;
     pthread_mutex_unlock(&g_trava);
+    // Resumo das mensagens repetidas (aqui a thread de rede já parou)
+    for (int k = 0; k < g_num_msgs; k++)
+        if (g_msgs[k].n > 1)
+            LOG("conexao: message %s recebida %lu vezes", g_msgs[k].alvo, g_msgs[k].n);
+    g_num_msgs = 0;
 }
