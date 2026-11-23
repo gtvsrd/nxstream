@@ -43,8 +43,6 @@ jobs:
     name: Compilar .nro
     runs-on: ubuntu-latest
     container: devkitpro/devkita64:latest
-    permissions:
-      contents: write   # para o release de um build disparado à mão (abaixo)
 
     steps:
       - name: Baixar o código
@@ -93,8 +91,8 @@ jobs:
           name: NXStream-nro
           path: NXStream.nro
           if-no-files-found: error
-          # Repositório privado tem cota de armazenamento para artefatos
-          # (em 22/11 ela encheu com 150 builds guardados por 90 dias)
+          # Desde 23/11 o repositório é público: artefatos não contam em cota.
+          # Mesmo assim, builds antigos não precisam ficar para sempre.
           retention-days: 30
 
       # O .elf tem os símbolos: serve para traduzir os endereços de um crash
@@ -108,16 +106,3 @@ jobs:
           path: NXStream.elf
           if-no-files-found: error
           retention-days: 14
-
-      # Build disparado à mão (Actions › Build .nro › Run workflow): o .nro vai
-      # também para um release "build-<commit>". Releases não contam na cota de
-      # artefatos, que é da conta inteira e encheu em 22/11.
-      - name: Publicar o .nro num release (só em execução manual)
-        if: github.event_name == 'workflow_dispatch'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: build-${{ github.sha }}
-          name: Build ${{ github.sha }}
-          prerelease: true
-          target_commitish: ${{ github.sha }}
-          files: NXStream.nro
