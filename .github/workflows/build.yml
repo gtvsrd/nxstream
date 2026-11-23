@@ -43,6 +43,8 @@ jobs:
     name: Compilar .nro
     runs-on: ubuntu-latest
     container: devkitpro/devkita64:latest
+    permissions:
+      contents: write   # para o release de um build disparado à mão (abaixo)
 
     steps:
       - name: Baixar o código
@@ -84,6 +86,8 @@ jobs:
         run: make -j$(nproc)
 
       - name: Publicar o .nro
+        # Se a cota de artefatos da conta encher, o build não falha por isso
+        continue-on-error: true
         uses: actions/upload-artifact@v5
         with:
           name: NXStream-nro
@@ -97,9 +101,23 @@ jobs:
       # report do Atmosphère (/atmosphere/crash_reports) em funções e linhas,
       # com scripts/traduzir-crash.sh. Não é para instalar no Switch.
       - name: Publicar o .elf (análise de crash)
+        continue-on-error: true
         uses: actions/upload-artifact@v5
         with:
           name: NXStream-elf-para-crash-reports
           path: NXStream.elf
           if-no-files-found: error
           retention-days: 14
+
+      # Build disparado à mão (Actions › Build .nro › Run workflow): o .nro vai
+      # também para um release "build-<commit>". Releases não contam na cota de
+      # artefatos, que é da conta inteira e encheu em 22/11.
+      - name: Publicar o .nro num release (só em execução manual)
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.sha }}
+          name: Build ${{ github.sha }}
+          prerelease: true
+          target_commitish: ${{ github.sha }}
+          files: NXStream.nro
