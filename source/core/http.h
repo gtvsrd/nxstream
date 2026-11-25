@@ -9,6 +9,7 @@ typedef struct {
     long status;       // código HTTP (0 se a requisição nem chegou ao servidor)
     char *corpo;       // resposta, terminada em '\0' (pode ser NULL)
     size_t tamanho;
+    size_t recebido;   // bytes que vieram pela rede (menor que tamanho se veio comprimido)
     char erro[160];    // descrição do erro de transporte, se houver
 } HttpResposta;
 

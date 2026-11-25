@@ -374,6 +374,12 @@ O log registra `main: conexao instavel (...)`, `main: conexao voltou sozinha em 
 
 Checklist e detalhes em `docs/XCLOUD.md` (seção X0). A lista de consoles ganhou **R = Nuvem**.
 
+**v0.11.1** (log de 25/11): além da carga mais rápida da nuvem (gzip e nomes no SD), a abertura rápida falhou na hora com `WNSError ... State WaitingForServerToRegister`, como já tinha acontecido em 22/11 (3 tentativas manuais em 17 s, todas iguais). O serviço da Microsoft não consegue chamar o console porque ele ainda não se registrou (acabou de ligar na tomada, voltou de uma queda de internet, atualizou). Agora o app espera e tenta sozinho: até 6 vezes, a cada 10 s, com a tela "Esperando o console ficar disponível" (B cancela). O log mostra `console ainda nao registrado ... tentativa N de 6` e, quando der certo, `o console ficou disponivel depois de N espera(s)`. Se não der em ~1 min, o erro sugere ligar o console pelo botão ou pelo app Xbox no celular.
+
+| Teste (v0.11.1) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Abrir o app quando aparecer o WNSError | Tela "Esperando o console ficar disponível" com contagem, e o vídeo sozinho depois | |
+
 As próximas fases recebem seus checklists aqui quando começarem.
 
 ## Convenções

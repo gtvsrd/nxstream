@@ -115,7 +115,8 @@ bool http_iniciar(void) {
     }
 
     curl_version_info_data *v = curl_version_info(CURLVERSION_NOW);
-    LOG("http: libcurl %s, TLS %s", v->version, v->ssl_version ? v->ssl_version : "?");
+    LOG("http: libcurl %s, TLS %s, gzip %s", v->version, v->ssl_version ? v->ssl_version : "?",
+        (v->features & CURL_VERSION_LIBZ) ? "sim" : "nao");
     return true;
 }
 
@@ -172,6 +173,9 @@ bool http_requisicao(HttpMetodo metodo, const char *url, const char *const *head
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, (long)HTTP_TEMPO_TOTAL);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    // v0.11.1: respostas comprimidas (gzip/deflate). O catálogo da nuvem veio com
+    // 6,7 MB sem compressão; com gzip fica ~4x menor. "" = o que a libcurl souber.
+    curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
     // Conexão parada por mais de 50 s não é reaproveitada (servidores costumam
     // fechar as ociosas por volta de 1 min; o keepalive a cada 30 s a mantém viva)
     curl_easy_setopt(curl, CURLOPT_MAXAGE_CONN, 50L);
@@ -189,6 +193,9 @@ bool http_requisicao(HttpMetodo metodo, const char *url, const char *const *head
     bool ok = (rc == CURLE_OK);
     if (ok) {
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &r->status);
+        curl_off_t baixado = 0;
+        if (curl_easy_getinfo(curl, CURLINFO_SIZE_DOWNLOAD_T, &baixado) == CURLE_OK && baixado > 0)
+            r->recebido = (size_t)baixado;
     } else {
         snprintf(r->erro, sizeof r->erro, "%s", curl_easy_strerror(rc));
         // Só o host, para não expor parâmetros no log

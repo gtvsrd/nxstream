@@ -39,7 +39,7 @@ Como no resto do projeto, cada fase termina com um `.nro` testado no Switch ante
 
 | Fase | Versão | Estado |
 |---|---|---|
-| X0 | v0.11.0 | Em teste no Switch |
+| X0 | v0.11.0 / v0.11.1 | Funcionou no Switch (25/11); v0.11.1 deixa a carga mais rápida |
 
 ### Detalhes por fase
 
@@ -58,6 +58,17 @@ Como no resto do projeto, cada fase termina com um `.nro` testado no Switch ante
 | Nomes | Jogos com nome e editora, recentes no topo com bolinha verde | |
 | Navegação | Segurar o direcional rola rápido; para os lados pula 4 | |
 | B e R de novo | Volta aos consoles; a lista reabre na hora (fica na memória) | |
+
+**Resultado da v0.11.0 (log de 25/11):** funcionou na 1ª vez. Oferta `xgpuweb` (Ultimate), região padrão **BRAZILSOUTH** entre 19 (Austrália, EUA, Europa, Japão, Coreia, Índia, Chile, México...). `/v2/titles` trouxe 2869 jogos, 622 liberados para a conta, todos com nome, 24 recentes (Gears Tactics, FF VII Remake, Minecraft Dungeons II, Balatro...). Ponto fraco: **20 s** para a lista aparecer: 1,3 MB da lista em 5,9 s e **6,7 MB** do catálogo em 13,9 s (7 lotes de ~1 MB; cada jogo traz descrição, capturas de tela, idiomas...).
+
+**v0.11.1:**
+- Respostas comprimidas (gzip) em todas as requisições: o catálogo cai ~4x (medido: 21 KB → 5,6 KB para 2 jogos). O log mostra o tamanho e quanto veio pela rede.
+- Nomes guardados no SD (`/switch/NXStream/nuvem-nomes.json`, ~50 KB): da 2ª vez em diante, o catálogo só é consultado para jogos novos.
+
+| Teste (v0.11.1) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| 1ª abertura da nuvem | Lista em bem menos de 20 s; log com `pela rede` menor que o tamanho | |
+| 2ª abertura (fechar o app e abrir de novo) | `todos os nomes ja estavam no cache`, lista em poucos segundos | |
 
 **X1 – Sessão.** O caminho de conexão é o mesmo do Remote Play; o que muda:
 - corpo do `play`: `titleId` preenchido, `serverId` vazio;

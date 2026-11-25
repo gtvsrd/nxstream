@@ -69,8 +69,47 @@ static bool get_nuvem(const AuthStreaming *s, const char *caminho, const char *e
     return ok;
 }
 
-// Nomes no catálogo do Game Pass, em lotes. Falha aqui não impede a lista.
-static void buscar_nomes(XTitulos *t) {
+static char *ler_arquivo(const char *caminho) {
+    FILE *f = fopen(caminho, "rb");
+    if (!f)
+        return NULL;
+    char *dados = NULL;
+    if (fseek(f, 0, SEEK_END) == 0) {
+        long tam = ftell(f);
+        if (tam > 0 && tam < 4 * 1024 * 1024 && fseek(f, 0, SEEK_SET) == 0 && (dados = malloc((size_t)tam + 1))) {
+            if (fread(dados, 1, (size_t)tam, f) == (size_t)tam) {
+                dados[tam] = '\0';
+            } else {
+                free(dados);
+                dados = NULL;
+            }
+        }
+    }
+    fclose(f);
+    return dados;
+}
+
+// Grava num temporário e troca, para não deixar um cache pela metade
+static void salvar_cache(const XTitulos *t) {
+    char *json = xnuvem_cache_montar(t, CATALOGO_IDIOMA);
+    if (!json)
+        return;
+    const char *tmp = NX_ARQ_NUVEM_NOMES ".tmp";
+    FILE *f = fopen(tmp, "wb");
+    bool ok = f && fwrite(json, 1, strlen(json), f) == strlen(json);
+    if (f)
+        ok = (fclose(f) == 0) && ok;
+    if (ok) {
+        remove(NX_ARQ_NUVEM_NOMES);
+        ok = rename(tmp, NX_ARQ_NUVEM_NOMES) == 0;
+    }
+    LOG("xnuvem: cache de nomes %s (%zu KB)", ok ? "salvo" : "NAO foi salvo", strlen(json) / 1024);
+    free(json);
+}
+
+// Nomes no catálogo do Game Pass, em lotes, só para os jogos que o cache do SD
+// não tem. Falha aqui não impede a lista. Retorna quantos nomes vieram.
+static int buscar_nomes(XTitulos *t) {
     static const char *const headers[] = {
         "Accept: application/json",
         "Content-Type: application/json",
@@ -79,13 +118,21 @@ static void buscar_nomes(XTitulos *t) {
         "calling-app-version: 21.0.0",
         NULL,
     };
+    int faltam = xnuvem_sem_nome(t);
+    if (faltam == 0) {
+        LOG("xnuvem: catalogo: todos os nomes ja estavam no cache");
+        return 0;
+    }
     double t0 = agora_s();
-    size_t bytes = 0;
-    int lotes = 0, falhas = 0;
-    for (int inicio = 0; inicio < t->total; inicio += CATALOGO_LOTE) {
+    size_t bytes = 0, rede = 0;
+    int lotes = 0, falhas = 0, novos = 0;
+    // Os índices contam entre os jogos ainda sem nome, que diminuem a cada lote
+    // respondido: avança só pelos que continuaram sem nome.
+    for (int inicio = 0; inicio < xnuvem_sem_nome(t);) {
         char *corpo = xnuvem_corpo_catalogo(t, inicio, CATALOGO_LOTE);
         if (!corpo)
             break;
+        int antes = xnuvem_sem_nome(t);
         HttpResposta r;
         bool ok = http_requisicao(HTTP_POST, CATALOGO_URL_PRODUTOS, headers, corpo, &r);
         free(corpo);
@@ -95,14 +142,20 @@ static void buscar_nomes(XTitulos *t) {
             falhas++;
             LOG("xnuvem: catalogo (lote %d) falhou: HTTP %ld %s %.200s", lotes, r.status, ok ? "" : r.erro,
                 r.corpo ? r.corpo : "");
+        } else {
+            novos += n;
         }
         bytes += r.tamanho;
+        rede += r.recebido ? r.recebido : r.tamanho;
         http_resposta_liberar(&r);
         if (!ok)
             break; // sem rede: não insiste nos outros lotes
+        int resolvidos = antes - xnuvem_sem_nome(t);
+        inicio += CATALOGO_LOTE - resolvidos; // os que o catálogo não conhece ficam para trás
     }
-    LOG("xnuvem: catalogo: %d lote(s), %d falha(s), %zu KB em %.1f s", lotes, falhas, bytes / 1024,
-        agora_s() - t0);
+    LOG("xnuvem: catalogo: %d sem nome, %d lote(s), %d falha(s), %d nome(s), %zu KB (%zu KB pela rede) em %.1f s",
+        faltam, lotes, falhas, novos, bytes / 1024, rede / 1024, agora_s() - t0);
+    return novos;
 }
 
 bool xnuvem_listar(const AuthStreaming *s, XTitulos *t) {
@@ -119,8 +172,8 @@ bool xnuvem_listar(const AuthStreaming *s, XTitulos *t) {
     } else {
         // Até hoje a lista vem inteira; se um dia vier paginada, o log avisa
         bool paginada = r.corpo && strstr(r.corpo, "\"continuationToken\":\"");
-        LOG("xnuvem: /v2/titles: %d jogo(s), %zu KB, %.1f s%s", t->total, r.tamanho / 1024, agora_s() - t0,
-            paginada ? " (ATENCAO: lista paginada, so a 1a pagina foi lida)" : "");
+        LOG("xnuvem: /v2/titles: %d jogo(s), %zu KB (%zu KB pela rede), %.1f s%s", t->total, r.tamanho / 1024,
+            (r.recebido ? r.recebido : r.tamanho) / 1024, agora_s() - t0, paginada ? " (ATENCAO: lista paginada, so a 1a pagina foi lida)" : "");
     }
     http_resposta_liberar(&r);
     if (!ok)
@@ -138,7 +191,13 @@ bool xnuvem_listar(const AuthStreaming *s, XTitulos *t) {
 
     xnuvem_filtrar_ordenar(t); // só os com direito vão ao catálogo
     LOG("xnuvem: com direito: %d de %d", t->total, t->total_servidor);
-    buscar_nomes(t);
+
+    char *cache = ler_arquivo(NX_ARQ_NUVEM_NOMES);
+    int do_cache = cache ? xnuvem_cache_aplicar(cache, CATALOGO_IDIOMA, t) : -1;
+    free(cache);
+    LOG("xnuvem: cache de nomes: %s%d", do_cache < 0 ? "vazio ou invalido, " : "", do_cache < 0 ? 0 : do_cache);
+    if (buscar_nomes(t) > 0)
+        salvar_cache(t);
     xnuvem_filtrar_ordenar(t); // de novo, agora por nome
 
     LOG("xnuvem: lista pronta em %.1f s: %d jogo(s), %d com nome, %d recente(s)", agora_s() - t0, t->total,

@@ -391,6 +391,27 @@ static void teste_nuvem(void) {
     CHECAR(!strcmp(t.itens[2].nome, "Forza Horizon 5"));
     CHECAR(!strcmp(t.itens[3].nome, "Jogo Sem Produto"));
     CHECAR(xnuvem_parse_catalogo("[]", &t) == -1);
+    CHECAR(xnuvem_sem_nome(&t) == 1);                // só FORTNITE ficou sem nome
+    corpo = xnuvem_corpo_catalogo(&t, 0, 100);       // catálogo pede só os sem nome
+    CHECAR(corpo && !strcmp(corpo, "{\"Products\":[\"BT5P2X999VH2\"]}"));
+    free(corpo);
+
+    // Cache dos nomes no SD: ida e volta, idioma diferente invalida
+    char *cache = xnuvem_cache_montar(&t, "pt-BR");
+    CHECAR(cache && strstr(cache, "\"9NKX70BBCDRN\":[\"Forza Horizon 5\",\"Xbox Game Studios\"]"));
+    CHECAR(cache && !strstr(cache, "BT5P2X999VH2")); // sem nome não entra
+    XTitulos t2 = {0};
+    CHECAR(xnuvem_parse_titulos("{\"results\":[{\"titleId\":\"FORZAHORIZON5\",\"details\":"
+                                "{\"productId\":\"9NKX70BBCDRN\",\"hasEntitlement\":true}},"
+                                "{\"titleId\":\"NOVO\",\"details\":{\"productId\":\"9ZZZ\",\"hasEntitlement\":true}}]}",
+                                &t2));
+    CHECAR(xnuvem_cache_aplicar(cache, "en-US", &t2) == -1);
+    CHECAR(xnuvem_cache_aplicar(cache, "pt-BR", &t2) == 1);
+    CHECAR(!strcmp(t2.itens[0].nome, "Forza Horizon 5") && !strcmp(t2.itens[0].editora, "Xbox Game Studios"));
+    CHECAR(xnuvem_sem_nome(&t2) == 1 && t2.itens[1].nome[0] == '\0');
+    CHECAR(xnuvem_cache_aplicar("lixo", "pt-BR", &t2) == -1);
+    free(cache);
+    xnuvem_liberar(&t2);
 
     CHECAR(!xnuvem_parse_titulos("{\"erro\":1}", &t));
     CHECAR(t.total == 4);                            // falha não apaga a lista atual

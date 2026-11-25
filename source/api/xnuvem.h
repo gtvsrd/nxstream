@@ -35,9 +35,17 @@ const char *xnuvem_ultimo_erro(void);
 bool  xnuvem_parse_titulos(const char *json, XTitulos *t);
 // /v2/titles/mru: marca XTitulo.recente. Retorna quantos foram marcados (-1 = JSON inválido).
 int   xnuvem_parse_recentes(const char *json, XTitulos *t);
-// Corpo do POST do catálogo com os productIds de [inicio, inicio+n). Liberar com free().
+// Jogos que ainda não têm nome (os que vão ao catálogo)
+int   xnuvem_sem_nome(const XTitulos *t);
+// Corpo do POST do catálogo com os productIds dos jogos SEM nome, do inicio-ésimo
+// ao (inicio+n)-ésimo deles. Liberar com free().
 char *xnuvem_corpo_catalogo(const XTitulos *t, int inicio, int n);
 // Resposta do catálogo: preenche nome e editora. Retorna quantos receberam nome (-1 = inválido).
 int   xnuvem_parse_catalogo(const char *json, XTitulos *t);
+// Cache dos nomes no SD (v0.11.1): {"idioma":..,"produtos":{"9N..":["Nome","Editora"]}}.
+// montar: liberar com free(). aplicar: preenche os nomes e devolve quantos (-1 = inválido
+// ou de outro idioma).
+char *xnuvem_cache_montar(const XTitulos *t, const char *idioma);
+int   xnuvem_cache_aplicar(const char *json, const char *idioma, XTitulos *t);
 // Mantém só os jogos com direito e ordena (recentes primeiro, depois por nome).
 void  xnuvem_filtrar_ordenar(XTitulos *t);

@@ -79,15 +79,70 @@ int xnuvem_parse_recentes(const char *json, XTitulos *t) {
     return marcados;
 }
 
+int xnuvem_sem_nome(const XTitulos *t) {
+    int n = 0;
+    for (int i = 0; i < t->total; i++)
+        n += !t->itens[i].nome[0] && t->itens[i].produto_id[0];
+    return n;
+}
+
 char *xnuvem_corpo_catalogo(const XTitulos *t, int inicio, int n) {
     cJSON *corpo = cJSON_CreateObject();
     cJSON *lista = cJSON_AddArrayToObject(corpo, "Products");
-    for (int i = inicio; i < t->total && i < inicio + n; i++)
-        if (t->itens[i].produto_id[0])
+    int k = 0; // índice entre os jogos sem nome
+    for (int i = 0; i < t->total && k < inicio + n; i++) {
+        if (t->itens[i].nome[0] || !t->itens[i].produto_id[0])
+            continue;
+        if (k++ >= inicio)
             cJSON_AddItemToArray(lista, cJSON_CreateString(t->itens[i].produto_id));
+    }
     char *json = cJSON_PrintUnformatted(corpo);
     cJSON_Delete(corpo);
     return json;
+}
+
+char *xnuvem_cache_montar(const XTitulos *t, const char *idioma) {
+    cJSON *raiz = cJSON_CreateObject();
+    cJSON_AddNumberToObject(raiz, "versao", 1);
+    cJSON_AddStringToObject(raiz, "idioma", idioma);
+    cJSON *produtos = cJSON_AddObjectToObject(raiz, "produtos");
+    for (int i = 0; i < t->total; i++) {
+        const XTitulo *x = &t->itens[i];
+        if (!x->nome[0] || !x->produto_id[0] || cJSON_GetObjectItemCaseSensitive(produtos, x->produto_id))
+            continue;
+        cJSON *par = cJSON_CreateArray();
+        cJSON_AddItemToArray(par, cJSON_CreateString(x->nome));
+        cJSON_AddItemToArray(par, cJSON_CreateString(x->editora));
+        cJSON_AddItemToObject(produtos, x->produto_id, par);
+    }
+    char *json = cJSON_PrintUnformatted(raiz);
+    cJSON_Delete(raiz);
+    return json;
+}
+
+int xnuvem_cache_aplicar(const char *json, const char *idioma, XTitulos *t) {
+    cJSON *raiz = json ? cJSON_Parse(json) : NULL;
+    const char *id = texto(raiz, "idioma");
+    const cJSON *produtos = cJSON_GetObjectItemCaseSensitive(raiz, "produtos");
+    if (!id || strcmp(id, idioma) || !cJSON_IsObject(produtos)) {
+        cJSON_Delete(raiz);
+        return -1;
+    }
+    int aplicados = 0;
+    for (int i = 0; i < t->total; i++) {
+        XTitulo *x = &t->itens[i];
+        if (!x->produto_id[0])
+            continue;
+        const cJSON *par = cJSON_GetObjectItemCaseSensitive(produtos, x->produto_id);
+        const cJSON *nome = cJSON_GetArrayItem(par, 0), *editora = cJSON_GetArrayItem(par, 1);
+        if (!cJSON_IsString(nome) || !nome->valuestring[0])
+            continue;
+        copiar(x->nome, sizeof x->nome, nome->valuestring);
+        copiar(x->editora, sizeof x->editora, cJSON_IsString(editora) ? editora->valuestring : "");
+        aplicados++;
+    }
+    cJSON_Delete(raiz);
+    return aplicados;
 }
 
 // Resposta: {"Products":{"9NXXXX":{"ProductTitle":..,"PublisherName":..,"StoreId":..,"XCloudTitleId":..}}}
