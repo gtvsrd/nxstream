@@ -401,6 +401,12 @@ Checklist e detalhes em `docs/XCLOUD.md` (seção X0). A lista de consoles ganho
 - Ao receber `serverInitiatedDisconnect`, o app reconecta na hora (antes esperava o canal fechar, ~3 s) e mostra "O Xbox encerrou a conexão".
 - O conteúdo do aviso vai para o log (`conexao: o console vai encerrar a conexao: ...`), para descobrir o motivo.
 
+**v0.11.5:** o usuário contou que tinha **desligado o Xbox** no meio da sessão: a reconexão automática religou o console (por isso os 42 s em "Provisioning"). Agora, quando o próprio Xbox encerra a conexão, não há reconexão automática: a tela "O Xbox encerrou a conexão" oferece **A = Conectar de novo** e **B = Voltar para a lista**. Quedas de rede e a volta do repouso do Switch continuam reconectando sozinhas.
+
+| Teste (v0.11.5) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Desligar o Xbox no meio da sessão | Tela "O Xbox encerrou a conexão", sem religar o console | |
+
 As próximas fases recebem seus checklists aqui quando começarem.
 
 ## Convenções

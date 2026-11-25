@@ -1161,10 +1161,8 @@ static Passo cair_para_reconexao(const char *motivo, bool repouso) {
     // parado na tela até a sessão nova começar (até ~5 s ao voltar do repouso)
     modo_ui();
     g_reconectando = true;
-    const char *titulo = repouso                                ? "Voltando do repouso"
-                         : !strncmp(motivo, "o Xbox encerrou", 15) ? "O Xbox encerrou a conexão"
-                                                                  : "A conexão caiu";
-    mostrar_conexao(titulo, "Abrindo uma sessão nova com o console", NULL);
+    mostrar_conexao(repouso ? "Voltando do repouso" : "A conexão caiu", "Abrindo uma sessão nova com o console",
+                    NULL);
     mostrar_agora();
     conexao_encerrar();
     return PASSO_RECONECTAR;
@@ -1404,12 +1402,23 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                         ultimo_pedido_chave = agora;
                     }
                 }
-                // v0.11.4: o console avisou que vai encerrar; não espera o canal cair
+                // O console avisou que vai encerrar (serverInitiatedDisconnect). No
+                // log de 25/11 era o usuário desligando o Xbox no meio da sessão, e a
+                // reconexão automática da v0.11.3 o religou (42 s em "Provisioning").
+                // v0.11.5: não reconecta sozinho; pergunta.
                 if (e.servidor_encerrou) {
-                    char m[200];
-                    snprintf(m, sizeof m, "o Xbox encerrou a conexao (%s)",
-                             e.motivo_encerramento[0] ? e.motivo_encerramento : "sem motivo");
-                    return cair_para_reconexao(m, false);
+                    LOG("main: o Xbox encerrou a conexao (%s); sem reconexao automatica",
+                        e.motivo_encerramento[0] ? e.motivo_encerramento : "sem motivo");
+                    modo_ui();
+                    conexao_encerrar();
+                    encerrar_sessao(streaming, sessao);
+                    g_reconectando = false;
+                    mostrar_mensagem(UI_INFO, "O Xbox encerrou a conexão.",
+                                     "Ele foi desligado ou a sessão foi fechada no próprio console.\n"
+                                     "Conectar de novo liga o Xbox outra vez, se estiver em suspensão.",
+                                     "A=Conectar de novo|B=Voltar para a lista|+=Fechar");
+                    u64 b = esperar_botao(HidNpadButton_A | HidNpadButton_B | HidNpadButton_Plus);
+                    return b == HidNpadButton_A ? PASSO_SESSAO : b == HidNpadButton_B ? PASSO_LISTA : PASSO_SAIR;
                 }
                 // Fase 4: queda. "desconectado" pode voltar sozinho em poucos segundos
                 // (oscilação do Wi-Fi); "falhou"/"fechado" ou mais de 4 s fora = reconectar.
