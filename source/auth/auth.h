@@ -8,6 +8,7 @@
 // Só o refresh token é salvo no SD. O resto é obtido a cada abertura.
 #pragma once
 #include <stdbool.h>
+#include <time.h>
 
 typedef enum {
     AUTH_OK,
@@ -31,6 +32,7 @@ typedef struct {
 typedef struct {
     char *access_token;
     char *refresh_token;
+    time_t obtido_em;             // quando o access_token chegou (vale ~1 h); 0 = nunca
 } AuthConta;
 
 typedef struct {

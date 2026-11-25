@@ -17,6 +17,7 @@
 - **v0.10.7**: fila do decodificador maior e menos gravação no log durante rajadas de mensagens.
 - **v0.11.0** (25/11): início do xCloud, fase X0 (`docs/XCLOUD.md`): R na lista de consoles abre a lista dos jogos da nuvem. Funcionou: 622 jogos, Ultimate, região BRAZILSOUTH, mas em 20 s.
 - **v0.11.1**: carga da nuvem mais rápida (gzip, nomes no SD): 2ª abertura em 5,7 s.
+- **v0.11.3**: Xbox desligado aparece assim na lista; nuvem sem renovar a conta à toa.
 - **v0.11.2**: com o Xbox desligado (não em repouso), o erro aparece na hora com o que fazer; "Tentar de novo" depois de um erro de sessão não segue mais com a sessão que falhou.
 - **23/11:** repositório público (Actions sem cota). Antes, o histórico foi reescrito para tirar um dado pessoal dos testes; quem tinha um clone precisa clonar de novo.
 - Próximo passo do xCloud: fase X1 (abrir um jogo da nuvem); o log da v0.11.1 confirma o tempo de carga.

@@ -612,6 +612,11 @@ static void conta_lembrar_consoles(const XConsoles *consoles) {
 // Passo: jogos na nuvem (xCloud, fase X0)
 // Acesso à oferta da nuvem e lista dos jogos em texto. Abrir um jogo é a X1.
 // ---------------------------------------------------------------------------
+// v0.11.3: console que respondeu "WaitingForServerToRegister" (desligado, não em
+// repouso). A lista da Microsoft continua dizendo ConnectedStandby; aqui ele
+// aparece como desligado até uma sessão com ele dar certo.
+static char g_console_desligado[64];
+
 static AuthStreaming g_nuvem;        // gsToken da nuvem (separado do console)
 static time_t g_nuvem_obtido = 0;
 static bool g_nuvem_recusado = false; // a API respondeu 401: renovar o acesso antes de tentar de novo
@@ -627,8 +632,14 @@ static void nuvem_esquecer(void) {
 }
 
 // O token da conta dura ~1 h e a nuvem pode ser aberta bem depois do início:
-// renova a conta antes, como na renovação do streaming do console.
+// renova a conta antes, como na renovação do streaming do console. v0.11.3: só
+// se ele tiver mais de 30 min (log de 25/11: renovava 10 s depois da abertura
+// já ter renovado, ~1 s a mais para a lista aparecer).
+#define CONTA_RENOVAR_DEPOIS_S (30 * 60)
 static AuthStatus obter_nuvem_novo(AuthConta *conta, AuthStreaming *novo) {
+    bool recente = conta->obtido_em && time(NULL) - conta->obtido_em < CONTA_RENOVAR_DEPOIS_S;
+    if (recente)
+        return auth_nuvem(conta, novo);
     AuthStatus st = auth_renovar(conta);
     if (st == AUTH_OK) {
         if (!auth_salvar_refresh(NX_ARQ_TOKEN, conta->refresh_token))
@@ -842,9 +853,13 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
         for (int i = 0; i < total; i++) {
             const XConsole *x = &consoles.itens[i];
             snprintf(itens[i].nome, sizeof itens[i].nome, "%s", x->nome);
+            bool desligado = g_console_desligado[0] && !strcmp(x->server_id, g_console_desligado) &&
+                             strcmp(x->estado, "On");
             snprintf(itens[i].detalhe, sizeof itens[i].detalhe, "%s · %s", xapi_tipo_amigavel(x->tipo),
-                     xapi_estado_amigavel(x->estado));
-            itens[i].estado = !strcmp(x->estado, "On") ? 1 : !strcmp(x->estado, "ConnectedStandby") ? 2 : 0;
+                     desligado ? "Desligado (ligue pelo botão)" : xapi_estado_amigavel(x->estado));
+            itens[i].estado = !strcmp(x->estado, "On") ? 1
+                            : desligado                       ? 0
+                            : !strcmp(x->estado, "ConnectedStandby") ? 2 : 0;
         }
         const char *vazia = "Nenhum console encontrado nesta conta.\nNo Xbox, ative em: Configurações > "
                             "Dispositivos e conexões > Recursos remotos > Habilitar recursos remotos.";
@@ -1728,6 +1743,7 @@ static Passo abrir_sessao_uma(AuthConta *conta, AuthStreaming *streaming, XSessa
                 encerrar_sessao(streaming, &sessao);
                 if (strstr(detalhe, "WaitingForServerToRegister")) {
                     LOG("main: o Xbox nao respondeu ao chamado (desligado ou sem internet)");
+                    snprintf(g_console_desligado, sizeof g_console_desligado, "%s", g_console.server_id);
                     return erro_sessao("O Xbox esta desligado.", DETALHE_XBOX_DESLIGADO);
                 }
                 return erro_sessao("O console recusou a sessao.", detalhe);
@@ -1779,6 +1795,7 @@ static Passo abrir_sessao_uma(AuthConta *conta, AuthStreaming *streaming, XSessa
     *preparo = segundos_desde(inicio);
     *sessao_saida = sessao;
     LOG("main: sessao pronta em %.1f s", *preparo);
+    g_console_desligado[0] = '\0';
     *pronta = true;
     return PASSO_SESSAO;
 }

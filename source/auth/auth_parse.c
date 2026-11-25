@@ -56,6 +56,7 @@ AuthStatus auth_parse_token(long status, const char *json, AuthConta *conta) {
             free(conta->refresh_token);
             conta->access_token = strdup(access);
             conta->refresh_token = strdup(refresh);
+            conta->obtido_em = time(NULL);
             resultado = AUTH_OK;
         }
     } else if (raiz) {
@@ -177,6 +178,7 @@ void auth_conta_liberar(AuthConta *conta) {
     free(conta->access_token);
     free(conta->refresh_token);
     conta->access_token = conta->refresh_token = NULL;
+    conta->obtido_em = 0;
 }
 
 void auth_streaming_liberar(AuthStreaming *s) {
