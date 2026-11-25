@@ -30,7 +30,7 @@ Como no resto do projeto, cada fase termina com um `.nro` testado no Switch ante
 |---|---|---|
 | **X0** | **Acesso e lista em texto.** Pedir o gsToken `xgpuweb` (com recuo para `xgpuwebf2p`), ler as regiões, listar os jogos de `/v2/titles` com o nome vindo do catálogo. Diagnóstico no log: oferta obtida, regiões, quantidade de jogos | A lista dos jogos da conta aparece; o log mostra a região escolhida |
 | **X1** | **Primeiro jogo na tela.** Sessão `cloud/play` com o `titleId`, acompanhar fila e estados, `/connect`, troca de SDP/ICE aceitando candidatos públicos, vídeo, som e controle | Um jogo abre e é jogável por alguns minutos |
-| **X2** | **Qualidade pela internet.** Medir perda e variação de atraso; pedir retransmissão de pacotes perdidos (NACK), buffer curto de reordenação, pedido de quadro-chave mais esperto; 1080p na TV e 720p no portátil; estatísticas com perda e latência | 30 min de jogo sem travadas longas; estatísticas mostrando a perda |
+| **X2** | **Qualidade pela internet.** Medir perda e variação de atraso; pedir retransmissão de pacotes perdidos (NACK), buffer curto de reordenação, pedido de quadro-chave mais esperto; estatísticas com perda e latência | 30 min de jogo sem travadas longas; estatísticas mostrando a perda |
 | **X3** | **Interface de nuvem.** Tela inicial com "Meu Xbox" e "Nuvem"; grade de jogos com capas (download de imagens JPEG com cache no SD), recentes, busca simples, tela de fila com tempo estimado | Navegar e abrir jogos só com o controle, capas carregando sem travar |
 | **X4** | **Reconexão e sessões.** Comportamento depois de sleep, HOME e queda de rede: retomar a sessão ativa quando possível, sem reiniciar o jogo; encerrar a sessão ao sair | Bloquear o Switch por alguns minutos e voltar ao mesmo ponto do jogo |
 | **X5** | **Acabamento.** Escolha de região, idioma/mercado do catálogo, configurações de qualidade, documentação e telas | Uso no dia a dia |
@@ -45,7 +45,7 @@ Como no resto do projeto, cada fase termina com um `.nro` testado no Switch ante
 - filtro de candidatos: no xCloud, aceitar os endereços públicos do servidor (IPv4; IPv6 se a rede tiver);
 - NAT: o Switch costuma estar atrás de NAT (no caso do usuário, CGNAT do provedor). O servidor da Microsoft tem IP público, então em princípio o Switch alcança o servidor sem servidor STUN; se falhar, adicionar STUN na libjuice.
 
-**X2 – Qualidade.** Hoje a recepção de vídeo pede quadro-chave quando algo se perde, o que na internet causaria travadas frequentes. Plano: medir primeiro (perda e atraso por segundo no log e nas estatísticas), depois implementar NACK do lado de quem recebe (a libdatachannel não traz pronto) e um buffer de reordenação de algumas dezenas de milissegundos. A taxa do xCloud em 1080p chega a ~10–20 Mbps, contra ~5 Mbps do Remote Play em 720p; o decodificador aguenta (2 ms por quadro em 720p).
+**X2 – Qualidade.** Hoje a recepção de vídeo pede quadro-chave quando algo se perde, o que na internet causaria travadas frequentes. Plano: medir primeiro (perda e atraso por segundo no log e nas estatísticas), depois implementar NACK do lado de quem recebe (a libdatachannel não traz pronto) e um buffer de reordenação de algumas dezenas de milissegundos. Em 720p (decisão abaixo) a taxa deve ficar perto da do Remote Play (~5–8 Mbps), e o decodificador já é folgado (2 ms por quadro).
 
 **X3 – Interface.** Capas exigem baixar e decodificar JPEG (habilitar JPEG no stb_image, hoje só PNG), reduzir para o tamanho do cartão e guardar no SD para as próximas aberturas. A grade carrega as imagens em segundo plano para a navegação não travar.
 
@@ -61,9 +61,11 @@ Como no resto do projeto, cada fase termina com um `.nro` testado no Switch ante
 | Mudança de API pela Microsoft | Para de funcionar | Endpoints isolados em `config.h`, respostas inesperadas no log (como no Remote Play) |
 | Termos de uso da Microsoft | Bloqueio do acesso não oficial | Mesmo risco do Remote Play e do Greenlight; uso só com a conta do próprio usuário |
 
-## Decisões em aberto (para o usuário)
+## Decisões tomadas (25/11)
 
-1. **Assinatura:** a conta de teste tem Game Pass Ultimate? Sem ela, os testes ficam restritos a jogos gratuitos.
-2. **Tela inicial:** abrir direto no último modo usado (casa ou nuvem) ou sempre numa tela de escolha?
-3. **Resolução:** 1080p quando o Switch estiver na TV e 720p no portátil, ou 720p sempre (menos dados, mais estável)?
-4. **Capas desde o início** (X3 antes de X2) ou primeiro a qualidade do streaming?
+| Decisão | Escolha |
+|---|---|
+| Conta de teste | Tem **Game Pass Ultimate**: testes com o catálogo completo (oferta `xgpuweb`); o recuo para `xgpuwebf2p` fica para contas sem assinatura |
+| Tela inicial | Abre no **último modo usado** (Meu Xbox ou Nuvem), com troca por uma aba |
+| Resolução | **720p sempre**, também na TV: menos dados e mais estabilidade pela internet |
+| Ordem | **Qualidade do streaming (X2) antes da interface com capas (X3)** |
