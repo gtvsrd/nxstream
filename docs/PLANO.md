@@ -16,7 +16,8 @@
 - **v0.10.6**: inicialização sem trancos (rede em segundo plano) e estatísticas gráficas.
 - **v0.10.7**: fila do decodificador maior e menos gravação no log durante rajadas de mensagens.
 - **v0.11.0** (25/11): início do xCloud, fase X0 (`docs/XCLOUD.md`): R na lista de consoles abre a lista dos jogos da nuvem. Funcionou: 622 jogos, Ultimate, região BRAZILSOUTH, mas em 20 s.
-- **v0.11.1**: carga da nuvem mais rápida (gzip, nomes no SD) e espera automática quando o Xbox ainda não se registrou (`WNSError`).
+- **v0.11.1**: carga da nuvem mais rápida (gzip, nomes no SD): 2ª abertura em 5,7 s.
+- **v0.11.2**: com o Xbox desligado (não em repouso), o erro aparece na hora com o que fazer; "Tentar de novo" depois de um erro de sessão não segue mais com a sessão que falhou.
 - **23/11:** repositório público (Actions sem cota). Antes, o histórico foi reescrito para tirar um dado pessoal dos testes; quem tinha um clone precisa clonar de novo.
 - Próximo passo do xCloud: fase X1 (abrir um jogo da nuvem); o log da v0.11.1 confirma o tempo de carga.
 - Fase 4: o usuário testar no dia a dia (repouso, Wi-Fi, HOME, sessão longa) e mandar os logs; com a fase 4 validada, juntar `fase-4` na `main` e seguir para a fase 5 (vibração, mapeamento configurável, opções).

@@ -1666,47 +1666,25 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
     }
 }
 
-// v0.11.1: "WNSError ... State WaitingForServerToRegister". O serviço da Microsoft
-// não consegue chamar o console, que ainda não se registrou nele (acabou de ligar
-// na tomada, voltou de uma queda de internet, atualizou). Falha na hora (0 s) e
-// tentar logo em seguida falha igual (log de 22/11: 3 tentativas em 17 s; 25/11).
-// Agora o app espera e tenta sozinho por cerca de 1 min antes de mostrar o erro.
-#define SESSAO_WNS_TENTATIVAS 6
-#define SESSAO_WNS_ESPERA_S   10.0
-static Passo esperar_console_registrar(int tentativa) {
-    u64 inicio = armGetSystemTick();
-    bool fechar = false;
-    int ultimo = -1;
-    for (;;) {
-        double falta = SESSAO_WNS_ESPERA_S - segundos_desde(inicio);
-        if (falta <= 0)
-            return PASSO_RECONECTAR;
-        if ((int)(falta * 4) != ultimo) {
-            ultimo = (int)(falta * 4);
-            char detalhe[200];
-            snprintf(detalhe, sizeof detalhe,
-                     "%s · nova tentativa em %.0f s (%d de %d)\n"
-                     "Ele pode ter acabado de ligar ou de voltar à internet.",
-                     xapi_tipo_amigavel(g_console.tipo), falta + 0.49, tentativa, SESSAO_WNS_TENTATIVAS);
-            mostrar_conexao("Esperando o console ficar disponível", detalhe, "B=Cancelar");
-        }
-        u64 b = quadro(&fechar);
-        if (fechar)
-            return PASSO_SAIR;
-        if (b & HidNpadButton_B)
-            return PASSO_LISTA;
-    }
-}
+// "WNSError ... State WaitingForServerToRegister": o serviço da Microsoft não
+// consegue chamar o console. Nos logs de 22/11 e 25/11 o Xbox estava DESLIGADO
+// (modo de economia de energia), não em repouso, embora a lista dissesse
+// "ConnectedStandby". Assim ele não acorda de longe; a v0.11.1 esperava e tentava
+// por 1 min, sem efeito. v0.11.2: avisa na hora o que fazer.
+#define DETALHE_XBOX_DESLIGADO \
+    "Ele nao esta em repouso, entao nao da para liga-lo de longe. Ligue o console pelo botao e aperte A.\n" \
+    "Para o NXStream ligar o Xbox sozinho: Configuracoes > Geral > Opcoes de energia > Suspensao."
 
-// Abre a sessão e espera ela ficar pronta. Retorna PASSO_SESSAO se deu certo
-// (ou o passo seguinte: erro, lista, sair).
-static Passo abrir_sessao(AuthConta *conta, AuthStreaming *streaming, XSessao *sessao_saida, double *preparo) {
+// Uma tentativa de abrir a sessão e esperar ela ficar pronta. *pronta = true se
+// deu certo; senão retorna o passo escolhido na tela de erro (PASSO_SESSAO = "A,
+// tentar de novo"), ou lista/sair/reconectar.
+static Passo abrir_sessao_uma(AuthConta *conta, AuthStreaming *streaming, XSessao *sessao_saida, double *preparo,
+                              bool *pronta) {
+    *pronta = false;
     mostrar_conexao("Abrindo a sessão", NULL, NULL);
     mostrar_agora();
 
     XSessao sessao;
-    int tentativas_wns = 0;
-nova_sessao:
     if (!chamar((Chamada){.tipo = CH_SESSAO_INICIAR, .streaming = streaming, .texto = g_console.server_id,
                           .sessao = &sessao}))
         return erro_sessao("Nao foi possivel abrir a sessao.", xapi_ultimo_erro());
@@ -1749,19 +1727,8 @@ nova_sessao:
             if (estado == XSESSAO_FALHOU) {
                 encerrar_sessao(streaming, &sessao);
                 if (strstr(detalhe, "WaitingForServerToRegister")) {
-                    if (tentativas_wns < SESSAO_WNS_TENTATIVAS) {
-                        tentativas_wns++;
-                        LOG("main: console ainda nao registrado no servico da Microsoft; tentativa %d de %d em %.0f s",
-                            tentativas_wns, SESSAO_WNS_TENTATIVAS, SESSAO_WNS_ESPERA_S);
-                        Passo p = esperar_console_registrar(tentativas_wns);
-                        if (p != PASSO_RECONECTAR)
-                            return p;
-                        mostrar_conexao("Abrindo a sessão", NULL, NULL);
-                        goto nova_sessao;
-                    }
-                    return erro_sessao("O console nao ficou disponivel para conexoes.",
-                                       "O servico da Microsoft nao consegue chamar o Xbox. Ligue o console "
-                                       "pelo botao (ou pelo app Xbox no celular) e tente de novo.");
+                    LOG("main: o Xbox nao respondeu ao chamado (desligado ou sem internet)");
+                    return erro_sessao("O Xbox esta desligado.", DETALHE_XBOX_DESLIGADO);
                 }
                 return erro_sessao("O console recusou a sessao.", detalhe);
             }
@@ -1812,9 +1779,23 @@ nova_sessao:
     *preparo = segundos_desde(inicio);
     *sessao_saida = sessao;
     LOG("main: sessao pronta em %.1f s", *preparo);
-    if (tentativas_wns)
-        LOG("main: o console ficou disponivel depois de %d espera(s) de %.0f s", tentativas_wns, SESSAO_WNS_ESPERA_S);
+    *pronta = true;
     return PASSO_SESSAO;
+}
+
+// Abre a sessão. Retorna PASSO_SESSAO só se ficou pronta (ou o passo seguinte:
+// lista, sair, reconectar). v0.11.2: antes, "A = tentar de novo" na tela de erro
+// também voltava PASSO_SESSAO e quem chamava seguia para a conexão com uma sessão
+// que tinha falhado ("URL using bad/illegal format", logs de 22/11 e 25/11).
+static Passo abrir_sessao(AuthConta *conta, AuthStreaming *streaming, XSessao *sessao_saida, double *preparo) {
+    for (;;) {
+        bool pronta = false;
+        Passo p = abrir_sessao_uma(conta, streaming, sessao_saida, preparo, &pronta);
+        if (pronta || p != PASSO_SESSAO)
+            return p;
+        LOG("main: tentando abrir a sessao de novo");
+        garantir_streaming(conta, streaming); // renova antes, se a falha foi 401
+    }
 }
 
 // Espera antes de uma nova tentativa, mostrando o que está acontecendo.

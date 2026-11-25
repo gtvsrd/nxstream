@@ -378,7 +378,18 @@ Checklist e detalhes em `docs/XCLOUD.md` (seção X0). A lista de consoles ganho
 
 | Teste (v0.11.1) | Resultado esperado | Resultado obtido |
 |---|---|---|
-| Abrir o app quando aparecer o WNSError | Tela "Esperando o console ficar disponível" com contagem, e o vídeo sozinho depois | |
+| Abrir o app quando aparecer o WNSError | Tela "Esperando o console ficar disponível" com contagem, e o vídeo sozinho depois | Não: 6 de 6 esperas falharam, em 4 aberturas |
+
+**Resultado da v0.11.1 (log de 25/11):** o erro continuou a noite toda. Causa (informada pelo usuário): o Xbox estava **desligado**, não em repouso. Desligado (economia de energia), ele não recebe o chamado da Microsoft para ligar, mesmo com a lista dizendo `ConnectedStandby`. O log também mostrou um bug antigo: depois do erro, **A = Tentar de novo** seguia direto para a conexão WebRTC com a sessão que tinha falhado (`URL using bad/illegal format`); o mesmo aconteceu em 22/11.
+
+**v0.11.2:**
+- Sem a espera de 1 min: o erro aparece na hora, como "O Xbox está desligado", com o que fazer (ligar pelo botão e apertar A; para ligar de longe, deixar o Xbox em Suspensão nas opções de energia).
+- "Tentar de novo" abre uma sessão nova de verdade (`main: tentando abrir a sessao de novo` no log).
+
+| Teste (v0.11.2) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Abrir o app com o Xbox desligado | Erro "O Xbox está desligado" logo depois do login | |
+| Ligar o Xbox pelo botão e apertar A | Conecta e mostra o jogo | |
 
 As próximas fases recebem seus checklists aqui quando começarem.
 

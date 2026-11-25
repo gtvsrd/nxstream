@@ -68,7 +68,9 @@ Como no resto do projeto, cada fase termina com um `.nro` testado no Switch ante
 | Teste (v0.11.1) | Resultado esperado | Resultado obtido |
 |---|---|---|
 | 1ª abertura da nuvem | Lista em bem menos de 20 s; log com `pela rede` menor que o tamanho | |
-| 2ª abertura (fechar o app e abrir de novo) | `todos os nomes ja estavam no cache`, lista em poucos segundos | |
+| 2ª abertura (fechar o app e abrir de novo) | `todos os nomes ja estavam no cache`, lista em poucos segundos | Sim: 5,7 s |
+
+**Resultado da v0.11.1 (log de 25/11):** o cache funcionou: da 2ª vez a lista ficou pronta em **5,7 s** (antes 20 s). O gzip funcionou no catálogo (6,7 MB → 1,2 MB pela rede), mas a 1ª carga levou 21,8 s mesmo assim: quem demora é o servidor, ~3 s por lote. Já `/v2/titles` (1,3 MB, 5,3 s) vem sem compressão: o servidor da nuvem não usa gzip. Fica para a X3 mostrar na hora a última lista salva e atualizar por trás.
 
 **X1 – Sessão.** O caminho de conexão é o mesmo do Remote Play; o que muda:
 - corpo do `play`: `titleId` preenchido, `serverId` vazio;
