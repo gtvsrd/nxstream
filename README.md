@@ -6,7 +6,7 @@
 <img src="https://img.shields.io/badge/platform-Nintendo%20Switch-e60012" alt="Platform">
 <img src="https://img.shields.io/badge/language-C-blue" alt="Language">
 <img src="https://img.shields.io/badge/license-GPL--3.0-green" alt="License">
-<img src="https://img.shields.io/badge/version-0.10.7-2bd46a" alt="Version">
+<img src="https://img.shields.io/badge/version-0.11.0-2bd46a" alt="Version">
 <img src="https://img.shields.io/badge/status-beta-orange" alt="Status">
 </p>
 
@@ -45,7 +45,7 @@ Rendered from the app's own UI code on a PC (`make -C tests/ui`); on the Switch 
 ## Requirements
 
 - A Switch running custom firmware (Atmosphère) with the Homebrew Menu
-- Your Xbox and Switch on the **same network** (xCloud support is planned: see the [xCloud roadmap](docs/XCLOUD.md), in Portuguese)
+- Your Xbox and Switch on the **same network** (xCloud support is in progress: version 0.11.0 lists your cloud games, playing comes next; see the [xCloud roadmap](docs/XCLOUD.md), in Portuguese)
 - **Remote features** enabled on the Xbox: *Settings › Devices & connections › Remote features › Enable remote features*, with the power mode set to *Sleep* if you want to wake it from standby
 
 ## Installation

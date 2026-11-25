@@ -20,6 +20,13 @@ Para atualizar depois de mudar a interface: `make -C tests/ui` e copiar `tests/u
 | ![Lista vazia](telas/7_lista_vazia.png) | ![Sair da conta](telas/5_aviso.png) |
 | **Nenhum console.** Explica onde ativar os recursos remotos no Xbox. | **Confirmação.** Perguntas e avisos com ícone. |
 
+## Nuvem (xCloud)
+
+| | |
+|---|---|
+| ![Jogos na nuvem](telas/10_nuvem.png) | |
+| **Jogos na nuvem** (R na lista de consoles, desde a v0.11.0). Jogos liberados para a conta, recentes no topo com bolinha verde; posição, plano e região no subtítulo. Abrir um jogo chega na fase X1. | |
+
 ## Durante o jogo
 
 | | |

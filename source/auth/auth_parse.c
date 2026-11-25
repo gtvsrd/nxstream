@@ -111,18 +111,25 @@ bool auth_parse_streaming(const char *json, AuthStreaming *s) {
     const cJSON *ofertas = cJSON_GetObjectItemCaseSensitive(raiz, "offeringSettings");
     const cJSON *regioes = cJSON_GetObjectItemCaseSensitive(ofertas, "regions");
 
-    // Usa a região marcada como padrão; se nenhuma estiver, a primeira
-    const char *base = NULL;
+    // Usa a região marcada como padrão; se nenhuma estiver, a primeira.
+    // Todas vão para s->regioes (diagnóstico: o xCloud costuma trazer várias).
+    const char *base = NULL, *nome = NULL;
+    bool achou_padrao = false;
+    char lista[sizeof s->regioes] = "";
     const cJSON *regiao;
     cJSON_ArrayForEach(regiao, regioes) {
         const char *uri = texto(regiao, "baseUri");
         if (!uri)
             continue;
-        if (!base)
+        const char *n = texto(regiao, "name");
+        bool padrao = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(regiao, "isDefault"));
+        size_t usado = strlen(lista);
+        snprintf(lista + usado, sizeof lista - usado, "%s%s%s", usado ? ", " : "", n ? n : "?",
+                 padrao ? "*" : "");
+        if (!base || (padrao && !achou_padrao)) {
             base = uri;
-        if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(regiao, "isDefault"))) {
-            base = uri;
-            break;
+            nome = n;
+            achou_padrao = padrao;
         }
     }
 
@@ -131,6 +138,8 @@ bool auth_parse_streaming(const char *json, AuthStreaming *s) {
         free(s->gs_token);
         s->gs_token = strdup(gs);
         snprintf(s->base_uri, sizeof s->base_uri, "%s", base);
+        copiar(s->regiao, sizeof s->regiao, nome);
+        copiar(s->regioes, sizeof s->regioes, lista);
         size_t n = strlen(s->base_uri);
         if (n > 0 && s->base_uri[n - 1] == '/')
             s->base_uri[n - 1] = '\0';

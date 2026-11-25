@@ -48,6 +48,24 @@
 // Demais chamadas da sessão usam o "sessionPath" devolvido pelo play:
 //   <sessionPath>/state, /connect, /keepalive, /sdp, /ice  e DELETE <sessionPath>
 
+// ---------------------------------------------------------------------------
+// xCloud (jogos na nuvem, docs/XCLOUD.md). Mesmo XSTS do gssv, outra oferta:
+// xgpuweb = Game Pass Ultimate; xgpuwebf2p = só jogos gratuitos, qualquer conta.
+// ---------------------------------------------------------------------------
+#define GSSV_OFERTA_NUVEM        "xgpuweb"
+#define GSSV_OFERTA_NUVEM_F2P    "xgpuwebf2p"
+#define GSSV_URL_LOGIN_NUVEM     "https://" GSSV_OFERTA_NUVEM ".gssv-play-prod.xboxlive.com/v2/login/user"
+#define GSSV_URL_LOGIN_NUVEM_F2P "https://" GSSV_OFERTA_NUVEM_F2P ".gssv-play-prod.xboxlive.com/v2/login/user"
+#define API_CAMINHO_TITULOS      "/v2/titles"              // jogos da nuvem e se a conta tem direito
+#define API_CAMINHO_RECENTES     "/v2/titles/mru?mr=25"    // jogados recentemente, o mais recente primeiro
+// Catálogo do Game Pass: nomes (e, na fase X3, capas) a partir do productId
+#define CATALOGO_MERCADO         "BR"
+#define CATALOGO_IDIOMA          "pt-BR"
+#define CATALOGO_URL_PRODUTOS \
+    "https://catalog.gamepass.com/v3/products?market=" CATALOGO_MERCADO "&language=" CATALOGO_IDIOMA \
+    "&hydration=RemoteHighSapphire0"
+#define CATALOGO_LOTE            100   // productIds por consulta (limite do serviço)
+
 // Token de transferência para o console (enviado em /connect)
 #define MS_URL_LIVE_TOKEN   "https://login.live.com/oauth20_token.srf"
 #define MS_ESCOPO_CONSOLE   "service::http://Passport.NET/purpose::PURPOSE_XBOX_CLOUD_CONSOLE_TRANSFER_TOKEN"

@@ -2,6 +2,7 @@
 // Rodam no PC e no CI:  make -C tests
 #include "auth/auth.h"
 #include "api/xapi.h"
+#include "api/xnuvem.h"
 #include "media/h264_info.h"
 
 #include <stdio.h>
@@ -84,6 +85,8 @@ static void teste_streaming(void) {
     CHECAR(s.gs_token && !strcmp(s.gs_token, "GST"));
     CHECAR(!strcmp(s.base_uri, "https://uks.core.gssv-play-prodxhome.xboxlive.com")); // padrão, sem '/' final
     CHECAR(s.duracao_s == 14400);
+    CHECAR(!strcmp(s.regiao, "UKSouth"));
+    CHECAR(!strcmp(s.regioes, "WestUS, UKSouth*"));
     auth_streaming_liberar(&s);
 
     // Sem região padrão: usa a primeira
@@ -92,6 +95,7 @@ static void teste_streaming(void) {
         "{\"offeringSettings\":{\"regions\":[{\"baseUri\":\"https://a.example\"},{\"baseUri\":\"https://b.example\"}]},"
         "\"gsToken\":\"G\"}", &s2));
     CHECAR(!strcmp(s2.base_uri, "https://a.example"));
+    CHECAR(s2.regiao[0] == '\0' && !strcmp(s2.regioes, "?, ?"));
     auth_streaming_liberar(&s2);
 
     AuthStreaming s3 = {0};
@@ -337,12 +341,70 @@ static void teste_armazenamento(void) {
     CHECAR(auth_carregar_refresh(arq) == NULL);
 }
 
+static void teste_nuvem(void) {
+    puts("xcloud: jogos, recentes e catalogo");
+    XTitulos t = {0};
+    CHECAR(xnuvem_parse_titulos(
+        "{\"results\":["
+        "{\"titleId\":\"FORZAHORIZON5\",\"details\":{\"productId\":\"9NKX70BBCDRN\",\"xboxTitleId\":2030093255,"
+        "\"hasEntitlement\":true,\"supportedInputTypes\":[\"CustomTouchOverlay\",\"MKB\"]}},"
+        "{\"titleId\":\"FORTNITE\",\"details\":{\"productId\":\"BT5P2X999VH2\",\"hasEntitlement\":false,"
+        "\"isFreeInStore\":true}},"
+        "{\"titleId\":\"STARFIELD\",\"details\":{\"productId\":\"9NCJSXWZTP88\",\"hasEntitlement\":false}},"
+        "{\"titleId\":\"HALOINFINITE\",\"details\":{\"productId\":\"9PP5G1F0C2B6\",\"hasEntitlement\":true}},"
+        "{\"titleId\":\"SEMPRODUTO\",\"details\":{\"hasEntitlement\":true}},"
+        "{\"details\":{\"productId\":\"SEMTITULO\"}}],"
+        "\"continuationToken\":null}", &t));
+    CHECAR(t.total == 5 && t.total_servidor == 5);  // sem titleId fica de fora
+    CHECAR(!strcmp(t.itens[0].produto_id, "9NKX70BBCDRN") && t.itens[0].tem_direito);
+    CHECAR(t.itens[1].tem_direito);                  // gratuito na loja conta como direito
+    CHECAR(!t.itens[2].tem_direito);
+
+    CHECAR(xnuvem_parse_recentes("{\"results\":[{\"titleId\":\"haloinfinite\"},{\"titleId\":\"NAOEXISTE\"},"
+                                 "{\"titleId\":\"FORTNITE\"}]}", &t) == 2);
+    CHECAR(t.itens[3].recente == 1 && t.itens[1].recente == 3 && t.itens[0].recente == 0);
+    CHECAR(xnuvem_parse_recentes("{}", &t) == -1);
+
+    xnuvem_filtrar_ordenar(&t);
+    CHECAR(t.total == 4);                            // STARFIELD sem direito saiu
+    CHECAR(!strcmp(t.itens[0].titulo_id, "HALOINFINITE") && !strcmp(t.itens[1].titulo_id, "FORTNITE"));
+
+    char *corpo = xnuvem_corpo_catalogo(&t, 0, 100);
+    CHECAR(corpo && !strcmp(corpo, "{\"Products\":[\"9PP5G1F0C2B6\",\"BT5P2X999VH2\",\"9NKX70BBCDRN\"]}"));
+    free(corpo);
+    corpo = xnuvem_corpo_catalogo(&t, 1, 1);
+    CHECAR(corpo && !strcmp(corpo, "{\"Products\":[\"BT5P2X999VH2\"]}"));
+    free(corpo);
+
+    // Chave em minúsculas, StoreId e XCloudTitleId também casam
+    CHECAR(xnuvem_parse_catalogo(
+        "{\"Products\":{"
+        "\"9nkx70bbcdrn\":{\"ProductTitle\":\"Forza Horizon 5\",\"PublisherName\":\"Xbox Game Studios\"},"
+        "\"X1\":{\"ProductTitle\":\"Halo Infinite\",\"StoreId\":\"9PP5G1F0C2B6\",\"PublisherName\":\"Xbox\"},"
+        "\"X2\":{\"ProductTitle\":\"Jogo Sem Produto\",\"XCloudTitleId\":\"SEMPRODUTO\"},"
+        "\"X3\":{\"PublisherName\":\"sem nome\"}},\"InvalidIds\":[]}", &t) == 3);
+    xnuvem_filtrar_ordenar(&t);
+    CHECAR(t.com_nome == 3 && t.recentes == 2);
+    // Recentes primeiro (na ordem), depois por nome; sem nome no fim
+    CHECAR(!strcmp(t.itens[0].nome, "Halo Infinite") && !strcmp(t.itens[0].editora, "Xbox"));
+    CHECAR(!strcmp(t.itens[1].titulo_id, "FORTNITE") && t.itens[1].nome[0] == '\0');
+    CHECAR(!strcmp(t.itens[2].nome, "Forza Horizon 5"));
+    CHECAR(!strcmp(t.itens[3].nome, "Jogo Sem Produto"));
+    CHECAR(xnuvem_parse_catalogo("[]", &t) == -1);
+
+    CHECAR(!xnuvem_parse_titulos("{\"erro\":1}", &t));
+    CHECAR(t.total == 4);                            // falha não apaga a lista atual
+    xnuvem_liberar(&t);
+    CHECAR(t.itens == NULL && t.total == 0);
+}
+
 int main(void) {
     teste_codigo();
     teste_token();
     teste_xbl();
     teste_streaming();
     teste_consoles();
+    teste_nuvem();
     teste_sessao();
     teste_negociacao();
     teste_filtro_rede_local();

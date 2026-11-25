@@ -15,8 +15,10 @@
 - **v0.10.5**: abertura mais rápida (sem contagem, console e gamertag lembrados no SD).
 - **v0.10.6**: inicialização sem trancos (rede em segundo plano) e estatísticas gráficas.
 - **v0.10.7**: fila do decodificador maior e menos gravação no log durante rajadas de mensagens.
+- **v0.11.0** (25/11): início do xCloud, fase X0 (`docs/XCLOUD.md`): R na lista de consoles abre a lista dos jogos da nuvem.
 - **23/11:** repositório público (Actions sem cota). Antes, o histórico foi reescrito para tirar um dado pessoal dos testes; quem tinha um clone precisa clonar de novo.
-- Próximo passo: o usuário testar a v0.10.7 no dia a dia (repouso, Wi-Fi, HOME, sessão longa) e mandar os logs; com a fase 4 validada, juntar `fase-4` na `main` e seguir para a fase 5 (vibração, mapeamento configurável, opções).
+- Próximo passo do xCloud: o usuário testar a v0.11.0 (lista dos jogos da nuvem) e mandar o log; depois, fase X1 (abrir um jogo).
+- Fase 4: o usuário testar no dia a dia (repouso, Wi-Fi, HOME, sessão longa) e mandar os logs; com a fase 4 validada, juntar `fase-4` na `main` e seguir para a fase 5 (vibração, mapeamento configurável, opções).
 - Dicas registradas: para atualizar, copiar só o `NXStream.nro` (o `token.json` guarda o login entre versões); o preto em 16 (faixa limitada) é o correto no OLED.
 
 ## Objetivo

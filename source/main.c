@@ -6,6 +6,7 @@
 //   INICIO -> (sem token salvo) LOGIN -> STREAMING -> LISTA
 //   INICIO -> (com token salvo) STREAMING -> LISTA
 //   LISTA -> (A no console) SESSAO -> LISTA
+//   LISTA -> (R) NUVEM -> LISTA        (xCloud, fase X0: só a lista de jogos)
 // Nenhum erro fecha o app: sempre há "tentar de novo" ou "sair da conta".
 
 #include <pthread.h>
@@ -20,6 +21,7 @@
 
 #include "api/config.h"
 #include "api/xapi.h"
+#include "api/xnuvem.h"
 #include "auth/auth.h"
 #include "core/http.h"
 #include "core/log.h"
@@ -43,7 +45,7 @@
 #define COR_FIM     "\x1b[0m"
 
 typedef enum { PASSO_INICIO, PASSO_LOGIN, PASSO_STREAMING, PASSO_LISTA, PASSO_SESSAO, PASSO_DIAG, PASSO_SAIR,
-               PASSO_RECONECTAR } Passo; // PASSO_RECONECTAR: só entre passo_conectar e passo_sessao
+               PASSO_RECONECTAR, PASSO_NUVEM } Passo; // PASSO_RECONECTAR: só entre passo_conectar e passo_sessao
 
 static PadState g_controle;
 static u64 g_tick_anterior;
@@ -281,9 +283,11 @@ static const char *endereco_curto(const char *url) {
 typedef enum {
     CH_RENOVAR, CH_STREAMING, CH_LISTAR, CH_SESSAO_INICIAR, CH_SESSAO_ESTADO, CH_TOKEN_CONSOLE,
     CH_SESSAO_CONECTAR, CH_ENVIAR_SDP, CH_RECEBER_SDP, CH_ENVIAR_ICE, CH_RECEBER_ICE, CH_OBTER_NOVO,
+    CH_NUVEM_ACESSO, CH_NUVEM_LISTAR,
 } TipoChamada;
 
 static AuthStatus obter_streaming_novo(AuthConta *conta, AuthStreaming *novo);
+static AuthStatus obter_nuvem_novo(AuthConta *conta, AuthStreaming *novo);
 
 typedef struct {
     TipoChamada tipo;
@@ -315,6 +319,8 @@ static void chamada_executar(Chamada *c) {
             break;
         case CH_RECEBER_ICE:     c->r = xapi_sessao_receber_ice(c->streaming, c->sessao, (XCandidatos *)c->saida); break;
         case CH_OBTER_NOVO:      c->r = obter_streaming_novo(c->conta, c->streaming); break;
+        case CH_NUVEM_ACESSO:    c->r = obter_nuvem_novo(c->conta, c->streaming); break;
+        case CH_NUVEM_LISTAR:    c->r = xnuvem_listar(c->streaming, (XTitulos *)c->saida); break;
     }
 }
 
@@ -602,6 +608,188 @@ static void conta_lembrar_consoles(const XConsoles *consoles) {
     conta_salvar();
 }
 
+// ---------------------------------------------------------------------------
+// Passo: jogos na nuvem (xCloud, fase X0)
+// Acesso à oferta da nuvem e lista dos jogos em texto. Abrir um jogo é a X1.
+// ---------------------------------------------------------------------------
+static AuthStreaming g_nuvem;        // gsToken da nuvem (separado do console)
+static time_t g_nuvem_obtido = 0;
+static bool g_nuvem_recusado = false; // a API respondeu 401: renovar o acesso antes de tentar de novo
+#define NUVEM_RENOVAR_ANTES_S 300
+static XTitulos g_titulos;           // lista carregada (total_servidor 0 = ainda não)
+
+static void nuvem_esquecer(void) {
+    auth_streaming_liberar(&g_nuvem);
+    memset(&g_nuvem, 0, sizeof g_nuvem);
+    xnuvem_liberar(&g_titulos);
+    g_nuvem_obtido = 0;
+    g_nuvem_recusado = false;
+}
+
+// O token da conta dura ~1 h e a nuvem pode ser aberta bem depois do início:
+// renova a conta antes, como na renovação do streaming do console.
+static AuthStatus obter_nuvem_novo(AuthConta *conta, AuthStreaming *novo) {
+    AuthStatus st = auth_renovar(conta);
+    if (st == AUTH_OK) {
+        if (!auth_salvar_refresh(NX_ARQ_TOKEN, conta->refresh_token))
+            LOG("main: nao foi possivel salvar o token renovado");
+        st = auth_nuvem(conta, novo);
+    }
+    return st;
+}
+
+static const char *oferta_amigavel(const char *oferta) {
+    if (!strcmp(oferta, GSSV_OFERTA_NUVEM))
+        return "Game Pass Ultimate";
+    if (!strcmp(oferta, GSSV_OFERTA_NUVEM_F2P))
+        return "só jogos gratuitos";
+    return oferta;
+}
+
+// Copia UTF-8 sem cortar um caractere no meio (nomes longos de jogos)
+static void copiar_utf8(char *dst, size_t tam, const char *src) {
+    size_t n = strlen(src);
+    if (n >= tam) {
+        n = tam - 1;
+        while (n > 0 && ((unsigned char)src[n] & 0xC0) == 0x80)
+            n--;
+    }
+    memcpy(dst, src, n);
+    dst[n] = '\0';
+}
+
+// Erro na nuvem: A tenta de novo, B volta para os consoles
+static Passo erro_nuvem(const char *titulo, const char *detalhe) {
+    mostrar_mensagem(UI_ERRO, titulo, detalhe, "A=Tentar de novo|B=Voltar|+=Fechar");
+    u64 b = esperar_botao(HidNpadButton_A | HidNpadButton_B | HidNpadButton_Plus);
+    return b == HidNpadButton_A ? PASSO_NUVEM : b == HidNpadButton_B ? PASSO_LISTA : PASSO_SAIR;
+}
+
+static void mostrar_titulo_detalhe(const XTitulo *x) {
+    char det[512];
+    snprintf(det, sizeof det,
+             "%s%s%sID na nuvem: %s\nID na loja: %s%s\n\nJogar na nuvem chega na próxima versão do NXStream.",
+             x->editora[0] ? "Editora: " : "", x->editora, x->editora[0] ? "\n" : "", x->titulo_id,
+             x->produto_id[0] ? x->produto_id : "-", x->recente ? "\nJogado recentemente" : "");
+    mostrar_mensagem(UI_INFO, x->nome[0] ? x->nome : x->titulo_id, det, "B=Voltar");
+    esperar_botao(HidNpadButton_B | HidNpadButton_A);
+}
+
+static Passo passo_nuvem(AuthConta *conta) {
+    // 1. Acesso (gsToken próprio, dura ~4 h)
+    bool vencendo = g_nuvem.duracao_s > 0 && time(NULL) - g_nuvem_obtido > g_nuvem.duracao_s - NUVEM_RENOVAR_ANTES_S;
+    if (!g_nuvem.gs_token || vencendo || g_nuvem_recusado) {
+        mostrar_aguarde("Acessando o Xbox Cloud Gaming...");
+        AuthStreaming novo = {0};
+        AuthStatus st = (AuthStatus)chamar((Chamada){.tipo = CH_NUVEM_ACESSO, .conta = conta, .streaming = &novo});
+        if (st == AUTH_INVALIDO) {
+            auth_streaming_liberar(&novo);
+            auth_apagar(NX_ARQ_TOKEN);
+            auth_conta_liberar(conta);
+            return PASSO_LOGIN;
+        }
+        if (st != AUTH_OK) {
+            auth_streaming_liberar(&novo);
+            return erro_nuvem("Não foi possível acessar o Xbox Cloud Gaming.", auth_ultimo_erro());
+        }
+        auth_streaming_liberar(&g_nuvem);
+        g_nuvem = novo;
+        g_nuvem_obtido = time(NULL);
+        g_nuvem_recusado = false;
+    }
+
+    // 2. Lista (fica na memória até Y=Atualizar)
+    if (g_titulos.total_servidor == 0) {
+        mostrar_aguarde("Carregando os jogos da nuvem...");
+        if (!chamar((Chamada){.tipo = CH_NUVEM_LISTAR, .streaming = &g_nuvem, .saida = &g_titulos})) {
+            if (strstr(xnuvem_ultimo_erro(), "HTTP 401"))
+                g_nuvem_recusado = true; // acesso recusado: renova na próxima tentativa
+            return erro_nuvem("Não foi possível carregar os jogos da nuvem.", xnuvem_ultimo_erro());
+        }
+    }
+
+    // 3. Lista em texto: 4 jogos visíveis, direcional com repetição ao segurar
+    const int visiveis = 4;
+    int sel = 0, topo = 0;
+    u64 segurando = 0;
+    double segurando_desde = 0, ultima_repeticao = 0;
+    for (;;) {
+        int total = g_titulos.total;
+        if (sel >= total) sel = total ? total - 1 : 0;
+        if (sel < topo) topo = sel;
+        if (sel >= topo + visiveis) topo = sel - visiveis + 1;
+
+        // Posição no subtítulo: com 4 jogos na tela não sobra espaço abaixo da lista
+        char sub[160];
+        snprintf(sub, sizeof sub, "%d de %d jogos · %s · região %s", total ? sel + 1 : 0, total,
+                 oferta_amigavel(g_nuvem.oferta), g_nuvem.regiao[0] ? g_nuvem.regiao : "padrão");
+        UiItem itens[UI_MAX_ITENS];
+        int n = 0;
+        for (int i = topo; i < total && n < visiveis; i++, n++) {
+            const XTitulo *x = &g_titulos.itens[i];
+            copiar_utf8(itens[n].nome, sizeof itens[n].nome, x->nome[0] ? x->nome : x->titulo_id);
+            char det[128];
+            if (x->nome[0])
+                snprintf(det, sizeof det, "%s%s%s", x->recente ? "Jogado recentemente" : "",
+                         x->recente && x->editora[0] ? " · " : "", x->editora);
+            else
+                snprintf(det, sizeof det, "Sem nome no catálogo");
+            copiar_utf8(itens[n].detalhe, sizeof itens[n].detalhe, det);
+            itens[n].estado = x->recente ? 1 : 0;
+        }
+        const char *msg = total ? NULL : "Nenhum jogo liberado para esta conta na nuvem.";
+        modo_ui();
+        if (ui_ativa()) {
+            ui_lista("Jogos na nuvem", sub, itens, n, sel - topo, msg, "A=Detalhes|Y=Atualizar|B=Voltar|+=Fechar");
+        } else {
+            cabecalho();
+            printf("Jogos na nuvem - %s\n\n", sub);
+            for (int i = 0; i < n; i++)
+                printf("%s %s (%s)\n" COR_FIM, topo + i == sel ? COR_DESTAQ " >" : "  ", itens[i].nome,
+                       itens[i].detalhe);
+            printf("\n%s\nA = detalhes   Y = atualizar   B = voltar   + = fechar\n", msg ? msg : "");
+        }
+
+        bool fechar = false;
+        u64 b = quadro(&fechar);
+        if (fechar || (b & HidNpadButton_Plus))
+            return PASSO_SAIR;
+        if (b & HidNpadButton_B)
+            return PASSO_LISTA;
+        if (b & HidNpadButton_Y) {
+            xnuvem_liberar(&g_titulos);
+            return PASSO_NUVEM;
+        }
+        if ((b & HidNpadButton_A) && total) {
+            mostrar_titulo_detalhe(&g_titulos.itens[sel]);
+            continue;
+        }
+
+        // Direcional: um passo ao apertar; segurando, repete depois de 0,4 s
+        const u64 dirs = HidNpadButton_AnyUp | HidNpadButton_AnyDown | HidNpadButton_AnyLeft | HidNpadButton_AnyRight;
+        u64 mover = b & dirs;
+        u64 seguro = padGetButtons(&g_controle) & dirs;
+        double agora = segundos_desde(0);
+        if (mover) {
+            segurando = mover;
+            segurando_desde = ultima_repeticao = agora;
+        } else if (seguro && (seguro & segurando)) {
+            if (agora - segurando_desde > 0.4 && agora - ultima_repeticao > 0.07) {
+                mover = seguro & segurando;
+                ultima_repeticao = agora;
+            }
+        } else {
+            segurando = 0;
+        }
+        if (mover & HidNpadButton_AnyUp) sel--;
+        if (mover & HidNpadButton_AnyDown) sel++;
+        if (mover & HidNpadButton_AnyLeft) sel -= visiveis;
+        if (mover & HidNpadButton_AnyRight) sel += visiveis;
+        if (sel < 0) sel = 0;
+        if (total && sel > total - 1) sel = total - 1;
+    }
+}
+
 static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
     // gsToken vencendo (dura ~4 h): obtém outro antes de usar
     if (streaming->duracao_s > 0 && time(NULL) - g_streaming_obtido > streaming->duracao_s - 120)
@@ -663,22 +851,24 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
         modo_ui();
         if (ui_ativa()) {
             ui_lista("Seus consoles", conta_txt, itens, total, sel, total ? mensagem : vazia,
-                     total ? "A=Conectar|Y=Atualizar|X=Sair da conta|-=Diagnóstico|+=Fechar"
-                           : "Y=Atualizar|X=Sair da conta|-=Diagnóstico|+=Fechar");
+                     total ? "A=Conectar|R=Nuvem|Y=Atualizar|X=Sair da conta|-=Diagnóstico|+=Fechar"
+                           : "R=Nuvem|Y=Atualizar|X=Sair da conta|-=Diagnóstico|+=Fechar");
         } else {
             cabecalho();
             printf("%s\n\n", conta_txt);
             for (int i = 0; i < total; i++)
                 printf("%s %s (%s)\n" COR_FIM, i == sel ? COR_DESTAQ " >" : "  ", itens[i].nome, itens[i].detalhe);
-            printf("\n%s\nA = conectar   Y = atualizar   X = sair da conta   - = diagnostico   + = fechar\n",
+            printf("\n%s\nA = conectar   R = nuvem   Y = atualizar   X = sair da conta   - = diagnostico   + = fechar\n",
                    total ? (mensagem ? mensagem : "") : vazia);
         }
 
         u64 b = esperar_botao(HidNpadButton_A | HidNpadButton_Y | HidNpadButton_X | HidNpadButton_Plus |
-                              HidNpadButton_Minus | HidNpadButton_AnyUp | HidNpadButton_AnyDown);
+                              HidNpadButton_Minus | HidNpadButton_R | HidNpadButton_AnyUp | HidNpadButton_AnyDown);
         mensagem = NULL;
         if (b == 0 || (b & HidNpadButton_Plus))
             return PASSO_SAIR;
+        if (b & HidNpadButton_R)
+            return PASSO_NUVEM;
         if (b & HidNpadButton_Y)
             return PASSO_LISTA;
         if (b & HidNpadButton_Minus)
@@ -688,6 +878,7 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
             auth_conta_liberar(conta);
             LOG("main: usuario saiu da conta");
             conta_esquecer();
+            nuvem_esquecer();
             ui_definir_conta(NULL);
             g_auto_conexao_feita = false; // depois do próximo login, conecta sozinho de novo
             return PASSO_LOGIN;
@@ -1893,6 +2084,9 @@ int main(int argc, char *argv[]) {
                 case PASSO_DIAG:
                     passo = passo_diag();
                     break;
+                case PASSO_NUVEM:
+                    passo = passo_nuvem(&conta);
+                    break;
                 default:
                     passo = PASSO_SAIR;
                     break;
@@ -1902,6 +2096,7 @@ int main(int argc, char *argv[]) {
         // Cada passo vai para o log: os logs da v0.3.0 e v0.4.1 terminavam antes
         // de "encerrado" mesmo com o app fechando sem erro na tela.
         LOG("main: encerrando (1/4: liberando a conta)");
+        nuvem_esquecer();
         auth_streaming_liberar(&streaming);
         auth_conta_liberar(&conta);
         LOG("main: encerrando (2/4: fechando conexoes WebRTC)");

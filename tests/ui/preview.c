@@ -52,7 +52,7 @@ int main(int argc, char **argv) {
 
     UiItem itens[2] = {{"XBOX", "Xbox Series X · Em repouso", 2}, {"Sala", "Xbox One S · Desligado", 0}};
     ui_lista("Seus consoles", "Conectado como Gamertag123", itens, 2, 0, NULL,
-             "A=Conectar|Y=Atualizar|X=Sair da conta|-=Diagnóstico|+=Fechar");
+             "A=Conectar|R=Nuvem|Y=Atualizar|X=Sair da conta|-=Diagnóstico|+=Fechar");
     ui_renderizar(px, UI_LARGURA, 0); salvar("6_lista");
 
     ui_lista("Seus consoles", "Conectado como Gamertag123", NULL, 0, 0,
@@ -60,6 +60,15 @@ int main(int argc, char **argv) {
              "Recursos remotos > Habilitar recursos remotos.",
              "Y=Atualizar|X=Sair da conta|+=Fechar");
     ui_renderizar(px, UI_LARGURA, 0); salvar("7_lista_vazia");
+
+    // xCloud (fase X0): lista de jogos em texto
+    UiItem jogos[4] = {{"Forza Horizon 5", "Jogado recentemente · Xbox Game Studios", 1},
+                       {"Hollow Knight", "Team Cherry", 0},
+                       {"Hades II", "Supergiant Games", 0},
+                       {"Halo Infinite", "Xbox Game Studios", 0}};
+    ui_lista("Jogos na nuvem", "2 de 487 jogos · Game Pass Ultimate · região BrazilSouth", jogos, 4, 1,
+             NULL, "A=Detalhes|Y=Atualizar|B=Voltar|+=Fechar");
+    ui_renderizar(px, UI_LARGURA, 0); salvar("10_nuvem");
     // Menu por cima do vídeo: fundo simulando um quadro do jogo com o véu escuro
     for (int i = 0; i < UI_LARGURA * UI_ALTURA; i++) {
         int x = i % UI_LARGURA, y = i / UI_LARGURA;

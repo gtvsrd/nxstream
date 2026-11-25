@@ -202,14 +202,13 @@ static char *post_json(const char *url, const char *const *headers, cJSON *corpo
     return r->corpo;
 }
 
-AuthStatus auth_streaming(const AuthConta *conta, AuthStreaming *s) {
-    g_erro[0] = '\0';
+// 3a + 3b: user token do Xbox Live e XSTS do serviço de streaming (gssv).
+// Valem para as duas ofertas (console e nuvem). gamertag pode ser NULL.
+static AuthStatus obter_xsts_gssv(const AuthConta *conta, char **user_token_saida, char **xsts_saida,
+                                  char *gamertag, int tam_gamertag) {
     HttpResposta r;
-    AuthStatus st = AUTH_ERRO;
     char *user_token = NULL, *xsts_token = NULL;
-    // Quem chama pode já trazer a gamertag (renovações): não é pedida de novo
-    char gamertag_antes[sizeof s->gamertag];
-    snprintf(gamertag_antes, sizeof gamertag_antes, "%s", s->gamertag);
+    *user_token_saida = *xsts_saida = NULL;
 
     // 3a. User token
     {
@@ -233,11 +232,9 @@ AuthStatus auth_streaming(const AuthConta *conta, AuthStreaming *s) {
         bool ok_transporte = r.status != 0;
         if (!user_token && ok_transporte && !g_erro[0])
             snprintf(g_erro, sizeof g_erro, "Xbox Live recusou o login (HTTP %ld).", r.status);
-        if (!user_token)
-            st = ok_transporte ? AUTH_ERRO : AUTH_ERRO_REDE;
         http_resposta_liberar(&r);
         if (!user_token)
-            goto fim;
+            return ok_transporte ? AUTH_ERRO : AUTH_ERRO_REDE;
     }
 
     // 3b. XSTS para o serviço de streaming
@@ -253,37 +250,68 @@ AuthStatus auth_streaming(const AuthConta *conta, AuthStreaming *s) {
         char *resp = post_json(XBL_URL_XSTS, HEADERS_XBL, corpo, "xsts/authorize", &r);
         cJSON_Delete(corpo);
         if (resp)
-            xsts_token = auth_parse_xbl_token(resp, s->gamertag, sizeof s->gamertag);
+            xsts_token = auth_parse_xbl_token(resp, gamertag, tam_gamertag);
         if (!xsts_token && r.status != 0 && r.status != 200)
             erro_xsts(&r);
-        if (!xsts_token)
-            st = r.status ? AUTH_ERRO : AUTH_ERRO_REDE;
+        AuthStatus st = xsts_token ? AUTH_OK : r.status ? AUTH_ERRO : AUTH_ERRO_REDE;
         http_resposta_liberar(&r);
-        if (!xsts_token)
-            goto fim;
+        if (!xsts_token) {
+            free(user_token);
+            return st;
+        }
     }
+
+    *user_token_saida = user_token;
+    *xsts_saida = xsts_token;
+    return AUTH_OK;
+}
+
+// 3c. gsToken de uma oferta (xhome, xgpuweb, xgpuwebf2p). *status_http recebe o
+// código da resposta (0 = sem rede), para decidir se vale tentar outra oferta.
+static AuthStatus login_gssv(const char *url, const char *oferta, const char *xsts_token,
+                             AuthStreaming *s, long *status_http) {
+    HttpResposta r;
+    AuthStatus st;
+    cJSON *corpo = cJSON_CreateObject();
+    cJSON_AddStringToObject(corpo, "token", xsts_token);
+    cJSON_AddStringToObject(corpo, "offeringId", oferta);
+
+    char etapa[48];
+    snprintf(etapa, sizeof etapa, "gssv login %s", oferta);
+    char *resp = post_json(url, HEADERS_GSSV, corpo, etapa, &r);
+    cJSON_Delete(corpo);
+    if (resp && auth_parse_streaming(resp, s)) {
+        snprintf(s->oferta, sizeof s->oferta, "%s", oferta);
+        LOG("auth: %s liberado (regiao %s, valido por %d s)", oferta, s->base_uri, s->duracao_s);
+        st = AUTH_OK;
+    } else {
+        if (r.status != 0 && !g_erro[0])
+            snprintf(g_erro, sizeof g_erro,
+                     "Servico de streaming recusou o acesso (HTTP %ld).", r.status);
+        st = r.status ? AUTH_ERRO : AUTH_ERRO_REDE;
+    }
+    *status_http = r.status;
+    http_resposta_liberar(&r);
+    return st;
+}
+
+AuthStatus auth_streaming(const AuthConta *conta, AuthStreaming *s) {
+    g_erro[0] = '\0';
+    AuthStatus st;
+    char *user_token = NULL, *xsts_token = NULL;
+    // Quem chama pode já trazer a gamertag (renovações): não é pedida de novo
+    char gamertag_antes[sizeof s->gamertag];
+    snprintf(gamertag_antes, sizeof gamertag_antes, "%s", s->gamertag);
+
+    st = obter_xsts_gssv(conta, &user_token, &xsts_token, s->gamertag, sizeof s->gamertag);
+    if (st != AUTH_OK)
+        goto fim;
 
     // 3c. Token do streaming do console (xhome)
-    {
-        cJSON *corpo = cJSON_CreateObject();
-        cJSON_AddStringToObject(corpo, "token", xsts_token);
-        cJSON_AddStringToObject(corpo, "offeringId", GSSV_OFERTA);
-
-        char *resp = post_json(GSSV_URL_LOGIN, HEADERS_GSSV, corpo, "gssv login", &r);
-        cJSON_Delete(corpo);
-        if (resp && auth_parse_streaming(resp, s)) {
-            LOG("auth: streaming liberado (regiao %s, valido por %d s)", s->base_uri, s->duracao_s);
-            st = AUTH_OK;
-            if (!s->gamertag[0])
-                snprintf(s->gamertag, sizeof s->gamertag, "%s", gamertag_antes);
-        } else {
-            if (r.status != 0 && !g_erro[0])
-                snprintf(g_erro, sizeof g_erro,
-                         "Servico de streaming recusou o acesso (HTTP %ld).", r.status);
-            st = r.status ? AUTH_ERRO : AUTH_ERRO_REDE;
-        }
-        http_resposta_liberar(&r);
-    }
+    long status;
+    st = login_gssv(GSSV_URL_LOGIN, GSSV_OFERTA, xsts_token, s, &status);
+    if (st == AUTH_OK && !s->gamertag[0])
+        snprintf(s->gamertag, sizeof s->gamertag, "%s", gamertag_antes);
 
     // 3d. Gamertag (v0.10.3). O XSTS do streaming não traz o nome da conta; o do
     // Xbox Live comum traz (DisplayClaims.xui[0].gtg). Opcional: se falhar, o app
@@ -308,6 +336,42 @@ AuthStatus auth_streaming(const AuthConta *conta, AuthStreaming *s) {
         http_resposta_liberar(&rg);
         snprintf(g_erro, sizeof g_erro, "%s", erro_antes); // falha aqui não é erro do login
     }
+
+fim:
+    free(user_token);
+    free(xsts_token);
+    return st;
+}
+
+// ---------------------------------------------------------------------------
+// 3e. xCloud (fase X0): mesmo XSTS, outra oferta no gssv
+// ---------------------------------------------------------------------------
+AuthStatus auth_nuvem(const AuthConta *conta, AuthStreaming *s) {
+    g_erro[0] = '\0';
+    char *user_token = NULL, *xsts_token = NULL;
+    AuthStatus st = obter_xsts_gssv(conta, &user_token, &xsts_token, NULL, 0);
+    if (st != AUTH_OK)
+        goto fim;
+
+    long status = 0;
+    st = login_gssv(GSSV_URL_LOGIN_NUVEM, GSSV_OFERTA_NUVEM, xsts_token, s, &status);
+    if (st == AUTH_ERRO) {
+        // Sem Game Pass Ultimate o gssv recusa a oferta completa; a gratuita
+        // (Fortnite e outros free-to-play) vale para qualquer conta.
+        long status_f2p = 0;
+        LOG("auth: oferta %s recusada (HTTP %ld); tentando %s", GSSV_OFERTA_NUVEM, status, GSSV_OFERTA_NUVEM_F2P);
+        char erro_antes[sizeof g_erro];
+        snprintf(erro_antes, sizeof erro_antes, "%s", g_erro);
+        g_erro[0] = '\0';
+        st = login_gssv(GSSV_URL_LOGIN_NUVEM_F2P, GSSV_OFERTA_NUVEM_F2P, xsts_token, s, &status_f2p);
+        if (st == AUTH_ERRO)
+            snprintf(g_erro, sizeof g_erro,
+                     "A conta nao tem acesso ao Xbox Cloud Gaming (HTTP %ld e %ld).", status, status_f2p);
+        else if (st != AUTH_OK)
+            snprintf(g_erro, sizeof g_erro, "%s", erro_antes);
+    }
+    if (st == AUTH_OK)
+        LOG("auth: nuvem: oferta %s, regiao %s (de: %s)", s->oferta, s->regiao[0] ? s->regiao : "?", s->regioes);
 
 fim:
     free(user_token);

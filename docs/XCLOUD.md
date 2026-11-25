@@ -35,9 +35,29 @@ Como no resto do projeto, cada fase termina com um `.nro` testado no Switch ante
 | **X4** | **Reconexão e sessões.** Comportamento depois de sleep, HOME e queda de rede: retomar a sessão ativa quando possível, sem reiniciar o jogo; encerrar a sessão ao sair | Bloquear o Switch por alguns minutos e voltar ao mesmo ponto do jogo |
 | **X5** | **Acabamento.** Escolha de região, idioma/mercado do catálogo, configurações de qualidade, documentação e telas | Uso no dia a dia |
 
+### Situação
+
+| Fase | Versão | Estado |
+|---|---|---|
+| X0 | v0.11.0 | Em teste no Switch |
+
 ### Detalhes por fase
 
 **X0 – Acesso.** O login atual já gera o token do Xbox Live que vale para as duas ofertas; muda só a chamada ao gssv (`xgpuweb.gssv-play-prod.xboxlive.com/v2/login/user`). Os dois tokens (casa e nuvem) passam a viver juntos, com renovação própria (4 h). O nome dos jogos vem do catálogo (`/v3/products` com o mercado BR e idioma pt-BR).
+
+**X0 – Como ficou (v0.11.0).**
+- `auth_nuvem()` (`auth.c`): mesmo user token e XSTS do console, login no gssv com `xgpuweb`; se recusar, `xgpuwebf2p`. O gsToken da nuvem fica separado do console (`g_nuvem` em `main.c`) e é renovado depois de ~4 h ou ao receber 401.
+- `xnuvem_listar()` (`api/xnuvem.c`): `/v2/titles` (repete se vier 204, como o Greenlight), `/v2/titles/mru`, só os jogos com direito (`hasEntitlement` ou `isFreeInStore`), nomes e editoras do catálogo em lotes de 100 (mercado BR, pt-BR). Recentes primeiro, depois por nome.
+- Tela: **R** na lista de consoles abre "Jogos na nuvem" (`docs/telas/10_nuvem.png`): 4 jogos por vez, direcional para cima/baixo (segurar repete) e para os lados (pula 4), **A** mostra os IDs do jogo, **Y** recarrega, **B** volta.
+- Log: `auth: nuvem: oferta ..., regiao ... (de: ...)`, `xnuvem: /v2/titles: N jogo(s)`, `com direito`, `catalogo: N lote(s)`, `lista pronta em X s` e os 5 primeiros jogos.
+
+| Teste (v0.11.0) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| R na lista de consoles | "Acessando o Xbox Cloud Gaming...", depois "Carregando os jogos da nuvem..." e a lista | |
+| Cabeçalho da lista | "Game Pass Ultimate" e a região (Brasil) | |
+| Nomes | Jogos com nome e editora, recentes no topo com bolinha verde | |
+| Navegação | Segurar o direcional rola rápido; para os lados pula 4 | |
+| B e R de novo | Volta aos consoles; a lista reabre na hora (fica na memória) | |
 
 **X1 – Sessão.** O caminho de conexão é o mesmo do Remote Play; o que muda:
 - corpo do `play`: `titleId` preenchido, `serverId` vazio;

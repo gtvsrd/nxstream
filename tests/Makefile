@@ -6,6 +6,7 @@ FONTES  := test_parse.c \
            ../source/auth/auth_parse.c \
            ../source/auth/auth_store.c \
            ../source/api/xapi_parse.c \
+           ../source/api/xnuvem_parse.c \
            ../source/media/h264_info.c \
            ../third_party/cjson/cJSON.c
 

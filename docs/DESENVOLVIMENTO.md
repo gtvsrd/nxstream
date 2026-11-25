@@ -370,6 +370,10 @@ O tempo que o console leva para preparar a sessão (2,5 s acordado, ~9 s em repo
 
 O log registra `main: conexao instavel (...)`, `main: conexao voltou sozinha em X s`, `main: ... reconectando`, `main: reconectado (tentativa N)` e, se for o caso, `abrindo uma sessao nova`.
 
+### xCloud, fase X0: lista dos jogos da nuvem (v0.11.0)
+
+Checklist e detalhes em `docs/XCLOUD.md` (seção X0). A lista de consoles ganhou **R = Nuvem**.
+
 As próximas fases recebem seus checklists aqui quando começarem.
 
 ## Convenções

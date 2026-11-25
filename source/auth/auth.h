@@ -38,6 +38,9 @@ typedef struct {
     char  base_uri[256];          // servidor regional da API de streaming
     int   duracao_s;
     char  gamertag[64];           // pode ficar vazio
+    char  oferta[16];             // xhome, xgpuweb ou xgpuwebf2p
+    char  regiao[48];             // nome da região escolhida (ex.: BrazilSouth)
+    char  regioes[256];           // todas, para o log: "A*, B, C" (* = padrão)
 } AuthStreaming;
 
 // --- Rede -----------------------------------------------------------------
@@ -45,6 +48,9 @@ AuthStatus auth_codigo_iniciar(AuthCodigo *codigo);
 AuthStatus auth_codigo_verificar(const AuthCodigo *codigo, AuthConta *conta);
 AuthStatus auth_renovar(AuthConta *conta);
 AuthStatus auth_streaming(const AuthConta *conta, AuthStreaming *streaming);
+// xCloud (fase X0): gsToken da oferta xgpuweb (Game Pass Ultimate); se a conta
+// não tiver, tenta xgpuwebf2p (só jogos gratuitos). nuvem->oferta diz qual veio.
+AuthStatus auth_nuvem(const AuthConta *conta, AuthStreaming *nuvem);
 // Token de transferência que o console pede em /connect (estado ReadyToConnect).
 // Não altera o refresh token salvo. *token deve ser liberado com free().
 AuthStatus auth_token_console(const AuthConta *conta, char **token);
