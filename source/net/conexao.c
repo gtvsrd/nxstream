@@ -329,6 +329,17 @@ static void tratar_message(const char *dados, int tamanho) {
         LOG("conexao: <- message: %s", chave);
     else if (n % 100 == 0)
         LOG("conexao: <- message: %s (%lu vezes)", chave, n);
+    // v0.11.4: o console avisa antes de fechar (log de 25/11: 3 s antes do canal
+    // cair). Guarda o conteúdo, que deve trazer o motivo, e o main reconecta já.
+    if (cJSON_IsString(alvo) && strstr(alvo->valuestring, "serverInitiatedDisconnect")) {
+        const cJSON *conteudo = cJSON_GetObjectItemCaseSensitive(raiz, "content");
+        const char *c = cJSON_IsString(conteudo) ? conteudo->valuestring : "";
+        LOG("conexao: o console vai encerrar a conexao: %.300s", c[0] ? c : "(sem conteudo)");
+        pthread_mutex_lock(&g_trava);
+        g_estado.servidor_encerrou = true;
+        snprintf(g_estado.motivo_encerramento, sizeof g_estado.motivo_encerramento, "%s", c);
+        pthread_mutex_unlock(&g_trava);
+    }
     if (!strcmp(t, "HandshakeAck")) {
         pthread_mutex_lock(&g_trava);
         bool primeira = !g_estado.handshake_ok;

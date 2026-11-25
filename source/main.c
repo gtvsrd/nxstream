@@ -1161,8 +1161,10 @@ static Passo cair_para_reconexao(const char *motivo, bool repouso) {
     // parado na tela até a sessão nova começar (até ~5 s ao voltar do repouso)
     modo_ui();
     g_reconectando = true;
-    mostrar_conexao(repouso ? "Voltando do repouso" : "A conexão caiu", "Abrindo uma sessão nova com o console",
-                    NULL);
+    const char *titulo = repouso                                ? "Voltando do repouso"
+                         : !strncmp(motivo, "o Xbox encerrou", 15) ? "O Xbox encerrou a conexão"
+                                                                  : "A conexão caiu";
+    mostrar_conexao(titulo, "Abrindo uma sessão nova com o console", NULL);
     mostrar_agora();
     conexao_encerrar();
     return PASSO_RECONECTAR;
@@ -1401,6 +1403,13 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                         conexao_pedir_quadro_chave();
                         ultimo_pedido_chave = agora;
                     }
+                }
+                // v0.11.4: o console avisou que vai encerrar; não espera o canal cair
+                if (e.servidor_encerrou) {
+                    char m[200];
+                    snprintf(m, sizeof m, "o Xbox encerrou a conexao (%s)",
+                             e.motivo_encerramento[0] ? e.motivo_encerramento : "sem motivo");
+                    return cair_para_reconexao(m, false);
                 }
                 // Fase 4: queda. "desconectado" pode voltar sozinho em poucos segundos
                 // (oscilação do Wi-Fi); "falhou"/"fechado" ou mais de 4 s fora = reconectar.

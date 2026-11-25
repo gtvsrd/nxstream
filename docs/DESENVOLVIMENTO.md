@@ -389,11 +389,17 @@ Checklist e detalhes em `docs/XCLOUD.md` (seção X0). A lista de consoles ganho
 | Teste (v0.11.2) | Resultado esperado | Resultado obtido |
 |---|---|---|
 | Abrir o app com o Xbox desligado | Erro "O Xbox está desligado" logo depois do login | Sim: 5 s depois de abrir o app |
-| Ligar o Xbox pelo botão e apertar A | Conecta e mostra o jogo | Ainda não testado |
+| Ligar o Xbox pelo botão e apertar A | Conecta e mostra o jogo | Sim: sessão pronta em 4,3 s, vídeo 0,5 s depois |
 
 **v0.11.3** (log de 25/11, 20:33):
 - Depois do erro, a lista de consoles mostra o Xbox como "Desligado (ligue pelo botão)", com bolinha cinza, em vez de "Em repouso" (a Microsoft continua dizendo `ConnectedStandby`). Volta ao normal quando uma sessão der certo.
 - Ao abrir a nuvem, a conta só é renovada se o token tiver mais de 30 min. No log, ela era renovada de novo 10 s depois da abertura do app (~1 s a mais até a lista).
+
+**Resultado da v0.11.3 (log de 25/11, 20:40):** com o Xbox desligado, erro na hora; ligado pelo botão, A conectou na 1ª (4,3 s de sessão). Depois de 72 s jogando, o próprio console mandou `serverInitiatedDisconnect` e fechou a conexão 3 s depois; a reconexão automática funcionou, mas a sessão nova ficou 42 s em "Provisioning" (o console parecia ainda estar terminando de ligar). Vídeo sem problemas: 60 fps, 0 erros.
+
+**v0.11.4:**
+- Ao receber `serverInitiatedDisconnect`, o app reconecta na hora (antes esperava o canal fechar, ~3 s) e mostra "O Xbox encerrou a conexão".
+- O conteúdo do aviso vai para o log (`conexao: o console vai encerrar a conexao: ...`), para descobrir o motivo.
 
 As próximas fases recebem seus checklists aqui quando começarem.
 
