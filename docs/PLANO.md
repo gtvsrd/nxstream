@@ -32,7 +32,7 @@ O projeto nasceu da experiência com o LibNXbox (ursusworks), que funcionava mas
 
 | Decisão | Escolha | Motivo |
 |---|---|---|
-| Escopo | Apenas Remote Play do console próprio, rede local | Foco em fazer uma coisa bem feita. xCloud fica fora. |
+| Escopo | Remote Play do console próprio na rede local; **desde 25/11 também xCloud** ([XCLOUD.md](XCLOUD.md)) | O Remote Play ficou estável primeiro; o xCloud reaproveita login, WebRTC, vídeo, áudio, controle e interface. |
 | Interface | **O mais simples e leve possível**: texto no console do libnx até a v0.9; desde a v0.10.0, telas gráficas simples no estilo do app do Xbox, em português | O esforço vai para estabilidade; com o streaming estável, uma interface simples e bonita. |
 | Build | GitHub Actions gera o `.nro` a cada push | Não depende de ambiente instalado no PC. |
 | Licença | GPL-3.0 | Mantém o projeto e derivados livres. Compatível com FFmpeg. |
@@ -80,3 +80,4 @@ A fase 2 é a mais pesada e arriscada, porque junta WebRTC, criptografia e decod
 - [PROTOCOLO.md](PROTOCOLO.md): como o Remote Play funciona (autenticação, API, WebRTC)
 - [DESENVOLVIMENTO.md](DESENVOLVIMENTO.md): build, testes no Switch, logs e convenções
 - [TELAS.md](TELAS.md): todas as telas do app
+- [XCLOUD.md](XCLOUD.md): roadmap do xCloud (jogos na nuvem)
