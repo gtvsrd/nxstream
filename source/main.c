@@ -1080,7 +1080,6 @@ static Passo passo_nuvem(AuthConta *conta) {
         }
     }
 }
-}
 
 static Passo esperar_xbox_ligar(AuthStreaming *streaming);
 
