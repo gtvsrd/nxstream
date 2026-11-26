@@ -11,6 +11,12 @@ Para atualizar depois de mudar a interface: `make -C tests/ui` e copiar `tests/u
 | ![Conectando](telas/1_status.png) | ![Reconectando](telas/2_reconectando.png) |
 | **Conectando.** Logo pulsando, nome do console e o estado da sessão ("Preparando o console", "Autorizando acesso"...). B cancela e volta para a lista. | **Reconectando.** Aparece na hora em que a conexão cai ou o Switch acorda. Uma sessão nova é aberta sozinha. |
 
+## Xbox desligado
+
+![Ligue o Xbox](telas/11_ligue_o_xbox.png)
+
+**O Xbox está desligado** (desde a v0.12.4). Aparece quando o console não atende ao chamado (desligado no modo de economia de energia). O app consulta a Microsoft a cada 5 s e conecta sozinho quando o Xbox é ligado pelo botão.
+
 ## Conta e consoles
 
 | | |

@@ -6,7 +6,7 @@
 <img src="https://img.shields.io/badge/platform-Nintendo%20Switch-e60012" alt="Platform">
 <img src="https://img.shields.io/badge/language-C-blue" alt="Language">
 <img src="https://img.shields.io/badge/license-GPL--3.0-green" alt="License">
-<img src="https://img.shields.io/badge/version-0.12.3-2bd46a" alt="Version">
+<img src="https://img.shields.io/badge/version-0.12.4-2bd46a" alt="Version">
 <img src="https://img.shields.io/badge/status-beta-orange" alt="Status">
 </p>
 

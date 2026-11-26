@@ -34,6 +34,12 @@ int main(int argc, char **argv) {
     ui_status("Reconectando a XBOX", "Nova tentativa em 2 s", "Tentativa 2 de 5", "B=Voltar para a lista");
     ui_renderizar(px, UI_LARGURA, 1.1); salvar("2_reconectando");
 
+    ui_status("Conectando a XBOX", "O Xbox está desligado",
+              "Ligue o console pelo botão: o NXStream conecta sozinho quando ele ligar (12 s).\n"
+              "Para ligar de longe: Configurações > Geral > Opções de energia > Suspensão.",
+              "B=Voltar para a lista|R=Jogos na nuvem|+=Fechar");
+    ui_renderizar(px, UI_LARGURA, 0.3); salvar("11_ligue_o_xbox");
+
     ui_definir_conta(NULL); // no login ainda não há conta
     ui_codigo(NULL, "microsoft.com/link", "ABCD1234", "Aguardando login · o código expira em 14:32",
               "A=Abrir a página no Switch|+=Fechar");

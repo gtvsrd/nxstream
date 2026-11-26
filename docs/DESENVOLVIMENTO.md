@@ -414,6 +414,18 @@ Checklist e detalhes em `docs/XCLOUD.md` (seção X0). A lista de consoles ganho
 | Fechar e abrir o app com o Xbox desligado | Lista com "Desligado (ligue pelo botão)", bolinha cinza | |
 | Ligar o Xbox e conectar | Conecta; a lista volta a mostrar o estado da Microsoft | |
 
+**v0.12.4** (pedido do usuário: contornar os limites da v0.12.3). A Microsoft pode dizer `ConnectedStandby` com o console desligado, mas `On` só aparece com ele ligado de verdade. Então:
+- **Tela "O Xbox está desligado"** no lugar do erro (`docs/telas/11_ligue_o_xbox.png`): consulta a lista a cada 5 s e, quando o console aparece `On`, conecta sozinho. B volta para a lista, R abre os jogos da nuvem. Depois de 15 min sem ligar, mostra o erro de antes.
+- **Abertura com o Xbox marcado como desligado:** em vez de tentar a sessão direto (e falhar), consulta a lista antes: se já estiver `On`, conecta; se não, vai para a tela de espera.
+- Na lista, `On` apaga a marca de desligado na hora.
+- Log: `esperando o Xbox ser ligado` e `o Xbox ligou (N s, N consulta(s)); conectando`.
+
+| Teste (v0.12.4) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Abrir o app com o Xbox desligado | Tela "O Xbox está desligado" (sem erro) | |
+| Ligar o Xbox pelo botão com essa tela aberta | Conecta sozinho uns segundos depois de ele ligar | |
+| Ligar o Xbox antes de abrir o app | Conecta direto | |
+
 As próximas fases recebem seus checklists aqui quando começarem.
 
 ## Convenções

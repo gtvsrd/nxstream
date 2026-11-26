@@ -834,6 +834,12 @@ static Passo passo_nuvem(AuthConta *conta) {
     }
 }
 
+static Passo esperar_xbox_ligar(AuthStreaming *streaming);
+
+static bool console_esta_desligado(const XConsole *x) {
+    return g_console_desligado[0] && !strcmp(x->server_id, g_console_desligado) && strcmp(x->estado, "On");
+}
+
 static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
     g_na_nuvem = false; // daqui em diante as sessões são do console
     // gsToken vencendo (dura ~4 h): obtém outro antes de usar
@@ -842,7 +848,10 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
 
     // Abertura rápida: a conta tinha um só console da última vez. Abre a sessão
     // direto; B na tela de conexão volta para a lista (que aí é consultada).
-    if (!g_auto_conexao_feita && g_console_salvo_unico && g_console_salvo.server_id[0]) {
+    // v0.12.4: se ele estava desligado da última vez, consulta a lista antes
+    // (se já estiver "On", conecta; senão, espera ser ligado sem tentar à toa)
+    bool estava_desligado = g_console_salvo.server_id[0] && !strcmp(g_console_salvo.server_id, g_console_desligado);
+    if (!g_auto_conexao_feita && g_console_salvo_unico && g_console_salvo.server_id[0] && !estava_desligado) {
         g_auto_conexao_feita = true;
         g_console = g_console_salvo;
         LOG("main: abertura rapida: direto para %s (console salvo, sem consultar a lista)", g_console.nome);
@@ -862,6 +871,10 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
     }
 
     conta_lembrar_consoles(&consoles);
+    // "On" é confiável: o console marcado como desligado foi ligado
+    for (int i = 0; i < consoles.total; i++)
+        if (!strcmp(consoles.itens[i].estado, "On") && !strcmp(consoles.itens[i].server_id, g_console_desligado))
+            console_marcar_desligado(NULL);
 
     // Só um console na conta: na primeira vez depois do login/abertura do app,
     // conecta sozinho, sem espera (até a v0.10.4 havia 2 s para desistir; agora
@@ -870,6 +883,8 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
         g_auto_conexao_feita = true;
         g_console = consoles.itens[0];
         LOG("main: console escolhido automaticamente (unico na conta): %s (%s)", g_console.nome, g_console.estado);
+        if (console_esta_desligado(&g_console))
+            return esperar_xbox_ligar(streaming);
         return PASSO_SESSAO;
     }
     g_auto_conexao_feita = true;
@@ -887,8 +902,7 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
         for (int i = 0; i < total; i++) {
             const XConsole *x = &consoles.itens[i];
             snprintf(itens[i].nome, sizeof itens[i].nome, "%s", x->nome);
-            bool desligado = g_console_desligado[0] && !strcmp(x->server_id, g_console_desligado) &&
-                             strcmp(x->estado, "On");
+            bool desligado = console_esta_desligado(x);
             snprintf(itens[i].detalhe, sizeof itens[i].detalhe, "%s · %s", xapi_tipo_amigavel(x->tipo),
                      desligado ? "Desligado (ligue pelo botão)" : xapi_estado_amigavel(x->estado));
             itens[i].estado = !strcmp(x->estado, "On") ? 1
@@ -1767,6 +1781,61 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
     "Ele nao esta em repouso, entao nao da para liga-lo de longe. Ligue o console pelo botao e aperte A.\n" \
     "Para o NXStream ligar o Xbox sozinho: Configuracoes > Geral > Opcoes de energia > Suspensao."
 
+// v0.12.4: em vez do erro, espera o Xbox ser ligado pelo botão. A Microsoft
+// pode dizer "ConnectedStandby" com o console desligado (estado velho), mas
+// "On" só aparece quando ele está ligado de verdade: consulta a lista a cada 5 s
+// e, quando o console aparece "On", volta PASSO_SESSAO para abrir a sessão.
+#define ESPERA_LIGAR_INTERVALO_S 5.0
+#define ESPERA_LIGAR_MAX_S       900  // 15 min: depois disso, a tela de erro
+static Passo esperar_xbox_ligar(AuthStreaming *streaming) {
+    LOG("main: esperando o Xbox ser ligado (lista a cada %.0f s)", ESPERA_LIGAR_INTERVALO_S);
+    console_marcar_desligado(g_console.server_id);
+    u64 inicio = armGetSystemTick();
+    double proxima = ESPERA_LIGAR_INTERVALO_S; // acabou de falhar ou de ser consultado
+    int ultimo = -1, consultas = 0;
+    char estado[32] = "";
+    bool fechar = false;
+    for (;;) {
+        double passou = segundos_desde(inicio);
+        if (passou > ESPERA_LIGAR_MAX_S) {
+            LOG("main: o Xbox nao foi ligado em %d s", ESPERA_LIGAR_MAX_S);
+            return erro_sessao("O Xbox esta desligado.", DETALHE_XBOX_DESLIGADO);
+        }
+        if (passou >= proxima) {
+            proxima = passou + ESPERA_LIGAR_INTERVALO_S;
+            XConsoles cs;
+            if (chamar((Chamada){.tipo = CH_LISTAR, .streaming = streaming, .saida = &cs})) {
+                consultas++;
+                for (int i = 0; i < cs.total; i++)
+                    if (!strcmp(cs.itens[i].server_id, g_console.server_id))
+                        snprintf(estado, sizeof estado, "%s", cs.itens[i].estado);
+                if (!strcmp(estado, "On")) {
+                    LOG("main: o Xbox ligou (%.0f s, %d consulta(s)); conectando", passou, consultas);
+                    console_marcar_desligado(NULL);
+                    return PASSO_SESSAO;
+                }
+            }
+            ultimo = -1; // redesenha (a consulta pode ter levado um tempo)
+        }
+        if ((int)passou != ultimo) {
+            ultimo = (int)passou;
+            char detalhe[256];
+            snprintf(detalhe, sizeof detalhe,
+                     "Ligue o console pelo botão: o NXStream conecta sozinho quando ele ligar (%d s).\n"
+                     "Para ligar de longe: Configurações > Geral > Opções de energia > Suspensão.",
+                     (int)passou);
+            mostrar_conexao("O Xbox está desligado", detalhe, "B=Voltar para a lista|R=Jogos na nuvem|+=Fechar");
+        }
+        u64 b = quadro(&fechar);
+        if (fechar || (b & HidNpadButton_Plus))
+            return PASSO_SAIR;
+        if (b & HidNpadButton_B)
+            return PASSO_LISTA;
+        if (b & HidNpadButton_R)
+            return PASSO_NUVEM;
+    }
+}
+
 #define NUVEM_TEMPO_MAX_PREPARO_S 900 // 15 min: fila em horário de pico
 
 static const char *estado_nuvem_texto(XSessaoEstado e) {
@@ -1840,8 +1909,11 @@ static Passo abrir_sessao_uma(AuthConta *conta, AuthStreaming *streaming, XSessa
                 encerrar_sessao(streaming, &sessao);
                 if (strstr(detalhe, "WaitingForServerToRegister")) {
                     LOG("main: o Xbox nao respondeu ao chamado (desligado ou sem internet)");
-                    console_marcar_desligado(g_console.server_id);
-                    return erro_sessao("O Xbox esta desligado.", DETALHE_XBOX_DESLIGADO);
+                    if (g_reconectando) { // na reconexão, a falha vira nova tentativa (como antes)
+                        console_marcar_desligado(g_console.server_id);
+                        return erro_sessao("O Xbox esta desligado.", DETALHE_XBOX_DESLIGADO);
+                    }
+                    return esperar_xbox_ligar(streaming);
                 }
                 return erro_sessao(g_na_nuvem ? "A nuvem recusou a sessao." : "O console recusou a sessao.",
                                    detalhe);
