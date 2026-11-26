@@ -66,6 +66,9 @@ typedef struct {
     bool  audio_ativo;
     int   audio_fila_ms;
     unsigned long audio_perdidos, audio_faltas;
+    // Rede (v0.12.2, montador.c): pacotes de vídeo fora de ordem, recuperados por
+    // NACK e quadros perdidos de vez
+    unsigned long rede_pacotes, rede_fora_de_ordem, rede_recuperados, rede_quadros_perdidos;
     long  keepalive_status;            // -1 = ainda não enviado
     int   keepalive_ha_s;
     float hist_mbps[UI_HIST];          // últimos segundos, o mais antigo primeiro

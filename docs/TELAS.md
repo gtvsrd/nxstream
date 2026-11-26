@@ -32,7 +32,7 @@ Para atualizar depois de mudar a interface: `make -C tests/ui` e copiar `tests/u
 | | |
 |---|---|
 | ![Menu](telas/8_menu_video.png) | ![Estatísticas](telas/9_estatisticas.png) |
-| **Menu** (segure + e − por 1 s). Voltar ao jogo, botão Xbox, estatísticas, desconectar, fechar. | **Estatísticas.** Cartão no canto, sem escurecer o jogo: quadros/s, taxa com gráfico de 60 s, decodificação, áudio e sessão. |
+| **Menu** (segure + e − por 1 s). Voltar ao jogo, botão Xbox, estatísticas, desconectar, fechar. | **Estatísticas.** Cartão no canto, sem escurecer o jogo: quadros/s, taxa com gráfico de 60 s, decodificação, áudio, rede (pacotes fora de ordem, reenviados, quadros perdidos) e sessão. |
 
 ## Erros
 

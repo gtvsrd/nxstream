@@ -90,6 +90,7 @@ int main(int argc, char **argv) {
     st.decod_ms = 2.1f; st.decod_ms_max = 2.7f; st.hardware = true; st.pulados = 43; st.repetidos = 54;
     st.audio_ativo = true; st.audio_fila_ms = 40; st.keepalive_status = 200; st.keepalive_ha_s = 12;
     st.hist_total = 60;
+    st.rede_pacotes = 331982; st.rede_fora_de_ordem = 89915; st.rede_recuperados = 67;
     for (int i = 0; i < 60; i++) st.hist_mbps[i] = 4.5f + 1.5f * (float)((i * 37 % 11) / 10.0) + (i > 40 ? 1.2f : 0);
     ui_estatisticas_video(px, UI_LARGURA, &st);
     salvar("9_estatisticas");

@@ -684,7 +684,7 @@ void ui_estatisticas_video(uint32_t *pixels, int passo, const UiEstatisticas *e)
     g_px = pixels;
     g_passo = passo;
     const int x = 24, y = 24, w = 440, pad = 22;
-    const int h = 398;
+    const int h = 430;
     retangulo(x - 1, y - 1, w + 2, h + 2, 19, COR_LINHA);
     retangulo(x, y, w, h, 18, RGB(0x14, 0x14, 0x14));
 
@@ -771,6 +771,15 @@ void ui_estatisticas_video(uint32_t *pixels, int passo, const UiEstatisticas *e)
         snprintf(buf, sizeof buf, "desligado");
     linha_est(lx, ly, lw, "Áudio", buf, !e->audio_ativo ? COR_ERRO : e->audio_perdidos ? COR_AVISO : COR_VERDE);
     ly += 32;
+
+    // Rede: o que o montador consertou (fora de ordem, NACK) e o que se perdeu
+    {
+        unsigned long pct = e->rede_pacotes ? e->rede_fora_de_ordem * 100 / e->rede_pacotes : 0;
+        snprintf(buf, sizeof buf, "%lu%% desordem · %lu reenv. · %lu perdas", pct, e->rede_recuperados,
+                 e->rede_quadros_perdidos);
+        linha_est(lx, ly, lw, "Rede", buf, e->rede_quadros_perdidos ? COR_AVISO : COR_VERDE);
+        ly += 32;
+    }
 
     // Conexão
     bool ka_ok = e->keepalive_status >= 200 && e->keepalive_status < 300;

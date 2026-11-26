@@ -1442,6 +1442,10 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                         mostrar_mensagem(UI_INFO, "A sessão na nuvem foi encerrada.",
                                          "O servidor fechou a sessão (tempo sem jogar, saída do jogo ou manutenção).",
                                          "A=Jogar de novo|B=Voltar para os jogos|+=Fechar");
+                    else if (strstr(e.motivo_encerramento, "KickForServerShutdown")) // log de 25/11
+                        mostrar_mensagem(UI_INFO, "O Xbox foi desligado.",
+                                         "Conectar de novo liga o Xbox outra vez, se ele estiver em suspensão.",
+                                         "A=Conectar de novo|B=Voltar para a lista|+=Fechar");
                     else
                         mostrar_mensagem(UI_INFO, "O Xbox encerrou a conexão.",
                                          "Ele foi desligado ou a sessão foi fechada no próprio console.\n"
@@ -1566,6 +1570,10 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
             st.audio_fila_ms = a.fila_ms;
             st.audio_perdidos = a.perdidos;
             st.audio_faltas = a.faltas;
+            st.rede_pacotes = e.rede.pacotes;
+            st.rede_fora_de_ordem = e.rede.fora_de_ordem;
+            st.rede_recuperados = e.rede.recuperados;
+            st.rede_quadros_perdidos = e.rede.quadros_perdidos;
             st.keepalive_status = status_keepalive;
             st.keepalive_ha_s = status_keepalive < 0 ? 0 : (int)segundos_desde(ultimo_keepalive);
             st.hist_total = hist_total;

@@ -41,7 +41,7 @@ Como no resto do projeto, cada fase termina com um `.nro` testado no Switch ante
 |---|---|---|
 | X0 | v0.11.0 / v0.11.1 | Funcionou no Switch (25/11); v0.11.1 deixa a carga mais rápida |
 | X1 | v0.12.0 | Funcionou no Switch (25/11): Gears Tactics abriu e conectou na 1ª |
-| X2 | v0.12.1 (parte) | Montador próprio com NACK; 720p na nuvem. Em teste |
+| X2 | v0.12.1 / v0.12.2 | Funcionou (25/11): 11 min em 720p, 0 erros de decodificação |
 
 ### Detalhes por fase
 
@@ -100,9 +100,13 @@ Como no resto do projeto, cada fase termina com um `.nro` testado no Switch ante
 
 | Teste (v0.12.1) | Resultado esperado | Resultado obtido |
 |---|---|---|
-| Abrir um jogo da nuvem | `video 1280x720` no log | |
-| Jogar uns minutos com movimento | Erros de decodificação perto de 0; `recuperados` subindo quando houver buracos | |
-| Console de casa | Igual a antes (o montador também vale para o console) | |
+| Abrir um jogo da nuvem | `video 1280x720` no log | Sim (Minecraft Dungeons II) |
+| Jogar uns minutos com movimento | Erros de decodificação perto de 0; `recuperados` subindo quando houver buracos | **0 erros** em 11 min (antes 3751 em 4 min) |
+| Console de casa | Igual a antes (o montador também vale para o console) | Sim: 0 erros, 0 buracos |
+
+**Resultado da v0.12.1 (log de 25/11):** 11 min de Minecraft Dungeons II a 60 quadros/s, 4–6 Mbps, **0 erros de decodificação e 0 quadros perdidos**. A causa principal era a ordem: **27% dos pacotes de vídeo** (89.915 de 331.982) chegaram fora de ordem, todos arrumados pelo montador. Perdas de verdade foram poucas: 66 NACKs, 67 pacotes reenviados pelo servidor e recuperados. No console de casa, 0 fora de ordem e 0 erros, como antes. Ao desligar o Xbox, o motivo veio no aviso: `KickForServerShutdown`.
+
+**v0.12.2:** linha **Rede** no cartão de estatísticas (% fora de ordem, pacotes reenviados, quadros perdidos) e a tela "O Xbox foi desligado" quando o motivo é `KickForServerShutdown`. Com isso a X2 está completa; falta só a latência, que o app ainda não mede.
 
 **X1 – Sessão.** O caminho de conexão é o mesmo do Remote Play; o que muda:
 - corpo do `play`: `titleId` preenchido, `serverId` vazio;
