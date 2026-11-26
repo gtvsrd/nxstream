@@ -186,3 +186,36 @@ void auth_streaming_liberar(AuthStreaming *s) {
     free(s->gs_token);
     s->gs_token = NULL;
 }
+
+// DisplayClaims.xui[0].uhs (o "user hash" do cabeçalho XBL3.0)
+bool auth_parse_xbl_uhs(const char *json, char *uhs, int tam) {
+    uhs[0] = '\0';
+    cJSON *raiz = json ? cJSON_Parse(json) : NULL;
+    const cJSON *claims = cJSON_GetObjectItemCaseSensitive(raiz, "DisplayClaims");
+    const cJSON *xui = cJSON_GetObjectItemCaseSensitive(claims, "xui");
+    const cJSON *primeiro = cJSON_IsArray(xui) ? cJSON_GetArrayItem(xui, 0) : NULL;
+    const char *v = primeiro ? texto(primeiro, "uhs") : NULL;
+    if (v)
+        snprintf(uhs, (size_t)tam, "%s", v);
+    cJSON_Delete(raiz);
+    return uhs[0] != '\0';
+}
+
+// profileUsers[0].settings[id = GameDisplayPicRaw].value
+bool auth_parse_foto(const char *json, char *url, int tam) {
+    url[0] = '\0';
+    cJSON *raiz = json ? cJSON_Parse(json) : NULL;
+    const cJSON *usuarios = cJSON_GetObjectItemCaseSensitive(raiz, "profileUsers");
+    const cJSON *u = cJSON_IsArray(usuarios) ? cJSON_GetArrayItem(usuarios, 0) : NULL;
+    const cJSON *ajustes = cJSON_GetObjectItemCaseSensitive(u, "settings");
+    const cJSON *a;
+    cJSON_ArrayForEach(a, ajustes) {
+        const char *id = texto(a, "id"), *v = texto(a, "value");
+        if (id && v && !strcmp(id, "GameDisplayPicRaw") && !strncmp(v, "https://", 8)) {
+            snprintf(url, (size_t)tam, "%s", v);
+            break;
+        }
+    }
+    cJSON_Delete(raiz);
+    return url[0] != '\0';
+}

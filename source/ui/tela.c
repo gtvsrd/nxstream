@@ -478,6 +478,24 @@ static void logo_suave(float cx, float cy, float tam) {
 }
 
 static char g_conta[64]; // gamertag mostrada no cabeçalho ("" = nenhuma)
+static const uint32_t *g_foto; // foto do perfil (UI_FOTO x UI_FOTO) ou NULL
+
+void ui_definir_foto(const uint32_t *px) {
+    g_foto = px;
+}
+
+// Foto redonda, com a borda suavizada
+static void foto_redonda(float cx, float cy, const uint32_t *px) {
+    const float r = UI_FOTO / 2.0f;
+    int x0 = (int)(cx - r), y0 = (int)(cy - r);
+    for (int j = 0; j < UI_FOTO; j++)
+        for (int i = 0; i < UI_FOTO; i++) {
+            float dx = i + 0.5f - r, dy = j + 0.5f - r;
+            float cobre = limitar(r + 0.5f - sqrtf(dx * dx + dy * dy));
+            if (cobre > 0)
+                misturar(x0 + i, y0 + j, px[j * UI_FOTO + i], cobre);
+        }
+}
 
 void ui_definir_conta(const char *gamertag) {
     copiar(g_conta, sizeof g_conta, gamertag);
@@ -497,7 +515,7 @@ static void abas(void) {
     const int tam = 24, espaco = 44, y = 37;
     int w0 = largura(tam, nomes[0]), w1 = largura(tam, nomes[1]);
     int x = UI_LARGURA / 2 - (w0 + espaco + w1) / 2;
-    botao(x - 34, y + 15, "L");
+    botao(x - 38, y + 15, "L");
     for (int i = 0; i < 2; i++) {
         int w = i ? w1 : w0;
         bool ativa = i == g_aba;
@@ -506,7 +524,7 @@ static void abas(void) {
             retangulo(x, y + 38, w, 4, 2, COR_VERDE);
         x += w + espaco;
     }
-    botao(x - espaco + 34, y + 15, "R");
+    botao(x - espaco + 38, y + 15, "R");
 }
 
 static void cabecalho(void) {
@@ -514,25 +532,59 @@ static void cabecalho(void) {
     texto(110, 35, 28, COR_TEXTO, "NXStream", 0);
     if (g_aba >= 0 && (g_t.tipo == T_LISTA || g_t.tipo == T_NUVEM))
         abas();
-    if (g_conta[0]) { // gamertag com a inicial num círculo, como um avatar
+    if (g_conta[0]) { // gamertag com a foto do perfil (ou a inicial num círculo)
         int w = largura(22, g_conta);
         texto(1232, 39, 22, COR_TEXTO, g_conta, 2);
         int cx = 1232 - w - 28;
-        circulo((float)cx, 52, 17, COR_VERDE, 1.0f);
-        const char *p = g_conta;
-        int cp = proximo_cp(&p);
-        char inicial[8] = {0};
-        if (cp < 0x80) {
-            inicial[0] = (char)((cp >= 'a' && cp <= 'z') ? cp - 32 : cp);
+        if (g_foto) {
+            foto_redonda((float)cx, 52, g_foto);
         } else {
-            memcpy(inicial, g_conta, (size_t)(p - g_conta));
+            circulo((float)cx, 52, 17, COR_VERDE, 1.0f);
+            const char *p = g_conta;
+            int cp = proximo_cp(&p);
+            char inicial[8] = {0};
+            if (cp < 0x80)
+                inicial[0] = (char)((cp >= 'a' && cp <= 'z') ? cp - 32 : cp);
+            else
+                memcpy(inicial, g_conta, (size_t)(p - g_conta));
+            texto(cx, 40, 21, COR_ESCURO, inicial, 1);
         }
-        texto(cx, 40, 21, COR_ESCURO, inicial, 1);
     }
     texto(48, 664, 16, COR_TEXTO3, "v" APP_VERSION, 0);
 }
 
+// L e R no formato dos botões de ombro do Joy-Con: o canto de fora, em cima,
+// bem arredondado (a curva do botão); os outros quase retos
+static bool ombro(const char *nome) {
+    return !strcmp(nome, "L") || !strcmp(nome, "R");
+}
+
+static int largura_botao(const char *nome) {
+    return ombro(nome) ? 42 : 30;
+}
+
 static void botao(int cx, int cy, const char *nome) {
+    if (ombro(nome)) {
+        // Retângulo de cantos pouco arredondados cortado por um círculo grande:
+        // o topo é reto do lado de dentro e desce em curva para o lado de fora
+        const bool esq = nome[0] == 'L';
+        const float w = 42, h = 24, x = cx - w / 2.0f, y = cy - h / 2.0f, rc = 6, R = 40;
+        const float ccx = esq ? x + w * 0.78f : x + w * 0.22f, ccy = y + R;
+        for (int j = (int)y - 1; j <= (int)(y + h) + 1; j++)
+            for (int i = (int)x - 1; i <= (int)(x + w) + 1; i++) {
+                float px = i + 0.5f, py = j + 0.5f;
+                float qx = fabsf(px - cx) - (w / 2 - rc), qy = fabsf(py - cy) - (h / 2 - rc);
+                float d_ret = rc - (sqrtf(fmaxf(qx, 0) * fmaxf(qx, 0) + fmaxf(qy, 0) * fmaxf(qy, 0)) +
+                                    fminf(fmaxf(qx, qy), 0));
+                float dx = px - ccx, dy = py - ccy;
+                float d_circ = R - sqrtf(dx * dx + dy * dy);
+                float cobre = limitar(fminf(d_ret, d_circ) + 0.5f);
+                if (cobre > 0)
+                    misturar(i, j, COR_BOTAO, cobre);
+            }
+        texto(cx + (esq ? 3 : -3), cy - 9, 17, COR_ESCURO, nome, 1);
+        return;
+    }
     circulo((float)cx, (float)cy, 15, COR_BOTAO, 1.0f);
     if (!strcmp(nome, "+") || !strcmp(nome, "-")) { // desenhados: a fonte varia muito nesses
         preencher(cx - 7, cy - 1, 14, 3, COR_ESCURO);
@@ -560,10 +612,10 @@ static void rodape_em(const char *r, int x_direita, int y) {
             continue;
         *igual = '\0';
         const char *rotulo = igual + 1;
-        int w = largura(22, rotulo);
+        int w = largura(22, rotulo), meio = largura_botao(partes[i]) / 2;
         texto(x - w, y, 22, COR_TEXTO2, rotulo, 0);
-        botao(x - w - 26, y + 14, partes[i]);
-        x -= w + 26 + 15 + 36;
+        botao(x - w - 11 - meio, y + 14, partes[i]);
+        x -= w + 11 + 2 * meio + 36;
     }
 }
 

@@ -128,6 +128,8 @@ Como no resto do projeto, cada fase termina com um `.nro` testado no Switch ante
 - O cache de nomes passou para a versão 2 (com a capa): na 1ª abertura da v0.13.0 o catálogo é consultado de novo (~20 s, uma vez).
 - Fila: continua a tela de conexão com "Na fila para jogar" e a espera estimada (X1).
 
+**v0.13.1** (pedido do usuário): L e R desenhados no formato dos botões de ombro (topo reto do lado de dentro, curva para fora) nas abas e no rodapé; **foto do perfil** (gamerpic) no lugar da inicial. A foto vem de `profile.xboxlive.com/users/me/profile/settings?settings=GameDisplayPicRaw` (XSTS do Xbox Live comum, cabeçalho `XBL3.0 x=uhs;token`), em 64x64, buscada por trás uma vez a cada abertura e guardada em `/switch/NXStream/foto.png`, que aparece na hora nas aberturas seguintes. Sair da conta apaga a foto.
+
 | Teste (v0.13.0) | Resultado esperado | Resultado obtido |
 |---|---|---|
 | Abrir a aba Nuvem (L/R) | Faixa de recentes e grade; capas aparecendo em poucos segundos | |

@@ -54,6 +54,9 @@ AuthStatus auth_streaming(const AuthConta *conta, AuthStreaming *streaming);
 // xCloud (fase X0): gsToken da oferta xgpuweb (Game Pass Ultimate); se a conta
 // não tiver, tenta xgpuwebf2p (só jogos gratuitos). nuvem->oferta diz qual veio.
 AuthStatus auth_nuvem(const AuthConta *conta, AuthStreaming *nuvem);
+// Foto do perfil (gamerpic, v0.13.1): URL da imagem em `url`. Opcional: falha
+// não atrapalha nada (a tela mostra a inicial da gamertag).
+AuthStatus auth_foto_perfil(const AuthConta *conta, char *url, int tam);
 // Token de transferência que o console pede em /connect (estado ReadyToConnect).
 // Não altera o refresh token salvo. *token deve ser liberado com free().
 AuthStatus auth_token_console(const AuthConta *conta, char **token);
@@ -73,6 +76,8 @@ bool  auth_apagar(const char *caminho);
 bool       auth_parse_codigo(const char *json, AuthCodigo *codigo);
 AuthStatus auth_parse_token(long status, const char *json, AuthConta *conta);
 char      *auth_parse_xbl_token(const char *json, char *gamertag, int tam_gamertag);
+bool       auth_parse_xbl_uhs(const char *json, char *uhs, int tam);   // DisplayClaims.xui[0].uhs
+bool       auth_parse_foto(const char *json, char *url, int tam);      // GameDisplayPicRaw
 bool       auth_parse_streaming(const char *json, AuthStreaming *streaming);
 const char *auth_descrever_xerr(long long xerr);
 char      *auth_parse_token_console(long status, const char *json);

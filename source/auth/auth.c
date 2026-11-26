@@ -422,3 +422,69 @@ AuthStatus auth_token_console(const AuthConta *conta, char **token) {
     http_resposta_liberar(&r);
     return st;
 }
+
+// ---------------------------------------------------------------------------
+// 3f. Foto do perfil (v0.13.1): XSTS do Xbox Live comum + profile.xboxlive.com
+// ---------------------------------------------------------------------------
+AuthStatus auth_foto_perfil(const AuthConta *conta, char *url, int tam) {
+    url[0] = '\0';
+    HttpResposta r;
+    char *user_token = NULL, *xsts = NULL, uhs[32] = "";
+
+    // User token (mesmo pedido do 3a)
+    {
+        size_t t = strlen(conta->access_token) + 3;
+        char *ticket = malloc(t);
+        snprintf(ticket, t, "d=%s", conta->access_token);
+        cJSON *corpo = cJSON_CreateObject();
+        cJSON *props = cJSON_AddObjectToObject(corpo, "Properties");
+        cJSON_AddStringToObject(props, "AuthMethod", "RPS");
+        cJSON_AddStringToObject(props, "SiteName", "user.auth.xboxlive.com");
+        cJSON_AddStringToObject(props, "RpsTicket", ticket);
+        cJSON_AddStringToObject(corpo, "RelyingParty", XBL_RP_USER);
+        cJSON_AddStringToObject(corpo, "TokenType", "JWT");
+        free(ticket);
+        char *resp = post_json(XBL_URL_USER_AUTH, HEADERS_XBL, corpo, "user/authenticate (foto)", &r);
+        cJSON_Delete(corpo);
+        user_token = resp ? auth_parse_xbl_token(resp, NULL, 0) : NULL;
+        long st = r.status;
+        http_resposta_liberar(&r);
+        if (!user_token)
+            return st ? AUTH_ERRO : AUTH_ERRO_REDE;
+    }
+    // XSTS para o Xbox Live comum (o mesmo da gamertag), com o user hash
+    {
+        cJSON *corpo = cJSON_CreateObject();
+        cJSON *props = cJSON_AddObjectToObject(corpo, "Properties");
+        cJSON_AddStringToObject(props, "SandboxId", "RETAIL");
+        cJSON *tokens = cJSON_AddArrayToObject(props, "UserTokens");
+        cJSON_AddItemToArray(tokens, cJSON_CreateString(user_token));
+        cJSON_AddStringToObject(corpo, "RelyingParty", XBL_RP_XBOXLIVE);
+        cJSON_AddStringToObject(corpo, "TokenType", "JWT");
+        char *resp = post_json(XBL_URL_XSTS, HEADERS_XBL, corpo, "xsts (foto)", &r);
+        cJSON_Delete(corpo);
+        if (resp) {
+            xsts = auth_parse_xbl_token(resp, NULL, 0);
+            auth_parse_xbl_uhs(resp, uhs, sizeof uhs);
+        }
+        long st = r.status;
+        http_resposta_liberar(&r);
+        free(user_token);
+        if (!xsts || !uhs[0]) {
+            free(xsts);
+            return st ? AUTH_ERRO : AUTH_ERRO_REDE;
+        }
+    }
+    // Configurações do perfil: só a foto
+    size_t ta = strlen(xsts) + strlen(uhs) + 40;
+    char *autorizacao = malloc(ta);
+    snprintf(autorizacao, ta, "Authorization: XBL3.0 x=%s;%s", uhs, xsts);
+    free(xsts);
+    const char *headers[] = {"Accept: application/json", "x-xbl-contract-version: 2", autorizacao, NULL};
+    bool ok = http_requisicao(HTTP_GET, XBL_URL_PERFIL_FOTO, headers, NULL, &r);
+    free(autorizacao);
+    AuthStatus st = !ok ? AUTH_ERRO_REDE : (r.status == 200 && auth_parse_foto(r.corpo, url, tam)) ? AUTH_OK : AUTH_ERRO;
+    LOG("auth: foto do perfil %s (HTTP %ld)", st == AUTH_OK ? "encontrada" : "nao veio", r.status);
+    http_resposta_liberar(&r);
+    return st;
+}

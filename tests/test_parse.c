@@ -457,6 +457,22 @@ static void teste_nuvem(void) {
     CHECAR(xnuvem_combina("ドラゴン Quest", "quest"));        // outros alfabetos passam
 }
 
+static void teste_foto(void) {
+    puts("foto do perfil");
+    char uhs[32], url[300];
+    CHECAR(auth_parse_xbl_uhs("{\"Token\":\"T\",\"DisplayClaims\":{\"xui\":[{\"uhs\":\"12345\",\"gtg\":\"Fulano\"}]}}",
+                              uhs, sizeof uhs) && !strcmp(uhs, "12345"));
+    CHECAR(!auth_parse_xbl_uhs("{\"Token\":\"T\"}", uhs, sizeof uhs) && uhs[0] == '\0');
+    CHECAR(auth_parse_foto("{\"profileUsers\":[{\"id\":\"2533274800000000\",\"hostId\":null,\"settings\":["
+                           "{\"id\":\"Gamertag\",\"value\":\"Fulano\"},"
+                           "{\"id\":\"GameDisplayPicRaw\",\"value\":\"https://images-eds-ssl.xboxlive.com/image?url=abc&format=png\"}],"
+                           "\"isSponsoredUser\":false}]}", url, sizeof url));
+    CHECAR(!strcmp(url, "https://images-eds-ssl.xboxlive.com/image?url=abc&format=png"));
+    CHECAR(!auth_parse_foto("{\"profileUsers\":[{\"settings\":[{\"id\":\"GameDisplayPicRaw\",\"value\":\"http://x\"}]}]}",
+                            url, sizeof url));
+    CHECAR(!auth_parse_foto("<html>", url, sizeof url));
+}
+
 int main(void) {
     teste_codigo();
     teste_token();
@@ -464,6 +480,7 @@ int main(void) {
     teste_streaming();
     teste_consoles();
     teste_nuvem();
+    teste_foto();
     teste_sessao();
     teste_negociacao();
     teste_filtro_rede_local();

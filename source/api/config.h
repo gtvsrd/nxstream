@@ -18,6 +18,7 @@
 #define NX_ARQ_CONTA        NX_PASTA_APP "/conta.json"   // gamertag e último console (sem tokens)
 #define NX_ARQ_NUVEM_NOMES  NX_PASTA_APP "/nuvem-nomes.json" // nomes dos jogos da nuvem (catálogo)
 #define NX_PASTA_CAPAS      NX_PASTA_APP "/capas"            // capas dos jogos (JPEG, ~15 KB cada)
+#define NX_ARQ_FOTO         NX_PASTA_APP "/foto.png"         // foto do perfil (gamerpic), pequena
 // Opcional: se existir, o HTTPS usa estes certificados em vez dos do sistema
 #define NX_ARQ_CERTIFICADOS NX_PASTA_APP "/cacert.pem"
 
@@ -37,7 +38,8 @@
 #define XBL_URL_XSTS        "https://xsts.auth.xboxlive.com/xsts/authorize"
 #define XBL_RP_USER         "http://auth.xboxlive.com"
 #define XBL_RP_GSSV         "http://gssv.xboxlive.com/"
-#define XBL_RP_XBOXLIVE     "http://xboxlive.com"       // só para ler a gamertag
+#define XBL_RP_XBOXLIVE     "http://xboxlive.com"       // gamertag e foto do perfil
+#define XBL_URL_PERFIL_FOTO "https://profile.xboxlive.com/users/me/profile/settings?settings=GameDisplayPicRaw"
 
 // ---------------------------------------------------------------------------
 // Serviço de streaming (GSSV) - console próprio ("xhome")

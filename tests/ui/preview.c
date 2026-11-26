@@ -27,6 +27,16 @@ int main(int argc, char **argv) {
     ui_definir_fonte(ttf);
 
     ui_definir_conta("Gamertag123");
+    // Foto do perfil falsa (um rosto simples em cima de um degradê)
+    static uint32_t foto[UI_FOTO * UI_FOTO];
+    for (int j = 0; j < UI_FOTO; j++)
+        for (int i = 0; i < UI_FOTO; i++) {
+            float dx = i - 17.0f, dy = j - 13.0f, dy2 = j - 40.0f;
+            uint32_t c = 0xFF000000u | (uint32_t)(0x60 + j * 3) << 16 | (uint32_t)(0x40 + j * 2) << 8 | 0x30;
+            if (dx * dx + dy * dy < 49) c = 0xFF9CC4E8;              // cabeça
+            if (dx * dx + dy2 * dy2 < 260) c = 0xFF2B8AD4;           // ombros
+            foto[j * UI_FOTO + i] = c;
+        }
     ui_status("Conectando a XBOX", "Preparando o console",
               "Xbox Series X · em repouso · 6 s\nSe o console estava em repouso, ele acorda sem ligar a TV.",
               "B=Cancelar");
@@ -59,6 +69,7 @@ int main(int argc, char **argv) {
 
     UiItem itens[2] = {{"XBOX", "Xbox Series X · Em repouso", 2}, {"Sala", "Xbox One S · Desligado", 0}};
     ui_definir_abas(0);
+    ui_definir_foto(foto);
     ui_lista("Seus consoles", "Conectado como Gamertag123", itens, 2, 0, NULL,
              "A=Conectar|Y=Atualizar|X=Sair da conta|-=Diagnóstico|+=Fechar");
     ui_renderizar(px, UI_LARGURA, 0); salvar("6_lista");
@@ -126,7 +137,9 @@ int main(int argc, char **argv) {
         snprintf(n.info, sizeof n.info, "Square Enix · jogado recentemente");
         ui_definir_abas(1);
         ui_nuvem(&n, "A=Jogar|X=Detalhes|Y=Buscar|-=Atualizar|+=Fechar");
+        ui_definir_foto(foto);
         ui_renderizar(px, UI_LARGURA, 0); salvar("10_nuvem");
+        ui_definir_foto(NULL);
         ui_definir_abas(-1);
         free(real);
     }

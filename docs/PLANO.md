@@ -18,6 +18,7 @@
 - **v0.11.0** (25/11): início do xCloud, fase X0 (`docs/XCLOUD.md`): R na lista de consoles abre a lista dos jogos da nuvem. Funcionou: 622 jogos, Ultimate, região BRAZILSOUTH, mas em 20 s.
 - **v0.11.1**: carga da nuvem mais rápida (gzip, nomes no SD): 2ª abertura em 5,7 s.
 - **v0.11.4**: grava no log o motivo quando o Xbox encerra a conexão.
+- **v0.13.1**: L e R no formato dos botões de ombro; foto do perfil no cabeçalho.
 - **v0.13.0**: xCloud fase X3: abas Consoles/Nuvem (L/R, abre na última), faixa de recentes, grade de capas, busca pelo teclado.
 - **v0.12.6**: sem as tentativas de sessão durante a espera (prendiam 90 s); sessão presa com o Xbox ligado é refeita.
 - **v0.12.5**: espera do Xbox ligar mais rápida (lista a cada 2 s e tentativa de sessão a cada 8 s).

@@ -170,7 +170,99 @@ static void mostrar_agora(void) {
 
 // Um quadro: processa o sistema e o controle. Retorna os botões apertados.
 // *fechar fica true quando o sistema pede para encerrar o app.
+// ---------------------------------------------------------------------------
+// Foto do perfil (v0.13.1): a do SD aparece na hora; uma vez por abertura do
+// app, uma thread busca a atual (auth_foto_perfil + a imagem em 64x64), grava
+// no SD e entrega pronta para o quadro seguinte trocar.
+// ---------------------------------------------------------------------------
+static uint32_t *g_foto_px;                 // a que está na tela (só a thread principal mexe)
+static uint32_t *volatile g_foto_nova;      // entregue pela thread
+static bool g_foto_buscada;
+
+static uint32_t *foto_decodificar(const uint8_t *dados, size_t tam) {
+    return ui_decodificar_capa(dados, tam, UI_FOTO, UI_FOTO);
+}
+
+static void foto_aplicar(uint32_t *px) {
+    ui_definir_foto(px);
+    free(g_foto_px);
+    g_foto_px = px;
+}
+
+static void foto_carregar_sd(void) {
+    FILE *f = fopen(NX_ARQ_FOTO, "rb");
+    if (!f)
+        return;
+    static uint8_t dados[256 * 1024];
+    size_t n = fread(dados, 1, sizeof dados, f);
+    fclose(f);
+    uint32_t *px = n ? foto_decodificar(dados, n) : NULL;
+    if (px)
+        foto_aplicar(px);
+}
+
+static void foto_esquecer(void) {
+    foto_aplicar(NULL);
+    remove(NX_ARQ_FOTO);
+    g_foto_buscada = false;
+}
+
+static void *thread_foto(void *arg) {
+    AuthConta *copia = arg; // cópia só do access token: a principal pode renovar a conta
+    char url[600];
+    if (auth_foto_perfil(copia, url, sizeof url) == AUTH_OK) {
+        char u[640];
+        snprintf(u, sizeof u, "%s&w=64&h=64", url); // o servidor de imagens redimensiona
+        HttpResposta r;
+        if (http_requisicao(HTTP_GET, u, NULL, NULL, &r) && r.status == 200 && r.corpo && r.tamanho) {
+            uint32_t *px = foto_decodificar((const uint8_t *)r.corpo, r.tamanho);
+            if (px) {
+                FILE *f = fopen(NX_ARQ_FOTO ".tmp", "wb");
+                bool ok = f && fwrite(r.corpo, 1, r.tamanho, f) == r.tamanho;
+                if (f)
+                    ok = (fclose(f) == 0) && ok;
+                if (ok) {
+                    remove(NX_ARQ_FOTO);
+                    rename(NX_ARQ_FOTO ".tmp", NX_ARQ_FOTO);
+                }
+                __atomic_store_n(&g_foto_nova, px, __ATOMIC_RELEASE);
+                LOG("main: foto do perfil atualizada (%zu bytes)", r.tamanho);
+            }
+        } else {
+            LOG("main: foto do perfil nao baixou (HTTP %ld)", r.status);
+        }
+        http_resposta_liberar(&r);
+    }
+    free(copia->access_token);
+    free(copia);
+    return NULL;
+}
+
+static void foto_buscar(const AuthConta *conta) {
+    if (g_foto_buscada || !conta->access_token)
+        return;
+    g_foto_buscada = true;
+    AuthConta *copia = calloc(1, sizeof *copia);
+    if (!copia || !(copia->access_token = strdup(conta->access_token))) {
+        free(copia);
+        return;
+    }
+    pthread_t t;
+    pthread_attr_t at;
+    pthread_attr_init(&at);
+    pthread_attr_setstacksize(&at, 256 * 1024);
+    pthread_attr_setdetachstate(&at, PTHREAD_CREATE_DETACHED);
+    if (pthread_create(&t, &at, thread_foto, copia) != 0) {
+        free(copia->access_token);
+        free(copia);
+    }
+    pthread_attr_destroy(&at);
+}
+
 static u64 quadro(bool *fechar) {
+    uint32_t *nova = __atomic_exchange_n(&g_foto_nova, NULL, __ATOMIC_ACQUIRE);
+    if (nova)
+        foto_aplicar(nova);
     // Com o vídeo, quem mostra a tela é video_tela_desenhar(). A interface é
     // redesenhada a cada quadro (animação) e espera o vsync; fora de foco (HOME)
     // não desenha, só ritma o laço.
@@ -1198,6 +1290,7 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
             auth_conta_liberar(conta);
             LOG("main: usuario saiu da conta");
             conta_esquecer();
+            foto_esquecer();
             nuvem_esquecer();
             ui_definir_conta(NULL);
             g_auto_conexao_feita = false; // depois do próximo login, conecta sozinho de novo
@@ -2596,11 +2689,13 @@ int main(int argc, char *argv[]) {
                     if (conta.refresh_token) {
                         conta_ler();
                         ui_definir_conta(g_gamertag);
+                        foto_carregar_sd();
                     }
                     passo = conta.refresh_token ? PASSO_STREAMING : PASSO_LOGIN;
                     break;
                 case PASSO_LOGIN:
                     conta_esquecer(); // outra conta pode entrar
+                    foto_esquecer();
                     ui_definir_conta(NULL);
                     passo = passo_login(&conta, aviso_login);
                     aviso_login = NULL;
@@ -2615,6 +2710,8 @@ int main(int argc, char *argv[]) {
                         conta_salvar();
                     }
                     ui_definir_conta(g_gamertag);
+                    if (passo != PASSO_LOGIN && passo != PASSO_SAIR)
+                        foto_buscar(&conta); // acesso da conta acabou de ser renovado
                     recem_logada = false;
                     g_forcar_renovacao = false;
                     break;

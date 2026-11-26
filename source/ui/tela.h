@@ -10,7 +10,8 @@
 // que redesenha tudo (com a animação) e espera o vsync.
 //
 // Rodapé: botões no formato "A=Conectar|Y=Atualizar|+=Fechar". Botões
-// reconhecidos: A, B, X, Y, +, -. Textos em UTF-8 (acentos funcionam).
+// reconhecidos: A, B, X, Y, +, -, L, R (L e R no formato dos botões de ombro).
+// Textos em UTF-8 (acentos funcionam).
 #pragma once
 #include <stdbool.h>
 #include <stddef.h>
@@ -48,6 +49,11 @@ void ui_lista(const char *titulo, const char *subtitulo, const UiItem *itens, in
 
 // Gamertag mostrada no cabeçalho de todas as telas ("" ou NULL = nenhuma).
 void ui_definir_conta(const char *gamertag);
+
+// Foto do perfil no cabeçalho (v0.13.1): RGBA UI_FOTO x UI_FOTO, ou NULL para
+// voltar à inicial da gamertag. A tela guarda só o ponteiro.
+#define UI_FOTO 34
+void ui_definir_foto(const uint32_t *px);
 
 // Abas "Consoles" e "Nuvem" no cabeçalho (v0.13.0), com os botões L e R.
 // 0 = Consoles, 1 = Nuvem, -1 = sem abas. Só aparecem na lista e na nuvem.
