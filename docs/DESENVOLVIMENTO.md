@@ -432,7 +432,19 @@ Checklist e detalhes em `docs/XCLOUD.md` (seção X0). A lista de consoles ganho
 
 | Teste (v0.12.5) | Resultado esperado | Resultado obtido |
 |---|---|---|
-| Ligar o Xbox logo que a tela de espera aparecer | Conecta poucos segundos depois de ele terminar de ligar | |
+| Ligar o Xbox logo que a tela de espera aparecer | Conecta poucos segundos depois de ele terminar de ligar | Não: 1 min 50 s (sonda presa) |
+
+**Resultado da v0.12.5 (log de 25/11, 22:24):** a sonda das 22:26:47, feita enquanto o Xbox ligava, foi aceita, mas a sessão ficou **90 s** em Provisioning e falhou com `ProvisioningTimedOut: ServerNeverRegistered`. Nesse tempo o app não olhava a lista; quando voltou, ela já dizia `On` e a sessão nova ficou pronta em 4,3 s. Também: desligado pelo menu do Xbox, a Microsoft sabe (lista `Off`, erro `XccsUnknownError: XboxPowerOff`), e o aviso de fim da sessão traz `KickForStopCommand`.
+
+**v0.12.6:**
+- Sem sondas: a sessão só é aberta quando a lista mostra `On` (lista a cada 2 s, como na v0.12.5).
+- Sessão presa: depois de 15 s em Provisioning, o app consulta a lista a cada 3 s; se o console já está `On` e a sessão continua preparando 10 s depois, ela é fechada e outra é aberta (`sessao presa (aberta com o Xbox ainda ligando); abrindo outra`). Cobre também abrir o app logo depois de ligar o Xbox.
+- `XboxPowerOff` leva à mesma tela de espera.
+
+| Teste (v0.12.6) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Ligar o Xbox logo que a tela de espera aparecer | `o Xbox ligou (N s de espera)` poucos segundos depois de ele terminar de ligar | |
+| Ligar o Xbox e abrir o app logo em seguida | Conecta; se a 1ª sessão prender, `abrindo outra` em ~25 s | |
 
 As próximas fases recebem seus checklists aqui quando começarem.
 

@@ -965,14 +965,11 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
 // ---------------------------------------------------------------------------
 
 // Tela de erro da sessão. Retorna o próximo passo.
-// Espera do Xbox ser ligado (esperar_xbox_ligar, v0.12.5)
+// Espera do Xbox ser ligado (esperar_xbox_ligar, v0.12.4)
 static double g_espera_desde = -1;  // início da espera (segundos_desde(0)); -1 = sem espera
-static int g_espera_sondas = 0;
-static bool g_sondando = false;     // a sessão em abertura é uma sonda da espera
 
 static Passo erro_sessao(const char *titulo, const char *detalhe) {
-    g_sondando = false; // um erro de verdade encerra a espera
-    g_espera_desde = -1;
+    g_espera_desde = -1; // um erro de verdade encerra a espera
     if (detalhe && strstr(detalhe, "HTTP 401"))
         g_forcar_renovacao = true; // token recusado: renova antes da próxima tentativa
     if (g_reconectando) { // fase 4: durante a reconexão, a falha vira nova tentativa
@@ -1800,29 +1797,25 @@ static void mostrar_espera_ligar(int segundos) {
 // v0.12.4: em vez do erro, espera o Xbox ser ligado pelo botão. A Microsoft
 // pode dizer "ConnectedStandby" com o console desligado (estado velho), mas
 // "On" só aparece quando ele está ligado de verdade.
-// v0.12.5: o usuário mediu ~10 s entre o Xbox terminar de ligar e a conexão.
-// Agora, além da lista a cada 2 s (era 5), uma tentativa de sessão a cada 8 s
-// ("sonda"), sem trocar a tela: com o console desligado ela falha em ~2 s; se
-// ele já atende antes de aparecer "On" na lista, a sonda vira a conexão.
+// v0.12.5: lista a cada 2 s (era 5); o usuário mediu ~10 s entre o Xbox
+// terminar de ligar e a conexão.
+// v0.12.6: sem as "sondas" da v0.12.5 (tentar a sessão a cada 8 s). Log de
+// 25/11: uma sonda feita enquanto o Xbox ligava foi aceita, mas ficou 90 s em
+// Provisioning e falhou ("ServerNeverRegistered"); a lista já dizia On muito
+// antes. A sessão só é aberta quando a lista mostra On.
 #define ESPERA_LIGAR_INTERVALO_S 2.0
-#define ESPERA_SONDA_S           8.0
 #define ESPERA_LIGAR_MAX_S       900  // 15 min: depois disso, a tela de erro
 static void espera_terminar(void) {
     g_espera_desde = -1;
-    g_espera_sondas = 0;
-    g_sondando = false;
 }
 
 static Passo esperar_xbox_ligar(AuthStreaming *streaming) {
     if (g_espera_desde < 0) {
         g_espera_desde = segundos_desde(0);
-        g_espera_sondas = 0;
-        LOG("main: esperando o Xbox ser ligado (lista a cada %.0f s, sessao a cada %.0f s)",
-            ESPERA_LIGAR_INTERVALO_S, ESPERA_SONDA_S);
+        LOG("main: esperando o Xbox ser ligado (lista a cada %.0f s)", ESPERA_LIGAR_INTERVALO_S);
         console_marcar_desligado(g_console.server_id);
     }
-    g_sondando = false;
-    u64 inicio = armGetSystemTick(); // desta volta (a próxima sonda conta daqui)
+    u64 inicio = armGetSystemTick();
     double proxima = ESPERA_LIGAR_INTERVALO_S;
     int ultimo = -1;
     char estado[32] = "";
@@ -1835,11 +1828,6 @@ static Passo esperar_xbox_ligar(AuthStreaming *streaming) {
             espera_terminar();
             return erro_sessao("O Xbox esta desligado.", DETALHE_XBOX_DESLIGADO);
         }
-        if (aqui >= ESPERA_SONDA_S) {
-            g_sondando = true;
-            g_espera_sondas++;
-            return PASSO_SESSAO; // abrir_sessao tenta; se falhar igual, volta para cá
-        }
         if (aqui >= proxima) {
             proxima = aqui + ESPERA_LIGAR_INTERVALO_S;
             XConsoles cs;
@@ -1848,8 +1836,7 @@ static Passo esperar_xbox_ligar(AuthStreaming *streaming) {
                     if (!strcmp(cs.itens[i].server_id, g_console.server_id))
                         snprintf(estado, sizeof estado, "%s", cs.itens[i].estado);
                 if (!strcmp(estado, "On")) {
-                    LOG("main: o Xbox apareceu ligado na lista (%.0f s de espera, %d sonda(s)); conectando",
-                        segundos_desde(0) - g_espera_desde, g_espera_sondas);
+                    LOG("main: o Xbox ligou (%.0f s de espera); conectando", segundos_desde(0) - g_espera_desde);
                     espera_terminar();
                     console_marcar_desligado(NULL);
                     return PASSO_SESSAO;
@@ -1894,10 +1881,7 @@ static const char *estado_nuvem_texto(XSessaoEstado e) {
 static Passo abrir_sessao_uma(AuthConta *conta, AuthStreaming *streaming, XSessao *sessao_saida, double *preparo,
                               bool *pronta) {
     *pronta = false;
-    if (g_sondando) // sonda da espera: a tela "O Xbox está desligado" continua
-        mostrar_espera_ligar((int)(segundos_desde(0) - g_espera_desde));
-    else
-        mostrar_conexao("Abrindo a sessão", NULL, NULL);
+    mostrar_conexao("Abrindo a sessão", NULL, NULL);
     mostrar_agora();
 
     XSessao sessao;
@@ -1908,6 +1892,7 @@ static Passo abrir_sessao_uma(AuthConta *conta, AuthStreaming *streaming, XSessa
     // Nuvem: a fila (WaitingForResources) e a preparação de um servidor podem
     // levar minutos; o console responde em segundos
     const int tempo_max = g_na_nuvem ? NUVEM_TEMPO_MAX_PREPARO_S : SESSAO_TEMPO_MAX_PREPARO_S;
+    double proxima_lista = 0, t_ligado = -1; // sessão presa (v0.12.6)
     int espera_estimada = -1; // nuvem, na fila: estimativa do servidor (segundos)
     bool espera_consultada = false;
 
@@ -1939,10 +1924,26 @@ static Passo abrir_sessao_uma(AuthConta *conta, AuthStreaming *streaming, XSessa
             estado = (XSessaoEstado)chamar((Chamada){.tipo = CH_SESSAO_ESTADO, .streaming = streaming,
                                                      .sessao = &sessao, .detalhe = detalhe, .tam = sizeof detalhe});
             LOG("main: sessao: %s (%.0f s)", detalhe[0] ? detalhe : xapi_sessao_estado_texto(estado), passou);
-            if (g_sondando && estado != XSESSAO_FALHOU && estado != XSESSAO_ERRO) {
-                LOG("main: o Xbox atendeu a sonda (%.0f s de espera, sonda %d); conectando",
-                    segundos_desde(0) - g_espera_desde, g_espera_sondas);
-                espera_terminar();
+
+            // v0.12.6: sessão aberta enquanto o Xbox ainda ligava fica presa em
+            // Provisioning até a Microsoft desistir (90 s, "ServerNeverRegistered").
+            // Depois de 15 s preparando, consulta a lista; se o console já está
+            // On e a sessão continua preparando 10 s depois, abre outra (aberta
+            // com o Xbox ligado, ela fica pronta em ~4 s).
+            if (!g_na_nuvem && estado == XSESSAO_PREPARANDO && passou >= 15 && passou >= proxima_lista) {
+                proxima_lista = passou + 3;
+                XConsoles cs;
+                if (t_ligado < 0 && chamar((Chamada){.tipo = CH_LISTAR, .streaming = streaming, .saida = &cs}))
+                    for (int i = 0; i < cs.total; i++)
+                        if (!strcmp(cs.itens[i].server_id, g_console.server_id) && !strcmp(cs.itens[i].estado, "On")) {
+                            t_ligado = passou;
+                            LOG("main: o Xbox esta ligado e a sessao ainda preparando (%.0f s)", passou);
+                        }
+                if (t_ligado >= 0 && passou - t_ligado >= 10) {
+                    LOG("main: sessao presa (aberta com o Xbox ainda ligando); abrindo outra");
+                    encerrar_sessao(streaming, &sessao);
+                    return PASSO_SESSAO; // abrir_sessao tenta de novo
+                }
             }
 
             if (estado == XSESSAO_ERRO) {
@@ -1956,9 +1957,10 @@ static Passo abrir_sessao_uma(AuthConta *conta, AuthStreaming *streaming, XSessa
 
             if (estado == XSESSAO_FALHOU) {
                 encerrar_sessao(streaming, &sessao);
-                if (strstr(detalhe, "WaitingForServerToRegister")) {
-                    if (!g_sondando)
-                        LOG("main: o Xbox nao respondeu ao chamado (desligado ou sem internet)");
+                // Também "XboxPowerOff" (log de 25/11, 22:26: desligado pelo menu
+                // do Xbox, a Microsoft sabe e a lista diz "Off")
+                if (strstr(detalhe, "WaitingForServerToRegister") || strstr(detalhe, "XboxPowerOff")) {
+                    LOG("main: o Xbox nao respondeu ao chamado (desligado ou sem internet)");
                     if (g_reconectando) { // na reconexão, a falha vira nova tentativa (como antes)
                         console_marcar_desligado(g_console.server_id);
                         return erro_sessao("O Xbox esta desligado.", DETALHE_XBOX_DESLIGADO);
@@ -2046,8 +2048,7 @@ static Passo abrir_sessao(AuthConta *conta, AuthStreaming *streaming, XSessao *s
         Passo p = abrir_sessao_uma(conta, streaming, sessao_saida, preparo, &pronta);
         if (pronta || p != PASSO_SESSAO)
             return p;
-        if (!g_sondando)
-            LOG("main: tentando abrir a sessao de novo");
+        LOG("main: tentando abrir a sessao de novo");
         garantir_streaming(conta, streaming); // renova antes, se a falha foi 401
     }
 }
