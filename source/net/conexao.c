@@ -3,6 +3,7 @@
 #include "../core/log.h"
 #include "../media/decodificador.h"
 #include "../media/audio.h"
+#include "montador.h"
 #include "cJSON.h"
 
 #include <pthread.h>
@@ -24,6 +25,11 @@ static u64 g_inicio;
 static int g_pc = -1;
 static int g_canais[NUM_CANAIS] = {-1, -1, -1, -1};
 static int g_trilha_video = -1, g_trilha_audio = -1;
+// v0.12.1: quadros montados por nós (montador.c), com NACK e espera de
+// pacotes atrasados. Trava própria: a saída do montador chama ao_quadro, que
+// usa g_trava.
+static pthread_mutex_t g_trava_video = PTHREAD_MUTEX_INITIALIZER;
+static Montador *g_montador;
 
 // Identificadores passados como "ponteiro de usuário" nos callbacks
 #define ID_TRILHA_VIDEO 100
@@ -358,9 +364,20 @@ static void ao_mensagem(int id, const char *dados, int tamanho, void *ptr) {
     // tamanho < 0: texto terminado em '\0'; >= 0: binário
     int n = tamanho < 0 ? (int)strlen(dados) : tamanho;
 
-    if (origem == ID_TRILHA_VIDEO || origem == ID_TRILHA_AUDIO) {
-        // Vídeo chega montado em quadros por ao_quadro(); aqui só o áudio (RTP com Opus)
-        if (origem == ID_TRILHA_AUDIO && tamanho >= 0) {
+    if (origem == ID_TRILHA_VIDEO) {
+        // Pacotes RTP de vídeo (já passaram pela sessão RTCP): o montador junta
+        // os quadros e chama ao_quadro()
+        if (tamanho >= 0) {
+            double t = agora_s();
+            pthread_mutex_lock(&g_trava_video);
+            if (g_montador)
+                montador_pacote(g_montador, (const uint8_t *)dados, (size_t)n, t);
+            pthread_mutex_unlock(&g_trava_video);
+        }
+        return;
+    }
+    if (origem == ID_TRILHA_AUDIO) {
+        if (tamanho >= 0) {
             pthread_mutex_lock(&g_trava);
             g_estado.pacotes_audio++;
             pthread_mutex_unlock(&g_trava);
@@ -392,14 +409,16 @@ static void ao_mensagem(int id, const char *dados, int tamanho, void *ptr) {
 }
 
 // Quadro H.264 completo (Annex B), montado pelo depacketizer da libdatachannel
-static void ao_quadro(int tr, const char *dados, int tamanho, const rtcFrameInfo *info, void *ptr) {
-    (void)tr; (void)ptr;
+static void ao_quadro(const uint8_t *dados_u, size_t tam, uint32_t timestamp, bool idr, void *ptr) {
+    (void)idr; (void)ptr;
+    const char *dados = (const char *)dados_u;
+    int tamanho = (int)tam;
     if (tamanho <= 0)
         return;
     H264Quadro q;
     h264_analisar_quadro((const uint8_t *)dados, (size_t)tamanho, &q);
     double t = agora_s();
-    decod_enviar((const uint8_t *)dados, (size_t)tamanho, q.tem_idr, info ? info->timestamp : 0);
+    decod_enviar((const uint8_t *)dados, (size_t)tamanho, q.tem_idr, timestamp);
 
     pthread_mutex_lock(&g_trava);
     bool primeiro = g_estado.quadros == 0;
@@ -426,8 +445,7 @@ static void ao_quadro(int tr, const char *dados, int tamanho, const rtcFrameInfo
     pthread_mutex_unlock(&g_trava);
 
     if (primeiro)
-        LOG("conexao: primeiro quadro de video (%d bytes, %d NALs, payload %u)", tamanho, q.num_nals,
-            info ? info->payloadType : 0);
+        LOG("conexao: primeiro quadro de video (%d bytes, %d NALs)", tamanho, q.num_nals);
     if (primeiro_chave)
         LOG("conexao: primeiro quadro-chave em %.2f s", t);
     else if (q.tem_idr && chaves <= 20)
@@ -435,6 +453,29 @@ static void ao_quadro(int tr, const char *dados, int tamanho, const rtcFrameInfo
     if (resolucao_mudou)
         LOG("conexao: video %dx%d, H.264 %s nivel %d.%d", q.sps.largura, q.sps.altura,
             h264_nome_perfil(q.sps.perfil), q.sps.nivel / 10, q.sps.nivel % 10);
+}
+
+// Saídas do montador (rodam na thread que recebe o vídeo)
+static void ao_rtcp_montador(const uint8_t *dados, size_t tam, void *u) {
+    (void)u;
+    int tr = g_trilha_video;
+    if (tr >= 0) {
+        int rc = rtcSendMessage(tr, (const char *)dados, (int)tam);
+        static unsigned long falhas = 0;
+        if (rc < 0 && (++falhas == 1 || falhas % 100 == 0))
+            LOG("conexao: NACK nao enviado (%d, %lu vezes)", rc, falhas);
+    }
+}
+
+static void ao_pedir_chave_montador(void *u) {
+    (void)u;
+    int tr = g_trilha_video;
+    if (tr < 0)
+        return;
+    rtcRequestKeyframe(tr);
+    pthread_mutex_lock(&g_trava);
+    g_estado.pedidos_quadro_chave++;
+    pthread_mutex_unlock(&g_trava);
 }
 
 void conexao_enviar_input(const uint8_t *dados, size_t tamanho) {
@@ -491,15 +532,18 @@ bool conexao_criar(void) {
     rtcSetUserPointer(g_trilha_audio, (void *)(intptr_t)ID_TRILHA_AUDIO);
     rtcSetMessageCallback(g_trilha_audio, ao_mensagem);
 
-    // Vídeo: junta os pacotes RTP em quadros H.264 com start codes (o formato
-    // que o decodificador da fase 2c.2 espera). A sessão RTCP vem depois na
-    // cadeia: ela vê os pacotes brutos antes do depacketizer (relatórios de
-    // recepção e pedido de quadro-chave).
-    int rc_v = rtcSetH264Depacketizer(g_trilha_video, RTC_NAL_SEPARATOR_LONG_START_SEQUENCE);
+    // Vídeo: a sessão RTCP da libdatachannel responde aos relatórios do
+    // servidor e pede quadros-chave; os pacotes RTP seguem para o nosso
+    // montador (v0.12.1), que junta os quadros H.264 com start codes (o formato
+    // que o decodificador espera), espera os atrasados e pede os perdidos.
+    pthread_mutex_lock(&g_trava_video);
+    montador_liberar(g_montador);
+    g_montador = montador_criar((MontadorSaida){ao_quadro, ao_rtcp_montador, ao_pedir_chave_montador, NULL});
+    pthread_mutex_unlock(&g_trava_video);
     int rc_r = rtcChainRtcpReceivingSession(g_trilha_video);
-    int rc_q = rtcSetFrameCallback(g_trilha_video, ao_quadro);
-    if (rc_v < 0 || rc_r < 0 || rc_q < 0) {
-        definir_erro("Falha ao preparar a recepcao de video", rc_v < 0 ? rc_v : rc_r < 0 ? rc_r : rc_q);
+    int rc_q = rtcSetMessageCallback(g_trilha_video, ao_mensagem);
+    if (!g_montador || rc_r < 0 || rc_q < 0) {
+        definir_erro("Falha ao preparar a recepcao de video", rc_r < 0 ? rc_r : rc_q < 0 ? rc_q : -1);
         return false;
     }
 
@@ -561,6 +605,12 @@ void conexao_ler(ConexaoEstado *copia) {
     pthread_mutex_lock(&g_trava);
     *copia = g_estado;
     pthread_mutex_unlock(&g_trava);
+    pthread_mutex_lock(&g_trava_video);
+    if (g_montador)
+        montador_estat(g_montador, &copia->rede);
+    else
+        memset(&copia->rede, 0, sizeof copia->rede);
+    pthread_mutex_unlock(&g_trava_video);
     copia->segundos = agora_s();
 }
 
@@ -587,7 +637,20 @@ void conexao_encerrar(void) {
         LOG("conexao: encerrada");
         g_pc = -1;
     }
-    // Depois da conexão: não chegam mais quadros para o decodificador nem áudio
+    // Depois da conexão: não chegam mais pacotes; resumo da rede e libera
+    pthread_mutex_lock(&g_trava_video);
+    if (g_montador) {
+        MontadorEstat r;
+        montador_estat(g_montador, &r);
+        if (r.pacotes)
+            LOG("conexao: rede: %lu pacotes, %lu buracos, %lu recuperados por NACK (%lu NACKs), %lu fora de ordem, "
+                "%lu atrasados, %lu quadros perdidos, %lu descartados esperando quadro-chave",
+                r.pacotes, r.perdidos, r.recuperados, r.nacks, r.fora_de_ordem, r.atrasados, r.quadros_perdidos,
+                r.esperando_chave);
+        montador_liberar(g_montador);
+        g_montador = NULL;
+    }
+    pthread_mutex_unlock(&g_trava_video);
     decod_encerrar();
     audio_encerrar();
     pthread_mutex_lock(&g_trava);

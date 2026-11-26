@@ -40,7 +40,8 @@ Como no resto do projeto, cada fase termina com um `.nro` testado no Switch ante
 | Fase | Versão | Estado |
 |---|---|---|
 | X0 | v0.11.0 / v0.11.1 | Funcionou no Switch (25/11); v0.11.1 deixa a carga mais rápida |
-| X1 | v0.12.0 | Em teste no Switch |
+| X1 | v0.12.0 | Funcionou no Switch (25/11): Gears Tactics abriu e conectou na 1ª |
+| X2 | v0.12.1 (parte) | Montador próprio com NACK; 720p na nuvem. Em teste |
 
 ### Detalhes por fase
 
@@ -87,7 +88,21 @@ Como no resto do projeto, cada fase termina com um `.nro` testado no Switch ante
 | A num jogo da lista | "Preparando o jogo na nuvem" (ou "Na fila para jogar"), depois o jogo | |
 | Jogar uns minutos | Imagem e som; controle respondendo; estatísticas (+ e − juntos) | |
 | Menu › Desconectar | Volta para a lista de jogos, no mesmo jogo | |
-| Log | `jogo na nuvem escolhido`, `sessao criada`, estados, `candidato(s) recebido(s), N usado(s) (IPv4)`, `conectado ao console` | |
+| Log | `jogo na nuvem escolhido`, `sessao criada`, estados, `candidato(s) recebido(s), N usado(s) (IPv4)`, `conectado ao console` | Sim |
+
+**Resultado da v0.12.0 (log de 25/11, Gears Tactics):** sessão pronta em 14,5 s (sem fila; `ReadyToConnect` → token → `Provisioning` → `Provisioned`), conexão em 1,6 s com 1 candidato IPv4 público do servidor, sem STUN. Som perfeito (0 pacotes perdidos em 4 min). O vídeo veio em **1920x1080** (H.264 Main 4.2) e teve **3751 erros de decodificação** em 4 min: nenhum com a tela parada (0 Mbps) e até 25 por segundo a 10 Mbps. Causa: o depacketizer da libdatachannel entrega o quadro assim que chega o pacote com o marcador de fim, sem esperar pacotes atrasados nem pedir os perdidos. Pela internet, pacotes fora de ordem ou perdidos viram quadros quebrados, e cada erro estragava os quadros seguintes até o próximo quadro-chave (pedido 1 vez por segundo).
+
+**v0.12.1 (adianta a parte principal da X2):**
+- `net/montador.c`: montador de quadros próprio. Guarda os pacotes por número de sequência, só entrega um quadro completo e na ordem, pede os que faltam com **RTCP NACK** (o servidor anuncia `nack` no SDP; reenvio no mesmo fluxo, sem RTX) até 3 vezes, e desiste depois de 160 ms: descarta o quadro, pede um quadro-chave e não entrega nada quebrado ao decodificador. 35 verificações em `tests/test_montador.c` (fora de ordem, perda com e sem recuperação, virada da sequência, STAP-A/FU-A).
+- libdatachannel: ajuste de uma linha (`compat/patches/aplicar.py`) para enviar RTCP numa trilha só de recepção quando há handler.
+- **720p na nuvem:** o `play` informa `osName: android` (o mesmo truque do Better xCloud); com `windows` o xCloud manda 1080p.
+- Log a cada 10 s: `rede N buracos, N recuperados, N fora de ordem, N quadros perdidos`; e um resumo ao desconectar.
+
+| Teste (v0.12.1) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Abrir um jogo da nuvem | `video 1280x720` no log | |
+| Jogar uns minutos com movimento | Erros de decodificação perto de 0; `recuperados` subindo quando houver buracos | |
+| Console de casa | Igual a antes (o montador também vale para o console) | |
 
 **X1 – Sessão.** O caminho de conexão é o mesmo do Remote Play; o que muda:
 - corpo do `play`: `titleId` preenchido, `serverId` vazio;

@@ -107,6 +107,15 @@ LDC_DETACH_SWITCH = """#if defined(__SWITCH__) || defined(NXStream_TESTE_PC)
 #endif
 """
 
+# libdatachannel: com um handler na trilha (a sessão RTCP), Track::outgoing só
+# marcava RTCP como controle quando NÃO havia handler; numa trilha só de
+# recepção (o vídeo) o NACK do montador era recusado ("bad direction").
+LDC_RTCP_ORIGINAL = """	if (!handler && IsRtcp(*message))
+		message->type = Message::Control; // to allow sending RTCP packets irrelevant of direction"""
+LDC_RTCP_SWITCH = """	// NXStream: RTCP (NACK) também com handler, em trilha só de recepção
+	if (IsRtcp(*message))
+		message->type = Message::Control; // to allow sending RTCP packets irrelevant of direction"""
+
 ALTERACOES = [
     (
         "deps/usrsctp/usrsctplib/user_environment.c",
@@ -140,6 +149,13 @@ ALTERACOES = [
         LDC_DETACH_ORIGINAL,
         LDC_DETACH_SWITCH,
         "NXStream: thread de limpeza mantida viva",
+        "substituir",
+    ),
+    (
+        "src/impl/track.cpp",
+        LDC_RTCP_ORIGINAL,
+        LDC_RTCP_SWITCH,
+        "NXStream: RTCP (NACK) também com handler",
         "substituir",
     ),
 ]

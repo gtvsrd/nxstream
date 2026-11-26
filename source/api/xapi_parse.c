@@ -123,7 +123,10 @@ char *xapi_corpo_play(const char *server_id, const char *title_id) {
     cJSON_AddFalseToObject(cfg, "useIceConnection");
     cJSON_AddNumberToObject(cfg, "timezoneOffsetMinutes", NX_FUSO_MINUTOS);
     cJSON_AddStringToObject(cfg, "sdkType", "web");
-    cJSON_AddStringToObject(cfg, "osName", "windows");
+    // Nuvem: o xCloud escolhe a resolução pelo sistema informado: "windows" =
+    // 1080p, "android" = 720p (o mesmo truque do Better xCloud). No log de 25/11
+    // veio 1080p a até 10 Mbps; o NXStream mostra 720p (decisão: 720p sempre).
+    cJSON_AddStringToObject(cfg, "osName", title_id && title_id[0] ? "android" : "windows");
     cJSON_AddStringToObject(raiz, "serverId", server_id ? server_id : "");
     cJSON_AddArrayToObject(raiz, "fallbackRegionNames");
     char *json = cJSON_PrintUnformatted(raiz);

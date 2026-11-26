@@ -7,6 +7,7 @@
 // Os callbacks da libdatachannel rodam em threads dela: a tela lê uma cópia
 // do estado com conexao_ler().
 #pragma once
+#include "montador.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -34,6 +35,7 @@ typedef struct {
 
     bool   handshake_ok;
     double t_handshake;
+    MontadorEstat rede;              // v0.12.1: perdas, NACKs, fora de ordem (montador.c)
     bool   servidor_encerrou;        // v0.11.4: o console avisou serverInitiatedDisconnect
     char   motivo_encerramento[160]; // conteúdo do aviso (para o log)
 

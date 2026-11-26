@@ -146,9 +146,11 @@ static void teste_sessao(void) {
     CHECAR(corpo && strstr(corpo, "\"serverId\":\"F4001ABCDEF\""));
     CHECAR(corpo && strstr(corpo, "\"nanoVersion\":\"V3;WebrtcTransport.dll\""));
     CHECAR(corpo && strstr(corpo, "\"titleId\":\"\""));
+    CHECAR(corpo && strstr(corpo, "\"osName\":\"windows\""));
     free(corpo);
     corpo = xapi_corpo_play("", "FORZAHORIZON5");            // nuvem
     CHECAR(corpo && strstr(corpo, "\"titleId\":\"FORZAHORIZON5\"") && strstr(corpo, "\"serverId\":\"\""));
+    CHECAR(corpo && strstr(corpo, "\"osName\":\"android\""));   // 720p na nuvem
     free(corpo);
     CHECAR(xapi_parse_tempo_espera("{\"estimatedProvisioningTimeInSeconds\":12,"
                                    "\"estimatedAllocationTimeInSeconds\":0,\"estimatedTotalWaitTimeInSeconds\":12}") == 12);

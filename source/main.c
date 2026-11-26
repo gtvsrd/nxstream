@@ -1398,12 +1398,14 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                         LOG("main: video %.0f fps, %.1f Mbps, %lu quadros, %lu chave, %dx%d | decod %.0f/s, "
                             "%.1f ms (max %.1f), %lu erros, %lu descartados | tela %lu pulados, %lu repetidos | "
                             "audio %lu pacotes, %lu perdidos, fila %d ms, %lu faltas, %lu cortados ms, "
-                            "%lu+ %lu- blocos",
+                            "%lu+ %lu- blocos | rede %lu buracos, %lu recuperados, %lu fora de ordem, "
+                            "%lu quadros perdidos",
                             fps, mbps, e.quadros, e.quadros_chave,
                             e.sps_valido ? e.sps.largura : 0, e.sps_valido ? e.sps.altura : 0,
                             fps_decod, d.ms_medio, d.ms_maximo, d.erros, d.descartados, d.nao_exibidos,
                             d.repetidos, a.pacotes, a.perdidos, a.fila_ms, a.faltas, a.descartados_ms,
-                            a.acelerados, a.desacelerados);
+                            a.acelerados, a.desacelerados, e.rede.perdidos, e.rede.recuperados,
+                            e.rede.fora_de_ordem, e.rede.quadros_perdidos);
                     }
                 }
                 // Sem quadro-chave não há como começar a decodificar: pede ao console

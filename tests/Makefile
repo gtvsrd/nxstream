@@ -19,9 +19,13 @@ test_parse: $(FONTES)
 test_input: test_input.c ../source/input/pacote_input.c
 	$(CC) $(CFLAGS) -o $@ test_input.c ../source/input/pacote_input.c
 
-run: test_parse test_input
+test_montador: test_montador.c ../source/net/montador.c ../source/net/montador.h
+	$(CC) $(CFLAGS) -o $@ test_montador.c ../source/net/montador.c
+
+run: test_parse test_input test_montador
 	./test_parse
 	./test_input
+	./test_montador
 
 clean:
-	rm -f test_parse test_input teste_token.json teste_token.json.tmp
+	rm -f test_parse test_input test_montador teste_token.json teste_token.json.tmp
