@@ -534,6 +534,12 @@ static bool confirmar_sair_da_conta(void) {
 // também não precisa ser pedida de novo. Não guarda nenhum token.
 // ---------------------------------------------------------------------------
 static XConsole g_console_salvo; // server_id vazio = nenhum
+// Console que sabemos estar DESLIGADO (economia de energia), não em repouso. A
+// Microsoft continua informando o último estado que ele avisou (ConnectedStandby):
+// só sabemos ao tentar conectar ("WaitingForServerToRegister") ou quando ele
+// avisa que foi desligado no meio da sessão (KickForServerShutdown). Desde a
+// v0.12.3 fica guardado em conta.json; some quando uma sessão com ele dá certo.
+static char g_console_desligado[64];
 static bool g_console_salvo_unico = false;
 
 static void conta_salvar(void) {
@@ -546,6 +552,8 @@ static void conta_salvar(void) {
         cJSON_AddStringToObject(c, "tipo", g_console_salvo.tipo);
         cJSON_AddBoolToObject(c, "unico", g_console_salvo_unico);
     }
+    if (g_console_desligado[0])
+        cJSON_AddStringToObject(raiz, "desligado", g_console_desligado);
     char *txt = cJSON_PrintUnformatted(raiz);
     cJSON_Delete(raiz);
     FILE *f = txt ? fopen(NX_ARQ_CONTA, "w") : NULL;
@@ -582,10 +590,13 @@ static void conta_ler(void) {
             snprintf(g_console_salvo.tipo, sizeof g_console_salvo.tipo, "%s", tipo->valuestring);
         g_console_salvo_unico = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(c, "unico"));
     }
+    const cJSON *desl = cJSON_GetObjectItemCaseSensitive(raiz, "desligado");
+    if (cJSON_IsString(desl))
+        snprintf(g_console_desligado, sizeof g_console_desligado, "%s", desl->valuestring);
     cJSON_Delete(raiz);
-    LOG("main: conta salva lida (gamertag %s, console %s%s)", g_gamertag[0] ? "sim" : "nao",
+    LOG("main: conta salva lida (gamertag %s, console %s%s%s)", g_gamertag[0] ? "sim" : "nao",
         g_console_salvo.server_id[0] ? g_console_salvo.nome : "nenhum",
-        g_console_salvo_unico ? ", unico" : "");
+        g_console_salvo_unico ? ", unico" : "", g_console_desligado[0] ? ", desligado da ultima vez" : "");
 }
 
 static void conta_esquecer(void) {
@@ -593,6 +604,17 @@ static void conta_esquecer(void) {
     g_gamertag[0] = '\0';
     memset(&g_console_salvo, 0, sizeof g_console_salvo);
     g_console_salvo_unico = false;
+    g_console_desligado[0] = '\0';
+}
+
+// Marca (id) ou desmarca (NULL) o console como desligado, gravando se mudou
+static void console_marcar_desligado(const char *id) {
+    const char *novo = id ? id : "";
+    if (!strcmp(novo, g_console_desligado))
+        return;
+    snprintf(g_console_desligado, sizeof g_console_desligado, "%s", novo);
+    LOG("main: console %s", id ? "marcado como desligado" : "nao esta mais desligado");
+    conta_salvar();
 }
 
 // Guarda o que a lista mostrou (só regrava o arquivo se algo mudou)
@@ -617,11 +639,6 @@ static void conta_lembrar_consoles(const XConsoles *consoles) {
 // Passo: jogos na nuvem (xCloud, fase X0)
 // Acesso à oferta da nuvem e lista dos jogos em texto. Abrir um jogo é a X1.
 // ---------------------------------------------------------------------------
-// v0.11.3: console que respondeu "WaitingForServerToRegister" (desligado, não em
-// repouso). A lista da Microsoft continua dizendo ConnectedStandby; aqui ele
-// aparece como desligado até uma sessão com ele dar certo.
-static char g_console_desligado[64];
-
 static AuthStreaming g_nuvem;        // gsToken da nuvem (separado do console)
 static bool g_nuvem_recusado = false; // a API respondeu 401: renovar o acesso antes de tentar de novo
 #define NUVEM_RENOVAR_ANTES_S 300
@@ -1438,11 +1455,15 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                     conexao_encerrar();
                     encerrar_sessao(streaming, sessao);
                     g_reconectando = false;
+                    // Log de 25/11: desligar o Xbox no meio da sessão manda este motivo
+                    bool desligou = !g_na_nuvem && strstr(e.motivo_encerramento, "KickForServerShutdown");
+                    if (desligou)
+                        console_marcar_desligado(g_console.server_id);
                     if (g_na_nuvem)
                         mostrar_mensagem(UI_INFO, "A sessão na nuvem foi encerrada.",
                                          "O servidor fechou a sessão (tempo sem jogar, saída do jogo ou manutenção).",
                                          "A=Jogar de novo|B=Voltar para os jogos|+=Fechar");
-                    else if (strstr(e.motivo_encerramento, "KickForServerShutdown")) // log de 25/11
+                    else if (desligou)
                         mostrar_mensagem(UI_INFO, "O Xbox foi desligado.",
                                          "Conectar de novo liga o Xbox outra vez, se ele estiver em suspensão.",
                                          "A=Conectar de novo|B=Voltar para a lista|+=Fechar");
@@ -1819,7 +1840,7 @@ static Passo abrir_sessao_uma(AuthConta *conta, AuthStreaming *streaming, XSessa
                 encerrar_sessao(streaming, &sessao);
                 if (strstr(detalhe, "WaitingForServerToRegister")) {
                     LOG("main: o Xbox nao respondeu ao chamado (desligado ou sem internet)");
-                    snprintf(g_console_desligado, sizeof g_console_desligado, "%s", g_console.server_id);
+                    console_marcar_desligado(g_console.server_id);
                     return erro_sessao("O Xbox esta desligado.", DETALHE_XBOX_DESLIGADO);
                 }
                 return erro_sessao(g_na_nuvem ? "A nuvem recusou a sessao." : "O console recusou a sessao.",
@@ -1887,7 +1908,8 @@ static Passo abrir_sessao_uma(AuthConta *conta, AuthStreaming *streaming, XSessa
     *preparo = segundos_desde(inicio);
     *sessao_saida = sessao;
     LOG("main: sessao pronta em %.1f s", *preparo);
-    g_console_desligado[0] = '\0';
+    if (!g_na_nuvem)
+        console_marcar_desligado(NULL);
     *pronta = true;
     return PASSO_SESSAO;
 }

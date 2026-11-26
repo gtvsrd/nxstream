@@ -405,7 +405,14 @@ Checklist e detalhes em `docs/XCLOUD.md` (seção X0). A lista de consoles ganho
 
 | Teste (v0.11.5) | Resultado esperado | Resultado obtido |
 |---|---|---|
-| Desligar o Xbox no meio da sessão | Tela "O Xbox encerrou a conexão", sem religar o console | |
+| Desligar o Xbox no meio da sessão | Tela "O Xbox encerrou a conexão", sem religar o console | Sim (v0.12.1: motivo `KickForServerShutdown`) |
+
+**v0.12.3:** o usuário notou que a lista mostrava o Xbox "Em repouso" com ele desligado. A Microsoft informa o último estado que o console avisou (`ConnectedStandby`) e não sabe que ele foi desligado no modo de economia de energia. O app descobre ao tentar conectar (`WaitingForServerToRegister`) ou quando o console avisa que foi desligado na sessão (`KickForServerShutdown`). Antes ele esquecia isso ao fechar; agora guarda em `conta.json` (`"desligado"`) e a lista mostra "Desligado (ligue pelo botão)" até uma sessão com o console dar certo. O log da abertura diz `desligado da ultima vez`.
+
+| Teste (v0.12.3) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Fechar e abrir o app com o Xbox desligado | Lista com "Desligado (ligue pelo botão)", bolinha cinza | |
+| Ligar o Xbox e conectar | Conecta; a lista volta a mostrar o estado da Microsoft | |
 
 As próximas fases recebem seus checklists aqui quando começarem.
 

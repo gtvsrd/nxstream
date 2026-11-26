@@ -18,6 +18,7 @@
 - **v0.11.0** (25/11): início do xCloud, fase X0 (`docs/XCLOUD.md`): R na lista de consoles abre a lista dos jogos da nuvem. Funcionou: 622 jogos, Ultimate, região BRAZILSOUTH, mas em 20 s.
 - **v0.11.1**: carga da nuvem mais rápida (gzip, nomes no SD): 2ª abertura em 5,7 s.
 - **v0.11.4**: grava no log o motivo quando o Xbox encerra a conexão.
+- **v0.12.3**: o app lembra que o Xbox está desligado (a Microsoft continua dizendo "em repouso").
 - **v0.12.2**: rede no cartão de estatísticas; "O Xbox foi desligado" quando é o caso. X1 e X2 do xCloud validadas.
 - **v0.12.1**: montador de quadros próprio com NACK (fim dos quadros quebrados pela internet) e 720p na nuvem.
 - **v0.12.0**: xCloud fase X1: A na lista de jogos da nuvem abre o jogo (fila, preparação, conexão pela internet).
