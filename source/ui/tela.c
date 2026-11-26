@@ -15,6 +15,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC
 #define STBI_ONLY_PNG
+#define STBI_ONLY_JPEG // capas dos jogos da nuvem (v0.13.0)
 #define STBI_NO_GIF
 #define STBI_NO_STDIO
 #include "../../third_party/stb/stb_image.h"
@@ -48,7 +49,7 @@
 // ---------------------------------------------------------------------------
 // Tela atual (o que ui_desenhar mostra)
 // ---------------------------------------------------------------------------
-typedef enum { T_NADA, T_STATUS, T_CODIGO, T_MENSAGEM, T_LISTA } TipoTela;
+typedef enum { T_NADA, T_STATUS, T_CODIGO, T_MENSAGEM, T_LISTA, T_NUVEM } TipoTela;
 
 static struct {
     TipoTela tipo;
@@ -57,6 +58,7 @@ static struct {
     char aviso[160], endereco[96], codigo[32];
     UiItem itens[UI_MAX_ITENS];
     int total, selecionado;
+    UiNuvem nuvem;
 } g_t;
 
 static void copiar(char *dst, size_t tam, const char *src) {
@@ -86,6 +88,12 @@ void ui_mensagem(UiTipo tipo, const char *titulo, const char *detalhe, const cha
     g_t.icone = tipo;
     copiar(g_t.titulo, sizeof g_t.titulo, titulo);
     copiar(g_t.detalhe, sizeof g_t.detalhe, detalhe);
+    copiar(g_t.rodape, sizeof g_t.rodape, rodape);
+}
+
+void ui_nuvem(const UiNuvem *n, const char *rodape) {
+    g_t.tipo = T_NUVEM;
+    g_t.nuvem = *n;
     copiar(g_t.rodape, sizeof g_t.rodape, rodape);
 }
 
@@ -475,9 +483,37 @@ void ui_definir_conta(const char *gamertag) {
     copiar(g_conta, sizeof g_conta, gamertag);
 }
 
+static int g_aba = -1;
+
+void ui_definir_abas(int ativa) {
+    g_aba = ativa;
+}
+
+static void botao(int cx, int cy, const char *nome);
+
+// "Consoles  Nuvem" no centro do cabeçalho, entre os botões L e R
+static void abas(void) {
+    static const char *const nomes[2] = {"Consoles", "Nuvem"};
+    const int tam = 24, espaco = 44, y = 37;
+    int w0 = largura(tam, nomes[0]), w1 = largura(tam, nomes[1]);
+    int x = UI_LARGURA / 2 - (w0 + espaco + w1) / 2;
+    botao(x - 34, y + 15, "L");
+    for (int i = 0; i < 2; i++) {
+        int w = i ? w1 : w0;
+        bool ativa = i == g_aba;
+        texto(x, y, tam, ativa ? COR_TEXTO : COR_TEXTO3, nomes[i], 0);
+        if (ativa)
+            retangulo(x, y + 38, w, 4, 2, COR_VERDE);
+        x += w + espaco;
+    }
+    botao(x - espaco + 34, y + 15, "R");
+}
+
 static void cabecalho(void) {
     logo(72, 52, 56);
     texto(110, 35, 28, COR_TEXTO, "NXStream", 0);
+    if (g_aba >= 0 && (g_t.tipo == T_LISTA || g_t.tipo == T_NUVEM))
+        abas();
     if (g_conta[0]) { // gamertag com a inicial num círculo, como um avatar
         int w = largura(22, g_conta);
         texto(1232, 39, 22, COR_TEXTO, g_conta, 2);
@@ -636,6 +672,120 @@ static void tela_lista(void) {
     }
     if (g_t.detalhe[0])
         paragrafo(x, g_t.total ? y + 8 : 214, w, 22, COR_TEXTO2, g_t.detalhe, 0);
+}
+
+// Imagem RGBA w x h com cantos arredondados, cortada na faixa [clip_t, clip_b)
+static void imagem(int x, int y, int w, int h, const uint32_t *px, float raio, int clip_t, int clip_b) {
+    int j0 = y < clip_t ? clip_t : y, j1 = y + h > clip_b ? clip_b : y + h;
+    if (x < 0 || x + w > UI_LARGURA)
+        return;
+    for (int j = j0; j < j1; j++) {
+        const uint32_t *lin = px + (size_t)(j - y) * w;
+        uint32_t *dst = g_px + (size_t)j * g_passo + x;
+        bool canto_v = j < y + raio || j >= y + h - raio;
+        for (int i = 0; i < w; i++) {
+            if (canto_v && (i < raio || i >= w - raio)) {
+                float pxf = x + i + 0.5f, pyf = j + 0.5f;
+                float cx = pxf < x + raio ? x + raio : x + w - raio;
+                float cy = pyf < y + raio ? y + raio : y + h - raio;
+                float dx = pxf - cx, dy = pyf - cy;
+                float cobre = limitar(raio + 0.5f - sqrtf(dx * dx + dy * dy));
+                if (cobre > 0)
+                    misturar(x + i, j, lin[i], cobre);
+                continue;
+            }
+            dst[i] = lin[i] | 0xFF000000u;
+        }
+    }
+}
+
+// Retângulo arredondado cortado verticalmente (cartões parcialmente visíveis)
+static void retangulo_cortado(int x, int y, int w, int h, float raio, uint32_t cor, int clip_t, int clip_b) {
+    if (y >= clip_t && y + h <= clip_b) {
+        retangulo(x, y, w, h, raio, cor);
+        return;
+    }
+    int j0 = y < clip_t ? clip_t : y, j1 = y + h > clip_b ? clip_b : y + h;
+    for (int j = j0; j < j1; j++)
+        for (int i = x; i < x + w; i++) {
+            float pxf = i + 0.5f, pyf = j + 0.5f;
+            float cx = pxf < x + raio ? x + raio : pxf > x + w - raio ? x + w - raio : pxf;
+            float cy = pyf < y + raio ? y + raio : pyf > y + h - raio ? y + h - raio : pyf;
+            float dx = pxf - cx, dy = pyf - cy;
+            float cobre = limitar(raio + 0.5f - sqrtf(dx * dx + dy * dy));
+            if (cobre > 0)
+                misturar(i, j, cor, cobre);
+        }
+}
+
+static void tela_nuvem(void) {
+    const UiNuvem *n = &g_t.nuvem;
+    const int ct = n->clip_topo, cb = n->clip_base;
+    for (int i = 0; i < n->n_rotulos; i++) {
+        const UiRotulo *r = &n->rotulos[i];
+        if (r->y >= ct - 4 && r->y + 26 <= cb)
+            texto(102, r->y, 22, COR_TEXTO2, r->texto, 0);
+    }
+    for (int i = 0; i < n->n_cartoes; i++) {
+        const UiCartao *c = &n->cartoes[i];
+        const int w = UI_CAPA_L, h = UI_CAPA_A;
+        if (c->y + h <= ct || c->y >= cb)
+            continue;
+        if (c->selecionado)
+            retangulo_cortado(c->x - 6, c->y - 6, w + 12, h + 12, 13, COR_VERDE, ct, cb);
+        if (c->capa) {
+            imagem(c->x, c->y, w, h, c->capa, 8, ct, cb);
+        } else { // sem capa ainda: cartão com o nome
+            retangulo_cortado(c->x, c->y, w, h, 8, c->selecionado ? COR_CARTAO_SEL : COR_CARTAO, ct, cb);
+            int ah = altura_paragrafo(w - 20, 17, c->nome);
+            int ty = c->y + (h - ah) / 2;
+            if (ty >= ct && ty + ah <= cb)
+                paragrafo(c->x + w / 2, ty, w - 20, 17, COR_TEXTO2, c->nome, 1);
+        }
+    }
+    if (n->aviso[0])
+        paragrafo(140, 300, UI_LARGURA - 280, 24, COR_TEXTO2, n->aviso, 1);
+    if (n->nome[0]) {
+        int x = 102;
+        x += texto(x, 600, 26, COR_TEXTO, n->nome, 0);
+        if (n->info[0])
+            texto(x + 18, 605, 20, COR_TEXTO3, n->info, 0);
+    }
+}
+
+uint32_t *ui_decodificar_capa(const uint8_t *dados, size_t tam, int w, int h) {
+    int sw, sh, canais;
+    unsigned char *src = stbi_load_from_memory(dados, (int)tam, &sw, &sh, &canais, 4);
+    if (!src)
+        return NULL;
+    uint32_t *dst = malloc((size_t)w * h * sizeof *dst);
+    if (dst) {
+        // "Preenche": escala para cobrir w x h e corta o que sobra, centralizado
+        float esc = fmaxf((float)w / sw, (float)h / sh);
+        float ox = (sw * esc - w) / 2, oy = (sh * esc - h) / 2;
+        for (int j = 0; j < h; j++) {
+            float fy = (j + 0.5f + oy) / esc - 0.5f;
+            int y0 = (int)floorf(fy);
+            float ty = fy - y0;
+            int ya = y0 < 0 ? 0 : y0 >= sh ? sh - 1 : y0, yb = y0 + 1 >= sh ? sh - 1 : y0 + 1 < 0 ? 0 : y0 + 1;
+            for (int i = 0; i < w; i++) {
+                float fx = (i + 0.5f + ox) / esc - 0.5f;
+                int x0 = (int)floorf(fx);
+                float tx = fx - x0;
+                int xa = x0 < 0 ? 0 : x0 >= sw ? sw - 1 : x0, xb = x0 + 1 >= sw ? sw - 1 : x0 + 1 < 0 ? 0 : x0 + 1;
+                const unsigned char *p00 = src + ((size_t)ya * sw + xa) * 4, *p01 = src + ((size_t)ya * sw + xb) * 4;
+                const unsigned char *p10 = src + ((size_t)yb * sw + xa) * 4, *p11 = src + ((size_t)yb * sw + xb) * 4;
+                unsigned char c[3];
+                for (int k = 0; k < 3; k++) {
+                    float a = p00[k] + (p01[k] - p00[k]) * tx, b = p10[k] + (p11[k] - p10[k]) * tx;
+                    c[k] = (unsigned char)(a + (b - a) * ty + 0.5f);
+                }
+                dst[(size_t)j * w + i] = RGB(c[0], c[1], c[2]);
+            }
+        }
+    }
+    stbi_image_free(src);
+    return dst;
 }
 
 // Menu por cima do vídeo: um cartão no centro da imagem RGBA da sobreposição.
@@ -806,6 +956,7 @@ void ui_renderizar(uint32_t *pixels, int passo, double t) {
         case T_CODIGO:   tela_codigo(t); break;
         case T_MENSAGEM: tela_mensagem(); break;
         case T_LISTA:    tela_lista(); break;
+        case T_NUVEM:    tela_nuvem(); break;
         default: break;
     }
     rodape(g_t.rodape);

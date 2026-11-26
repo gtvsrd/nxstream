@@ -395,8 +395,11 @@ static void teste_nuvem(void) {
     // Chave em minúsculas, StoreId e XCloudTitleId também casam
     CHECAR(xnuvem_parse_catalogo(
         "{\"Products\":{"
-        "\"9nkx70bbcdrn\":{\"ProductTitle\":\"Forza Horizon 5\",\"PublisherName\":\"Xbox Game Studios\"},"
-        "\"X1\":{\"ProductTitle\":\"Halo Infinite\",\"StoreId\":\"9PP5G1F0C2B6\",\"PublisherName\":\"Xbox\"},"
+        "\"9nkx70bbcdrn\":{\"ProductTitle\":\"Forza Horizon 5\",\"PublisherName\":\"Xbox Game Studios\","
+        "\"Image_Poster\":{\"URL\":\"//store-images.s-microsoft.com/image/apps.1.poster\"},"
+        "\"Image_Tile\":{\"URL\":\"//store-images.s-microsoft.com/image/apps.1.tile\"}},"
+        "\"X1\":{\"ProductTitle\":\"Halo Infinite\",\"StoreId\":\"9PP5G1F0C2B6\",\"PublisherName\":\"Xbox\","
+        "\"Image_Tile\":{\"URL\":\"//store-images.s-microsoft.com/image/apps.2.tile\"}},"
         "\"X2\":{\"ProductTitle\":\"Jogo Sem Produto\",\"XCloudTitleId\":\"SEMPRODUTO\"},"
         "\"X3\":{\"PublisherName\":\"sem nome\"}},\"InvalidIds\":[]}", &t) == 3);
     xnuvem_filtrar_ordenar(&t);
@@ -405,6 +408,9 @@ static void teste_nuvem(void) {
     CHECAR(!strcmp(t.itens[0].nome, "Halo Infinite") && !strcmp(t.itens[0].editora, "Xbox"));
     CHECAR(!strcmp(t.itens[1].titulo_id, "FORTNITE") && t.itens[1].nome[0] == '\0');
     CHECAR(!strcmp(t.itens[2].nome, "Forza Horizon 5"));
+    CHECAR(!strcmp(t.itens[2].capa, "https://store-images.s-microsoft.com/image/apps.1.poster")); // pôster
+    CHECAR(!strcmp(t.itens[0].capa, "https://store-images.s-microsoft.com/image/apps.2.tile"));   // sem pôster
+    CHECAR(t.itens[3].capa[0] == '\0');
     CHECAR(!strcmp(t.itens[3].nome, "Jogo Sem Produto"));
     CHECAR(xnuvem_parse_catalogo("[]", &t) == -1);
     CHECAR(xnuvem_sem_nome(&t) == 1);                // só FORTNITE ficou sem nome
@@ -414,7 +420,9 @@ static void teste_nuvem(void) {
 
     // Cache dos nomes no SD: ida e volta, idioma diferente invalida
     char *cache = xnuvem_cache_montar(&t, "pt-BR");
-    CHECAR(cache && strstr(cache, "\"9NKX70BBCDRN\":[\"Forza Horizon 5\",\"Xbox Game Studios\"]"));
+    CHECAR(cache && strstr(cache, "\"9NKX70BBCDRN\":[\"Forza Horizon 5\",\"Xbox Game Studios\","
+                                  "\"https://store-images.s-microsoft.com/image/apps.1.poster\"]"));
+    CHECAR(cache && strstr(cache, "\"versao\":2"));
     CHECAR(cache && !strstr(cache, "BT5P2X999VH2")); // sem nome não entra
     XTitulos t2 = {0};
     CHECAR(xnuvem_parse_titulos("{\"results\":[{\"titleId\":\"FORZAHORIZON5\",\"details\":"
@@ -424,6 +432,10 @@ static void teste_nuvem(void) {
     CHECAR(xnuvem_cache_aplicar(cache, "en-US", &t2) == -1);
     CHECAR(xnuvem_cache_aplicar(cache, "pt-BR", &t2) == 1);
     CHECAR(!strcmp(t2.itens[0].nome, "Forza Horizon 5") && !strcmp(t2.itens[0].editora, "Xbox Game Studios"));
+    CHECAR(!strcmp(t2.itens[0].capa, "https://store-images.s-microsoft.com/image/apps.1.poster"));
+    // Cache v1 (sem capa) é descartado
+    CHECAR(xnuvem_cache_aplicar("{\"versao\":1,\"idioma\":\"pt-BR\",\"produtos\":{\"9NKX70BBCDRN\":[\"F\",\"X\"]}}",
+                                "pt-BR", &t2) == -1);
     CHECAR(xnuvem_sem_nome(&t2) == 1 && t2.itens[1].nome[0] == '\0');
     CHECAR(xnuvem_cache_aplicar("lixo", "pt-BR", &t2) == -1);
     free(cache);
@@ -433,6 +445,16 @@ static void teste_nuvem(void) {
     CHECAR(t.total == 4);                            // falha não apaga a lista atual
     xnuvem_liberar(&t);
     CHECAR(t.itens == NULL && t.total == 0);
+
+    // Busca sem maiúsculas nem acentos
+    CHECAR(xnuvem_combina("Pokémon Café ReMix", "pokemon"));
+    CHECAR(xnuvem_combina("Pokémon Café ReMix", "CAFE re"));
+    CHECAR(xnuvem_combina("Forza Horizon 5", "") && xnuvem_combina("Forza Horizon 5", NULL));
+    CHECAR(xnuvem_combina("Forza Horizon 5", "zon 5"));
+    CHECAR(!xnuvem_combina("Forza Horizon 5", "halo"));
+    CHECAR(!xnuvem_combina("Ori", "Ori and the"));
+    CHECAR(xnuvem_combina("ÁÉÍÓÚ ÇÃÕ", "aeiou cao"));
+    CHECAR(xnuvem_combina("ドラゴン Quest", "quest"));        // outros alfabetos passam
 }
 
 int main(void) {

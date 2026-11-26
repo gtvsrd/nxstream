@@ -103,7 +103,7 @@ char *xnuvem_corpo_catalogo(const XTitulos *t, int inicio, int n) {
 
 char *xnuvem_cache_montar(const XTitulos *t, const char *idioma) {
     cJSON *raiz = cJSON_CreateObject();
-    cJSON_AddNumberToObject(raiz, "versao", 1);
+    cJSON_AddNumberToObject(raiz, "versao", 2);
     cJSON_AddStringToObject(raiz, "idioma", idioma);
     cJSON *produtos = cJSON_AddObjectToObject(raiz, "produtos");
     for (int i = 0; i < t->total; i++) {
@@ -113,6 +113,7 @@ char *xnuvem_cache_montar(const XTitulos *t, const char *idioma) {
         cJSON *par = cJSON_CreateArray();
         cJSON_AddItemToArray(par, cJSON_CreateString(x->nome));
         cJSON_AddItemToArray(par, cJSON_CreateString(x->editora));
+        cJSON_AddItemToArray(par, cJSON_CreateString(x->capa));
         cJSON_AddItemToObject(produtos, x->produto_id, par);
     }
     char *json = cJSON_PrintUnformatted(raiz);
@@ -124,7 +125,10 @@ int xnuvem_cache_aplicar(const char *json, const char *idioma, XTitulos *t) {
     cJSON *raiz = json ? cJSON_Parse(json) : NULL;
     const char *id = texto(raiz, "idioma");
     const cJSON *produtos = cJSON_GetObjectItemCaseSensitive(raiz, "produtos");
-    if (!id || strcmp(id, idioma) || !cJSON_IsObject(produtos)) {
+    const cJSON *versao = cJSON_GetObjectItemCaseSensitive(raiz, "versao");
+    // v1 (sem capas) é descartado: o catálogo é consultado de novo uma vez
+    if (!id || strcmp(id, idioma) || !cJSON_IsObject(produtos) || !cJSON_IsNumber(versao) ||
+        versao->valuedouble < 2) {
         cJSON_Delete(raiz);
         return -1;
     }
@@ -134,11 +138,13 @@ int xnuvem_cache_aplicar(const char *json, const char *idioma, XTitulos *t) {
         if (!x->produto_id[0])
             continue;
         const cJSON *par = cJSON_GetObjectItemCaseSensitive(produtos, x->produto_id);
-        const cJSON *nome = cJSON_GetArrayItem(par, 0), *editora = cJSON_GetArrayItem(par, 1);
+        const cJSON *nome = cJSON_GetArrayItem(par, 0), *editora = cJSON_GetArrayItem(par, 1),
+                    *capa = cJSON_GetArrayItem(par, 2);
         if (!cJSON_IsString(nome) || !nome->valuestring[0])
             continue;
         copiar(x->nome, sizeof x->nome, nome->valuestring);
         copiar(x->editora, sizeof x->editora, cJSON_IsString(editora) ? editora->valuestring : "");
+        copiar(x->capa, sizeof x->capa, cJSON_IsString(capa) ? capa->valuestring : "");
         aplicados++;
     }
     cJSON_Delete(raiz);
@@ -172,6 +178,12 @@ int xnuvem_parse_catalogo(const char *json, XTitulos *t) {
                 com_nome++;
             copiar(x->nome, sizeof x->nome, nome);
             copiar(x->editora, sizeof x->editora, texto(p, "PublisherName"));
+            // Pôster (2:3); se não houver, o quadrado. O catálogo manda "//host/..."
+            const char *url = texto(cJSON_GetObjectItemCaseSensitive(p, "Image_Poster"), "URL");
+            if (!url || !url[0])
+                url = texto(cJSON_GetObjectItemCaseSensitive(p, "Image_Tile"), "URL");
+            if (url && url[0])
+                snprintf(x->capa, sizeof x->capa, "%s%s", strncmp(url, "//", 2) ? "" : "https:", url);
         }
     }
     cJSON_Delete(raiz);
@@ -215,4 +227,37 @@ void xnuvem_filtrar_ordenar(XTitulos *t) {
 void xnuvem_liberar(XTitulos *t) {
     free(t->itens);
     memset(t, 0, sizeof *t);
+}
+
+// Próximo caractere em minúsculas e sem acento (UTF-8; Latin-1 suplementar).
+// Outros caracteres de vários bytes passam como estão, byte a byte.
+static int dobrar(const char **s) {
+    const unsigned char *p = (const unsigned char *)*s;
+    if (!*p)
+        return 0;
+    if (p[0] == 0xC3 && p[1] >= 0x80 && p[1] <= 0xBF) {
+        static const char mapa[] = "aaaaaaaceeeeiiiidnooooo/ouuuuyps" // À..ß (0x80..0x9F)
+                                   "aaaaaaaceeeeiiiidnooooo/ouuuuypy"; // à..ÿ (0xA0..0xBF)
+        *s += 2;
+        return (unsigned char)mapa[p[1] - 0x80];
+    }
+    *s += 1;
+    return (p[0] >= 'A' && p[0] <= 'Z') ? p[0] + 32 : p[0];
+}
+
+bool xnuvem_combina(const char *nome, const char *busca) {
+    if (!busca || !busca[0])
+        return true;
+    for (const char *ini = nome; *ini;) {
+        const char *a = ini, *b = busca;
+        for (;;) {
+            if (!*b)
+                return true;
+            int ca = dobrar(&a), cb = dobrar(&b);
+            if (!ca || ca != cb)
+                break;
+        }
+        dobrar(&ini); // avança um caractere inteiro
+    }
+    return false;
 }

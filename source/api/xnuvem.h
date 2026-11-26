@@ -12,6 +12,7 @@ typedef struct {
     char produto_id[24];   // productId da loja (chave do catálogo)
     char nome[96];         // do catálogo; vazio se não veio
     char editora[64];
+    char capa[160];        // URL do pôster (2:3) no catálogo; vazio se não veio
     bool tem_direito;      // hasEntitlement (Game Pass/comprado) ou gratuito na loja
     int  recente;          // posição em "jogados recentemente" (1 = o último); 0 = não
 } XTitulo;
@@ -42,7 +43,11 @@ int   xnuvem_sem_nome(const XTitulos *t);
 char *xnuvem_corpo_catalogo(const XTitulos *t, int inicio, int n);
 // Resposta do catálogo: preenche nome e editora. Retorna quantos receberam nome (-1 = inválido).
 int   xnuvem_parse_catalogo(const char *json, XTitulos *t);
-// Cache dos nomes no SD (v0.11.1): {"idioma":..,"produtos":{"9N..":["Nome","Editora"]}}.
+// Busca (v0.13.0): `busca` aparece em `nome`, sem diferenciar maiúsculas nem
+// acentos ("pokemon" acha "Pokémon"). Busca vazia combina com tudo.
+bool  xnuvem_combina(const char *nome, const char *busca);
+// Cache dos nomes no SD (v0.11.1; v2 desde a v0.13.0, com a capa):
+// {"versao":2,"idioma":..,"produtos":{"9N..":["Nome","Editora","URL da capa"]}}.
 // montar: liberar com free(). aplicar: preenche os nomes e devolve quantos (-1 = inválido
 // ou de outro idioma).
 char *xnuvem_cache_montar(const XTitulos *t, const char *idioma);

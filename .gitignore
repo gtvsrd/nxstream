@@ -9,3 +9,5 @@ tests/teste_token.json*
 deps/
 tests/ui/saida/
 tests/ui/preview
+tests/test_montador
+tests/ui/capa_teste.jpg

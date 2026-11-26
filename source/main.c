@@ -9,11 +9,13 @@
 //   LISTA -> (R) NUVEM -> LISTA        (xCloud, fase X0: só a lista de jogos)
 // Nenhum erro fecha o app: sempre há "tentar de novo" ou "sair da conta".
 
+#include <math.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 #include <sys/stat.h>
 #include <switch.h>
@@ -33,6 +35,7 @@
 #include "input/controle.h"
 #include "ui/sobreposicao.h"
 #include "ui/tela.h"
+#include "ui/capas.h"
 #include "cJSON.h"
 #include "net/rtc_comum.h"
 #include "net/rtc_diag.h"
@@ -540,6 +543,8 @@ static XConsole g_console_salvo; // server_id vazio = nenhum
 // avisa que foi desligado no meio da sessão (KickForServerShutdown). Desde a
 // v0.12.3 fica guardado em conta.json; some quando uma sessão com ele dá certo.
 static char g_console_desligado[64];
+// Última aba usada (v0.13.0): o app abre nela (decisão do roadmap do xCloud)
+static bool g_aba_nuvem = false;
 static bool g_console_salvo_unico = false;
 
 static void conta_salvar(void) {
@@ -554,6 +559,7 @@ static void conta_salvar(void) {
     }
     if (g_console_desligado[0])
         cJSON_AddStringToObject(raiz, "desligado", g_console_desligado);
+    cJSON_AddStringToObject(raiz, "aba", g_aba_nuvem ? "nuvem" : "consoles");
     char *txt = cJSON_PrintUnformatted(raiz);
     cJSON_Delete(raiz);
     FILE *f = txt ? fopen(NX_ARQ_CONTA, "w") : NULL;
@@ -590,13 +596,16 @@ static void conta_ler(void) {
             snprintf(g_console_salvo.tipo, sizeof g_console_salvo.tipo, "%s", tipo->valuestring);
         g_console_salvo_unico = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(c, "unico"));
     }
+    const cJSON *aba = cJSON_GetObjectItemCaseSensitive(raiz, "aba");
+    g_aba_nuvem = cJSON_IsString(aba) && !strcmp(aba->valuestring, "nuvem");
     const cJSON *desl = cJSON_GetObjectItemCaseSensitive(raiz, "desligado");
     if (cJSON_IsString(desl))
         snprintf(g_console_desligado, sizeof g_console_desligado, "%s", desl->valuestring);
     cJSON_Delete(raiz);
-    LOG("main: conta salva lida (gamertag %s, console %s%s%s)", g_gamertag[0] ? "sim" : "nao",
+    LOG("main: conta salva lida (gamertag %s, console %s%s%s, aba %s)", g_gamertag[0] ? "sim" : "nao",
         g_console_salvo.server_id[0] ? g_console_salvo.nome : "nenhum",
-        g_console_salvo_unico ? ", unico" : "", g_console_desligado[0] ? ", desligado da ultima vez" : "");
+        g_console_salvo_unico ? ", unico" : "", g_console_desligado[0] ? ", desligado da ultima vez" : "",
+        g_aba_nuvem ? "nuvem" : "consoles");
 }
 
 static void conta_esquecer(void) {
@@ -605,6 +614,13 @@ static void conta_esquecer(void) {
     memset(&g_console_salvo, 0, sizeof g_console_salvo);
     g_console_salvo_unico = false;
     g_console_desligado[0] = '\0';
+}
+
+static void aba_definir(bool nuvem) {
+    if (g_aba_nuvem == nuvem)
+        return;
+    g_aba_nuvem = nuvem;
+    conta_salvar();
 }
 
 // Marca (id) ou desmarca (NULL) o console como desligado, gravando se mudou
@@ -643,14 +659,23 @@ static AuthStreaming g_nuvem;        // gsToken da nuvem (separado do console)
 static bool g_nuvem_recusado = false; // a API respondeu 401: renovar o acesso antes de tentar de novo
 #define NUVEM_RENOVAR_ANTES_S 300
 static XTitulos g_titulos;           // lista carregada (total_servidor 0 = ainda não)
-static int g_nuvem_ultimo = 0;       // posição do último jogo aberto na lista
+static char g_nuvem_ultimo[64];      // titleId do último jogo aberto (a grade volta nele)
+static char g_busca[64];             // busca na grade ("" = todos)
+static int *g_grade_idx;             // jogos da grade (índices em g_titulos), por nome
+static int g_n_grade;
+static int g_faixa_idx[32];          // jogados recentemente, na ordem
+static int g_n_faixa;
 
 static void nuvem_esquecer(void) {
     auth_streaming_liberar(&g_nuvem);
     memset(&g_nuvem, 0, sizeof g_nuvem);
     xnuvem_liberar(&g_titulos);
     g_nuvem_recusado = false;
-    g_nuvem_ultimo = 0;
+    g_nuvem_ultimo[0] = '\0';
+    g_busca[0] = '\0';
+    free(g_grade_idx);
+    g_grade_idx = NULL;
+    g_n_grade = g_n_faixa = 0;
 }
 
 // O token da conta dura ~1 h e a nuvem pode ser aberta bem depois do início:
@@ -708,6 +733,98 @@ static void mostrar_titulo_detalhe(const XTitulo *x) {
     esperar_botao(HidNpadButton_B | HidNpadButton_A);
 }
 
+// --- Grade de capas da nuvem (v0.13.0) ----------------------------------------
+#define NV_COLUNAS 7
+#define NV_X0      102
+#define NV_PASSO_X (UI_CAPA_L + 16)
+#define NV_TOPO    100   // área rolável: das capas...
+#define NV_BASE    592   // ...até o nome do jogo selecionado
+#define NV_ROTULO  36
+#define NV_ESPACO  22
+
+// Linha r do conteúdo (faixa = linha 0, se houver): devolve o topo (com o título,
+// se tiver) e põe em *cartao_y onde as capas começam
+static int nv_linha(int r, bool tem_faixa, int *cartao_y) {
+    int primeira_grade = tem_faixa ? 1 : 0, y = 0;
+    for (int i = 0; i < r; i++) {
+        bool rotulo = (tem_faixa && i == 0) || i == primeira_grade;
+        y += (rotulo ? NV_ROTULO : 0) + UI_CAPA_A + NV_ESPACO;
+    }
+    bool rotulo = (tem_faixa && r == 0) || r == primeira_grade;
+    *cartao_y = y + (rotulo ? NV_ROTULO : 0);
+    return y;
+}
+
+static void nv_cartao(UiNuvem *n, int x, int y, int idx, bool selecionado) {
+    if (n->n_cartoes >= UI_MAX_CARTOES)
+        return;
+    const XTitulo *t = &g_titulos.itens[idx];
+    UiCartao *c = &n->cartoes[n->n_cartoes++];
+    c->x = x;
+    c->y = y;
+    copiar_utf8(c->nome, sizeof c->nome, t->nome[0] ? t->nome : t->titulo_id);
+    c->capa = capas_pegar(t->produto_id, t->capa);
+    c->selecionado = selecionado;
+}
+
+static int comparar_por_nome(const void *a, const void *b) {
+    const XTitulo *x = &g_titulos.itens[*(const int *)a], *y = &g_titulos.itens[*(const int *)b];
+    const char *nx = x->nome[0] ? x->nome : x->titulo_id, *ny = y->nome[0] ? y->nome : y->titulo_id;
+    int c = strcasecmp(nx, ny);
+    return c ? c : strcmp(x->titulo_id, y->titulo_id);
+}
+
+// Grade: todos os jogos (ou os da busca) por nome. Faixa: os recentes, na ordem.
+static void nuvem_montar_indices(void) {
+    free(g_grade_idx);
+    g_grade_idx = malloc(sizeof *g_grade_idx * (size_t)(g_titulos.total ? g_titulos.total : 1));
+    g_n_grade = g_n_faixa = 0;
+    for (int i = 0; g_grade_idx && i < g_titulos.total; i++) {
+        const XTitulo *t = &g_titulos.itens[i];
+        if (xnuvem_combina(t->nome[0] ? t->nome : t->titulo_id, g_busca))
+            g_grade_idx[g_n_grade++] = i;
+    }
+    if (g_n_grade > 1)
+        qsort(g_grade_idx, (size_t)g_n_grade, sizeof *g_grade_idx, comparar_por_nome);
+    // xnuvem_filtrar_ordenar deixa os recentes primeiro, na ordem
+    for (int i = 0; !g_busca[0] && i < g_titulos.total && g_titulos.itens[i].recente; i++)
+        if (g_n_faixa < (int)(sizeof g_faixa_idx / sizeof g_faixa_idx[0]))
+            g_faixa_idx[g_n_faixa++] = i;
+}
+
+// Teclado do Switch para a busca. true = o texto mudou (inclusive para vazio).
+static bool busca_teclado(char *texto, size_t tam) {
+    SwkbdConfig kbd;
+    char saida[64] = "";
+    Result rc = swkbdCreate(&kbd, 0);
+    if (R_FAILED(rc)) {
+        LOG("main: teclado indisponivel (0x%x)", rc);
+        return false;
+    }
+    swkbdConfigMakePresetDefault(&kbd);
+    swkbdConfigSetHeaderText(&kbd, "Buscar jogo");
+    swkbdConfigSetGuideText(&kbd, "Nome do jogo");
+    swkbdConfigSetOkButtonText(&kbd, "Buscar");
+    swkbdConfigSetInitialText(&kbd, texto);
+    swkbdConfigSetStringLenMax(&kbd, 40);
+    rc = swkbdShow(&kbd, saida, sizeof saida);
+    swkbdClose(&kbd);
+    g_tick_anterior = armGetSystemTick(); // o tempo no teclado não é suspensão
+    if (R_FAILED(rc)) // cancelado (B) ou erro: mantém a busca
+        return false;
+    // Tira espaços das pontas
+    char *ini = saida;
+    while (*ini == ' ')
+        ini++;
+    size_t n = strlen(ini);
+    while (n && ini[n - 1] == ' ')
+        ini[--n] = '\0';
+    if (!strcmp(ini, texto))
+        return false;
+    snprintf(texto, tam, "%s", ini);
+    return true;
+}
+
 static Passo passo_nuvem(AuthConta *conta) {
     // 1. Acesso (gsToken próprio, dura ~4 h)
     bool vencendo = g_nuvem.duracao_s > 0 && time(NULL) - g_nuvem.obtido_em > g_nuvem.duracao_s - NUVEM_RENOVAR_ANTES_S;
@@ -740,72 +857,181 @@ static Passo passo_nuvem(AuthConta *conta) {
         }
     }
 
-    // 3. Lista em texto: 4 jogos visíveis, direcional com repetição ao segurar
-    const int visiveis = 4;
-    int sel = g_nuvem_ultimo, topo = 0; // volta no jogo da última sessão
+    // 3. Faixa de recentes + grade de capas (v0.13.0)
+    aba_definir(true);
+    capas_iniciar();
+    nuvem_montar_indices();
+    int zona = g_n_faixa ? 0 : 1, sel_f = 0, sel_g = 0;
+    // Volta no último jogo aberto
+    for (int i = 0; g_nuvem_ultimo[0] && i < g_n_faixa; i++)
+        if (!strcmp(g_titulos.itens[g_faixa_idx[i]].titulo_id, g_nuvem_ultimo)) {
+            zona = 0, sel_f = i;
+            g_nuvem_ultimo[0] = '\0';
+        }
+    for (int i = 0; g_nuvem_ultimo[0] && i < g_n_grade; i++)
+        if (!strcmp(g_titulos.itens[g_grade_idx[i]].titulo_id, g_nuvem_ultimo)) {
+            zona = 1, sel_g = i;
+            g_nuvem_ultimo[0] = '\0';
+        }
+    float rol = 0, rol_alvo = 0, fx = 0;
+    int fprim = sel_f > NV_COLUNAS - 1 ? sel_f - NV_COLUNAS + 1 : 0;
+    fx = (float)fprim;
     u64 segurando = 0;
     double segurando_desde = 0, ultima_repeticao = 0;
+    bool primeiro_quadro = true;
     for (;;) {
-        int total = g_titulos.total;
-        if (sel >= total) sel = total ? total - 1 : 0;
-        if (sel < topo) topo = sel;
-        if (sel >= topo + visiveis) topo = sel - visiveis + 1;
+        bool tem_faixa = g_n_faixa > 0;
+        if (!tem_faixa)
+            zona = 1;
+        if (sel_g >= g_n_grade) sel_g = g_n_grade ? g_n_grade - 1 : 0;
+        if (sel_f >= g_n_faixa) sel_f = g_n_faixa ? g_n_faixa - 1 : 0;
+        int linhas = (tem_faixa ? 1 : 0) + (g_n_grade + NV_COLUNAS - 1) / NV_COLUNAS;
+        int primeira_grade = tem_faixa ? 1 : 0;
+        int linha_sel = zona == 0 ? 0 : primeira_grade + sel_g / NV_COLUNAS;
 
-        // Posição no subtítulo: com 4 jogos na tela não sobra espaço abaixo da lista
-        char sub[160];
-        snprintf(sub, sizeof sub, "%d de %d jogos · %s · região %s", total ? sel + 1 : 0, total,
-                 oferta_amigavel(g_nuvem.oferta), g_nuvem.regiao[0] ? g_nuvem.regiao : "padrão");
-        UiItem itens[UI_MAX_ITENS];
-        int n = 0;
-        for (int i = topo; i < total && n < visiveis; i++, n++) {
-            const XTitulo *x = &g_titulos.itens[i];
-            copiar_utf8(itens[n].nome, sizeof itens[n].nome, x->nome[0] ? x->nome : x->titulo_id);
-            char det[128];
-            if (x->nome[0])
-                snprintf(det, sizeof det, "%s%s%s", x->recente ? "Jogado recentemente" : "",
-                         x->recente && x->editora[0] ? " · " : "", x->editora);
-            else
-                snprintf(det, sizeof det, "Sem nome no catálogo");
-            copiar_utf8(itens[n].detalhe, sizeof itens[n].detalhe, det);
-            itens[n].estado = x->recente ? 1 : 0;
+        // Rolagem: a linha selecionada inteira na área visível (animada)
+        int cartao_y;
+        int topo_sel = nv_linha(linha_sel, tem_faixa, &cartao_y);
+        const int altura_vista = NV_BASE - NV_TOPO;
+        if (topo_sel < rol_alvo)
+            rol_alvo = (float)topo_sel;
+        if (cartao_y + UI_CAPA_A > rol_alvo + altura_vista)
+            rol_alvo = (float)(cartao_y + UI_CAPA_A - altura_vista);
+        if (rol_alvo < 0)
+            rol_alvo = 0;
+        if (zona == 0) {
+            if (sel_f < fprim) fprim = sel_f;
+            if (sel_f >= fprim + NV_COLUNAS) fprim = sel_f - NV_COLUNAS + 1;
         }
-        const char *msg = total ? NULL : "Nenhum jogo liberado para esta conta na nuvem.";
+        if (primeiro_quadro) {
+            rol = rol_alvo, fx = (float)fprim;
+            primeiro_quadro = false;
+        }
+        rol += (rol_alvo - rol) * 0.3f;
+        fx += (fprim - fx) * 0.3f;
+        if (fabsf(rol_alvo - rol) < 0.5f) rol = rol_alvo;
+        if (fabsf(fprim - fx) < 0.01f) fx = (float)fprim;
+
+        // Monta o que aparece (e pede as capas: visíveis e a próxima linha)
+        capas_novo_quadro();
+        static UiNuvem n;
+        memset(&n, 0, sizeof n);
+        n.clip_topo = NV_TOPO;
+        n.clip_base = NV_BASE;
+        int ultima_visivel = -1;
+        for (int r = 0; r < linhas; r++) {
+            int cy;
+            int topo = nv_linha(r, tem_faixa, &cy);
+            int sy = NV_TOPO + topo - (int)rol, scy = NV_TOPO + cy - (int)rol;
+            if (scy + UI_CAPA_A < NV_TOPO)
+                continue;
+            if (sy > NV_BASE)
+                break;
+            ultima_visivel = r;
+            if (topo != cy && n.n_rotulos < 4) { // linha com título
+                UiRotulo *rt = &n.rotulos[n.n_rotulos++];
+                rt->y = sy;
+                if (tem_faixa && r == 0)
+                    snprintf(rt->texto, sizeof rt->texto, "Jogados recentemente");
+                else if (g_busca[0])
+                    snprintf(rt->texto, sizeof rt->texto, "Resultados para “%.40s” (%d)", g_busca, g_n_grade);
+                else
+                    snprintf(rt->texto, sizeof rt->texto, "Todos os jogos (%d) · %s", g_n_grade,
+                             oferta_amigavel(g_nuvem.oferta));
+            }
+            if (tem_faixa && r == 0) {
+                int i0 = (int)fx - 1;
+                for (int i = i0 < 0 ? 0 : i0; i < g_n_faixa && i <= (int)fx + NV_COLUNAS; i++) {
+                    int x = NV_X0 + (int)((i - fx) * NV_PASSO_X);
+                    if (x < 0 || x + UI_CAPA_L > UI_LARGURA)
+                        continue;
+                    nv_cartao(&n, x, scy, g_faixa_idx[i], zona == 0 && i == sel_f);
+                }
+            } else {
+                int base = (r - primeira_grade) * NV_COLUNAS;
+                for (int c = 0; c < NV_COLUNAS && base + c < g_n_grade; c++)
+                    nv_cartao(&n, NV_X0 + c * NV_PASSO_X, scy, g_grade_idx[base + c], zona == 1 && base + c == sel_g);
+            }
+        }
+        // Próxima linha da grade: só pede as capas (chegam antes de rolar)
+        if (ultima_visivel >= 0 && ultima_visivel + 1 < linhas) {
+            int base = (ultima_visivel + 1 - primeira_grade) * NV_COLUNAS;
+            for (int c = 0; base >= 0 && c < NV_COLUNAS && base + c < g_n_grade; c++) {
+                const XTitulo *x = &g_titulos.itens[g_grade_idx[base + c]];
+                capas_pegar(x->produto_id, x->capa);
+            }
+        }
+
+        const XTitulo *atual = NULL;
+        if (zona == 0 && g_n_faixa)
+            atual = &g_titulos.itens[g_faixa_idx[sel_f]];
+        else if (zona == 1 && g_n_grade)
+            atual = &g_titulos.itens[g_grade_idx[sel_g]];
+        if (atual) {
+            copiar_utf8(n.nome, sizeof n.nome, atual->nome[0] ? atual->nome : atual->titulo_id);
+            snprintf(n.info, sizeof n.info, "%s%s%s", atual->editora, atual->editora[0] && atual->recente ? " · " : "",
+                     atual->recente ? "jogado recentemente" : "");
+        } else if (g_busca[0]) {
+            snprintf(n.aviso, sizeof n.aviso, "Nenhum jogo com “%.40s”.\nY busca de novo; B mostra todos.", g_busca);
+        } else {
+            snprintf(n.aviso, sizeof n.aviso, "Nenhum jogo liberado para esta conta na nuvem.");
+        }
+        const char *rodape = g_busca[0] ? "A=Jogar|X=Detalhes|Y=Buscar|B=Limpar busca|+=Fechar"
+                                        : "A=Jogar|X=Detalhes|Y=Buscar|-=Atualizar|+=Fechar";
         modo_ui();
         if (ui_ativa()) {
-            ui_lista("Jogos na nuvem", sub, itens, n, sel - topo, msg,
-                     "A=Jogar|X=Detalhes|Y=Atualizar|B=Voltar|+=Fechar");
+            ui_definir_abas(1);
+            ui_nuvem(&n, rodape);
         } else {
             cabecalho();
-            printf("Jogos na nuvem - %s\n\n", sub);
-            for (int i = 0; i < n; i++)
-                printf("%s %s (%s)\n" COR_FIM, topo + i == sel ? COR_DESTAQ " >" : "  ", itens[i].nome,
-                       itens[i].detalhe);
-            printf("\n%s\nA = jogar   X = detalhes   Y = atualizar   B = voltar   + = fechar\n", msg ? msg : "");
+            printf("Jogos na nuvem (%d)\n\n%s\n\nA = jogar   Y = buscar   L/R = consoles   + = fechar\n", g_n_grade,
+                   atual ? n.nome : n.aviso);
         }
 
         bool fechar = false;
         u64 b = quadro(&fechar);
-        if (fechar || (b & HidNpadButton_Plus))
+        if (fechar || (b & HidNpadButton_Plus)) {
+            ui_definir_abas(-1);
             return PASSO_SAIR;
-        if (b & HidNpadButton_B)
-            return PASSO_LISTA;
+        }
+        if (b & (HidNpadButton_L | HidNpadButton_R)) {
+            ui_definir_abas(-1);
+            return PASSO_LISTA; // aba Consoles
+        }
+        if ((b & HidNpadButton_B) && g_busca[0]) {
+            g_busca[0] = '\0';
+            nuvem_montar_indices();
+            zona = g_n_faixa ? 0 : 1, sel_f = sel_g = 0, rol_alvo = 0, fprim = 0;
+            continue;
+        }
         if (b & HidNpadButton_Y) {
+            if (busca_teclado(g_busca, sizeof g_busca)) {
+                nuvem_montar_indices();
+                zona = 1, sel_g = 0, rol_alvo = 0;
+                LOG("main: busca na nuvem: \"%s\" (%d jogo(s))", g_busca, g_n_grade);
+            }
+            continue;
+        }
+        if ((b & HidNpadButton_Minus) && !g_busca[0]) {
+            ui_definir_abas(-1);
             xnuvem_liberar(&g_titulos);
             return PASSO_NUVEM;
         }
-        if ((b & HidNpadButton_X) && total) {
-            mostrar_titulo_detalhe(&g_titulos.itens[sel]);
+        if ((b & HidNpadButton_X) && atual) {
+            ui_definir_abas(-1);
+            mostrar_titulo_detalhe(atual);
             continue;
         }
-        if ((b & HidNpadButton_A) && total) {
+        if ((b & HidNpadButton_A) && atual) {
             // Fase X1: abre o jogo na nuvem pelo mesmo fluxo da sessão do console
-            g_jogo = g_titulos.itens[sel];
+            ui_definir_abas(-1);
+            g_jogo = *atual;
             g_na_nuvem = true;
             memset(&g_console, 0, sizeof g_console);
             copiar_utf8(g_console.nome, sizeof g_console.nome, g_jogo.nome[0] ? g_jogo.nome : g_jogo.titulo_id);
             snprintf(g_console.tipo, sizeof g_console.tipo, "Xbox Cloud Gaming");
+            snprintf(g_nuvem_ultimo, sizeof g_nuvem_ultimo, "%s", g_jogo.titulo_id);
             LOG("main: jogo na nuvem escolhido: %s (%s)", g_console.nome, g_jogo.titulo_id);
-            g_nuvem_ultimo = sel;
             return PASSO_SESSAO;
         }
 
@@ -818,20 +1044,42 @@ static Passo passo_nuvem(AuthConta *conta) {
             segurando = mover;
             segurando_desde = ultima_repeticao = agora;
         } else if (seguro && (seguro & segurando)) {
-            if (agora - segurando_desde > 0.4 && agora - ultima_repeticao > 0.07) {
+            if (agora - segurando_desde > 0.4 && agora - ultima_repeticao > 0.09) {
                 mover = seguro & segurando;
                 ultima_repeticao = agora;
             }
         } else {
             segurando = 0;
         }
-        if (mover & HidNpadButton_AnyUp) sel--;
-        if (mover & HidNpadButton_AnyDown) sel++;
-        if (mover & HidNpadButton_AnyLeft) sel -= visiveis;
-        if (mover & HidNpadButton_AnyRight) sel += visiveis;
-        if (sel < 0) sel = 0;
-        if (total && sel > total - 1) sel = total - 1;
+        if (zona == 0) {
+            if ((mover & HidNpadButton_AnyLeft) && sel_f > 0) sel_f--;
+            if ((mover & HidNpadButton_AnyRight) && sel_f + 1 < g_n_faixa) sel_f++;
+            if ((mover & HidNpadButton_AnyDown) && g_n_grade) {
+                int col = sel_f - fprim;
+                zona = 1;
+                sel_g = col < g_n_grade ? col : g_n_grade - 1;
+            }
+        } else {
+            int col = sel_g % NV_COLUNAS;
+            if ((mover & HidNpadButton_AnyLeft) && sel_g > 0) sel_g--;
+            if ((mover & HidNpadButton_AnyRight) && sel_g + 1 < g_n_grade) sel_g++;
+            if (mover & HidNpadButton_AnyUp) {
+                if (sel_g >= NV_COLUNAS) {
+                    sel_g -= NV_COLUNAS;
+                } else if (g_n_faixa) {
+                    zona = 0;
+                    sel_f = fprim + col < g_n_faixa ? fprim + col : g_n_faixa - 1;
+                }
+            }
+            if (mover & HidNpadButton_AnyDown) {
+                if (sel_g + NV_COLUNAS < g_n_grade)
+                    sel_g += NV_COLUNAS;
+                else if (sel_g / NV_COLUNAS < (g_n_grade - 1) / NV_COLUNAS)
+                    sel_g = g_n_grade - 1; // última linha incompleta
+            }
+        }
     }
+}
 }
 
 static Passo esperar_xbox_ligar(AuthStreaming *streaming);
@@ -848,6 +1096,14 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
 
     // Abertura rápida: a conta tinha um só console da última vez. Abre a sessão
     // direto; B na tela de conexão volta para a lista (que aí é consultada).
+    // v0.13.0: o app abre na última aba usada
+    if (!g_auto_conexao_feita && g_aba_nuvem) {
+        g_auto_conexao_feita = true;
+        LOG("main: abrindo na aba Nuvem (ultima usada)");
+        return PASSO_NUVEM;
+    }
+    aba_definir(false);
+
     // v0.12.4: se ele estava desligado da última vez, consulta a lista antes
     // (se já estiver "On", conecta; senão, espera ser ligado sem tentar à toa)
     bool estava_desligado = g_console_salvo.server_id[0] && !strcmp(g_console_salvo.server_id, g_console_desligado);
@@ -913,24 +1169,26 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
                             "Dispositivos e conexões > Recursos remotos > Habilitar recursos remotos.";
         modo_ui();
         if (ui_ativa()) {
+            ui_definir_abas(0); // L/R troca para a aba Nuvem
             ui_lista("Seus consoles", conta_txt, itens, total, sel, total ? mensagem : vazia,
-                     total ? "A=Conectar|R=Nuvem|Y=Atualizar|X=Sair da conta|-=Diagnóstico|+=Fechar"
-                           : "R=Nuvem|Y=Atualizar|X=Sair da conta|-=Diagnóstico|+=Fechar");
+                     total ? "A=Conectar|Y=Atualizar|X=Sair da conta|-=Diagnóstico|+=Fechar"
+                           : "Y=Atualizar|X=Sair da conta|-=Diagnóstico|+=Fechar");
         } else {
             cabecalho();
             printf("%s\n\n", conta_txt);
             for (int i = 0; i < total; i++)
                 printf("%s %s (%s)\n" COR_FIM, i == sel ? COR_DESTAQ " >" : "  ", itens[i].nome, itens[i].detalhe);
-            printf("\n%s\nA = conectar   R = nuvem   Y = atualizar   X = sair da conta   - = diagnostico   + = fechar\n",
+            printf("\n%s\nA = conectar   L/R = nuvem   Y = atualizar   X = sair da conta   - = diagnostico   + = fechar\n",
                    total ? (mensagem ? mensagem : "") : vazia);
         }
 
         u64 b = esperar_botao(HidNpadButton_A | HidNpadButton_Y | HidNpadButton_X | HidNpadButton_Plus |
-                              HidNpadButton_Minus | HidNpadButton_R | HidNpadButton_AnyUp | HidNpadButton_AnyDown);
+                              HidNpadButton_Minus | HidNpadButton_L | HidNpadButton_R | HidNpadButton_AnyUp |
+                              HidNpadButton_AnyDown);
         mensagem = NULL;
         if (b == 0 || (b & HidNpadButton_Plus))
             return PASSO_SAIR;
-        if (b & HidNpadButton_R)
+        if (b & (HidNpadButton_L | HidNpadButton_R))
             return PASSO_NUVEM;
         if (b & HidNpadButton_Y)
             return PASSO_LISTA;
@@ -2393,6 +2651,7 @@ int main(int argc, char *argv[]) {
         rtc_diag_finalizar_biblioteca();
         LOG("main: encerrando (3/4: liberando a libdatachannel)");
         rtc_comum_finalizar();
+        capas_encerrar(); // threads das capas usam o HTTPS
         LOG("main: encerrando (4/4: finalizando o HTTPS)");
         encerramento_esperar();
         http_encerrar();

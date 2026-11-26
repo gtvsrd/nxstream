@@ -3,6 +3,7 @@
 #include "ui/tela.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static uint32_t px[UI_LARGURA * UI_ALTURA];
 
@@ -57,8 +58,9 @@ int main(int argc, char **argv) {
     ui_renderizar(px, UI_LARGURA, 0); salvar("5_aviso");
 
     UiItem itens[2] = {{"XBOX", "Xbox Series X · Em repouso", 2}, {"Sala", "Xbox One S · Desligado", 0}};
+    ui_definir_abas(0);
     ui_lista("Seus consoles", "Conectado como Gamertag123", itens, 2, 0, NULL,
-             "A=Conectar|R=Nuvem|Y=Atualizar|X=Sair da conta|-=Diagnóstico|+=Fechar");
+             "A=Conectar|Y=Atualizar|X=Sair da conta|-=Diagnóstico|+=Fechar");
     ui_renderizar(px, UI_LARGURA, 0); salvar("6_lista");
 
     ui_lista("Seus consoles", "Conectado como Gamertag123", NULL, 0, 0,
@@ -67,14 +69,67 @@ int main(int argc, char **argv) {
              "Y=Atualizar|X=Sair da conta|+=Fechar");
     ui_renderizar(px, UI_LARGURA, 0); salvar("7_lista_vazia");
 
-    // xCloud (fase X0): lista de jogos em texto
-    UiItem jogos[4] = {{"Forza Horizon 5", "Jogado recentemente · Xbox Game Studios", 1},
-                       {"Hollow Knight", "Team Cherry", 0},
-                       {"Hades II", "Supergiant Games", 0},
-                       {"Halo Infinite", "Xbox Game Studios", 0}};
-    ui_lista("Jogos na nuvem", "2 de 487 jogos · Game Pass Ultimate · região BrazilSouth", jogos, 4, 1,
-             NULL, "A=Jogar|X=Detalhes|Y=Atualizar|B=Voltar|+=Fechar");
-    ui_renderizar(px, UI_LARGURA, 0); salvar("10_nuvem");
+    // xCloud (fase X3): faixa de recentes + grade de capas (capas falsas)
+    {
+        static uint32_t capas[8][UI_CAPA_L * UI_CAPA_A];
+        const uint32_t cores[8][2] = {{0xFF2A4A8A, 0xFF101828}, {0xFF2050C0, 0xFF0A1530}, {0xFF309040, 0xFF0A2010},
+                                      {0xFF8040A0, 0xFF200A30}, {0xFF20A0D0, 0xFF082030}, {0xFFC06030, 0xFF301008},
+                                      {0xFF3070E0, 0xFF101C40}, {0xFF608060, 0xFF101810}};
+        for (int k = 0; k < 8; k++)
+            for (int j = 0; j < UI_CAPA_A; j++)
+                for (int i = 0; i < UI_CAPA_L; i++) {
+                    float t = (float)j / UI_CAPA_A;
+                    uint32_t a = cores[k][0], c = cores[k][1], r = 0xFF000000u;
+                    for (int sh = 0; sh < 24; sh += 8) {
+                        int va = (a >> sh) & 0xFF, vc = (c >> sh) & 0xFF;
+                        r |= (uint32_t)(va + (vc - va) * t) << sh;
+                    }
+                    if ((i / 20 + j / 20) % 5 == 0) r = (r & 0xFF000000u) | ((r & 0xFEFEFE) >> 1);
+                    capas[k][j * UI_CAPA_L + i] = r;
+                }
+        // Capa de verdade (JPEG 180x270 do catálogo), reduzida para 140x210
+        uint32_t *real = NULL;
+        FILE *fj = fopen("capa_teste.jpg", "rb");
+        if (fj) {
+            static unsigned char jpg[200000];
+            size_t nj = fread(jpg, 1, sizeof jpg, fj);
+            fclose(fj);
+            real = ui_decodificar_capa(jpg, nj, UI_CAPA_L, UI_CAPA_A);
+        }
+        static const char *nomes[] = {"Gears Tactics", "FINAL FANTASY VII REMAKE INTERGRADE", "Minecraft Dungeons II",
+                                      "Balatro", "Minecraft Dungeons", "Forza Horizon 5", "Hollow Knight", "Hades II",
+                                      "A Plague Tale: Requiem", "Age of Empires IV", "Among Us", "Ara: History Untold",
+                                      "Avowed", "Back 4 Blood"};
+        UiNuvem n;
+        memset(&n, 0, sizeof n);
+        n.clip_topo = 100;
+        n.clip_base = 592;
+        snprintf(n.rotulos[0].texto, sizeof n.rotulos[0].texto, "Jogados recentemente");
+        n.rotulos[0].y = 100;
+        snprintf(n.rotulos[1].texto, sizeof n.rotulos[1].texto, "Todos os jogos (622)");
+        n.rotulos[1].y = 370;
+        n.n_rotulos = 2;
+        for (int i = 0; i < 7; i++) {
+            UiCartao *c = &n.cartoes[n.n_cartoes++];
+            c->x = 102 + i * 156; c->y = 136;
+            snprintf(c->nome, sizeof c->nome, "%s", nomes[i]);
+            c->capa = i == 5 ? NULL : (i == 1 && real) ? real : capas[i % 8];
+            c->selecionado = i == 1;
+        }
+        for (int i = 0; i < 7; i++) {
+            UiCartao *c = &n.cartoes[n.n_cartoes++];
+            c->x = 102 + i * 156; c->y = 406;
+            snprintf(c->nome, sizeof c->nome, "%s", nomes[7 + i]);
+            c->capa = i == 3 ? NULL : capas[(i + 3) % 8];
+        }
+        snprintf(n.nome, sizeof n.nome, "FINAL FANTASY VII REMAKE INTERGRADE");
+        snprintf(n.info, sizeof n.info, "Square Enix · jogado recentemente");
+        ui_definir_abas(1);
+        ui_nuvem(&n, "A=Jogar|X=Detalhes|Y=Buscar|-=Atualizar|+=Fechar");
+        ui_renderizar(px, UI_LARGURA, 0); salvar("10_nuvem");
+        ui_definir_abas(-1);
+        free(real);
+    }
     // Menu por cima do vídeo: fundo simulando um quadro do jogo com o véu escuro
     for (int i = 0; i < UI_LARGURA * UI_ALTURA; i++) {
         int x = i % UI_LARGURA, y = i / UI_LARGURA;
