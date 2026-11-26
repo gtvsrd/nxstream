@@ -25,7 +25,7 @@ Para atualizar depois de mudar a interface: `make -C tests/ui` e copiar `tests/u
 | | |
 |---|---|
 | ![Jogos na nuvem](telas/10_nuvem.png) | |
-| **Jogos na nuvem** (R na lista de consoles, desde a v0.11.0). Jogos liberados para a conta, recentes no topo com bolinha verde; posição, plano e região no subtítulo. Abrir um jogo chega na fase X1. | |
+| **Jogos na nuvem** (R na lista de consoles, desde a v0.11.0). Jogos liberados para a conta, recentes no topo com bolinha verde; posição, plano e região no subtítulo. A abre o jogo (desde a v0.12.0), X mostra os detalhes. | |
 
 ## Durante o jogo
 

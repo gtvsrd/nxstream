@@ -46,6 +46,8 @@
 #define GSSV_CLIENTE        "XboxComBrowser"
 #define API_CAMINHO_CONSOLES "/v6/servers/home"
 #define API_CAMINHO_PLAY     "/v5/sessions/home/play"
+#define API_CAMINHO_PLAY_NUVEM "/v5/sessions/cloud/play"   // xCloud: titleId no lugar do serverId
+#define API_CAMINHO_ESPERA   "/v1/waittime/"               // + titleId: estimativa da fila da nuvem
 // Demais chamadas da sessão usam o "sessionPath" devolvido pelo play:
 //   <sessionPath>/state, /connect, /keepalive, /sdp, /ice  e DELETE <sessionPath>
 

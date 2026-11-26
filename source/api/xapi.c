@@ -78,14 +78,14 @@ bool xapi_listar_consoles(const AuthStreaming *s, XConsoles *consoles) {
 // ---------------------------------------------------------------------------
 // Sessão
 // ---------------------------------------------------------------------------
-bool xapi_sessao_iniciar(const AuthStreaming *s, const char *server_id, XSessao *sessao) {
+bool xapi_sessao_iniciar(const AuthStreaming *s, const char *server_id, const char *title_id, XSessao *sessao) {
     g_erro[0] = '\0';
-    char *corpo = xapi_corpo_play(server_id);
+    char *corpo = xapi_corpo_play(server_id, title_id);
     if (!corpo)
         return false;
 
     HttpResposta r;
-    bool ok = xapi_requisicao(s, HTTP_POST, API_CAMINHO_PLAY, corpo, &r);
+    bool ok = xapi_requisicao(s, HTTP_POST, title_id ? API_CAMINHO_PLAY_NUVEM : API_CAMINHO_PLAY, corpo, &r);
     free(corpo);
     if (!ok)
         return false;
@@ -97,6 +97,27 @@ bool xapi_sessao_iniciar(const AuthStreaming *s, const char *server_id, XSessao 
         log_erro("criar sessao", &r);
     http_resposta_liberar(&r);
     return ok;
+}
+
+int xapi_tempo_espera(const AuthStreaming *s, const char *title_id) {
+    g_erro[0] = '\0';
+    size_t tam = strlen(API_CAMINHO_ESPERA) + strlen(title_id) + 1;
+    char *caminho = malloc(tam);
+    snprintf(caminho, tam, "%s%s", API_CAMINHO_ESPERA, title_id);
+    HttpResposta r;
+    bool ok = xapi_requisicao(s, HTTP_GET, caminho, NULL, &r);
+    free(caminho);
+    if (!ok)
+        return -1;
+    int seg = -1;
+    if (r.status == 200) {
+        seg = xapi_parse_tempo_espera(r.corpo);
+        LOG("xapi: espera estimada: %.300s", r.corpo ? r.corpo : "");
+    } else {
+        log_erro("tempo de espera", &r);
+    }
+    http_resposta_liberar(&r);
+    return seg;
 }
 
 static char *caminho_sessao(const XSessao *sessao, const char *sufixo) {

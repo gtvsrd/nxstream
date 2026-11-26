@@ -109,10 +109,10 @@ XSessaoEstado xapi_parse_estado(const char *json, char *detalhe, int tam) {
     return st;
 }
 
-char *xapi_corpo_play(const char *server_id) {
+char *xapi_corpo_play(const char *server_id, const char *title_id) {
     cJSON *raiz = cJSON_CreateObject();
     cJSON_AddStringToObject(raiz, "clientSessionId", "");
-    cJSON_AddStringToObject(raiz, "titleId", "");
+    cJSON_AddStringToObject(raiz, "titleId", title_id ? title_id : "");
     cJSON_AddStringToObject(raiz, "systemUpdateGroup", "");
     cJSON *cfg = cJSON_AddObjectToObject(raiz, "settings");
     cJSON_AddStringToObject(cfg, "nanoVersion", "V3;WebrtcTransport.dll");
@@ -124,11 +124,19 @@ char *xapi_corpo_play(const char *server_id) {
     cJSON_AddNumberToObject(cfg, "timezoneOffsetMinutes", NX_FUSO_MINUTOS);
     cJSON_AddStringToObject(cfg, "sdkType", "web");
     cJSON_AddStringToObject(cfg, "osName", "windows");
-    cJSON_AddStringToObject(raiz, "serverId", server_id);
+    cJSON_AddStringToObject(raiz, "serverId", server_id ? server_id : "");
     cJSON_AddArrayToObject(raiz, "fallbackRegionNames");
     char *json = cJSON_PrintUnformatted(raiz);
     cJSON_Delete(raiz);
     return json;
+}
+
+int xapi_parse_tempo_espera(const char *json) {
+    cJSON *raiz = json ? cJSON_Parse(json) : NULL;
+    const cJSON *t = cJSON_GetObjectItemCaseSensitive(raiz, "estimatedTotalWaitTimeInSeconds");
+    int s = cJSON_IsNumber(t) && t->valuedouble >= 0 ? (int)t->valuedouble : -1;
+    cJSON_Delete(raiz);
+    return s;
 }
 
 const char *xapi_sessao_estado_texto(XSessaoEstado e) {
@@ -372,6 +380,13 @@ static bool campo_endereco(const char *cand, char *endereco, size_t tam, int *po
     return true;
 }
 
+static bool ipv4_numerico(const char *texto) {
+    unsigned a, b, c, d;
+    char sobra;
+    return sscanf(texto, "%u.%u.%u.%u%c", &a, &b, &c, &d, &sobra) == 4 && a <= 255 && b <= 255 && c <= 255 &&
+           d <= 255;
+}
+
 static bool ipv4_rede_local(const char *texto) {
     unsigned a, b, c, d;
     char sobra;
@@ -380,14 +395,15 @@ static bool ipv4_rede_local(const char *texto) {
     return a == 10 || (a == 172 && b >= 16 && b <= 31) || (a == 192 && b == 168) || (a == 169 && b == 254);
 }
 
-int xapi_filtrar_rede_local(XCandidatos *r) {
+static int filtrar(XCandidatos *r, bool so_rede_local) {
     XCandidatos filtrado;
     memset(&filtrado, 0, sizeof filtrado);
     char vistos[XAPI_MAX_CAND][160];
     for (int i = 0; i < r->total; i++) {
         char endereco[128];
         int porta;
-        if (!campo_endereco(r->cand[i], endereco, sizeof endereco, &porta) || !ipv4_rede_local(endereco))
+        if (!campo_endereco(r->cand[i], endereco, sizeof endereco, &porta) || !ipv4_numerico(endereco) ||
+            (so_rede_local && !ipv4_rede_local(endereco)))
             continue;
         char chave[160]; // endereço (até 127) + ":" + porta
         snprintf(chave, sizeof chave, "%s:%d", endereco, porta);
@@ -404,4 +420,12 @@ int xapi_filtrar_rede_local(XCandidatos *r) {
     }
     *r = filtrado;
     return r->total;
+}
+
+int xapi_filtrar_rede_local(XCandidatos *r) {
+    return filtrar(r, true);
+}
+
+int xapi_filtrar_ipv4(XCandidatos *r) {
+    return filtrar(r, false);
 }

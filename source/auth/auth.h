@@ -43,6 +43,7 @@ typedef struct {
     char  oferta[16];             // xhome, xgpuweb ou xgpuwebf2p
     char  regiao[48];             // nome da região escolhida (ex.: BrazilSouth)
     char  regioes[256];           // todas, para o log: "A*, B, C" (* = padrão)
+    time_t obtido_em;             // quando o gsToken chegou (vale duracao_s)
 } AuthStreaming;
 
 // --- Rede -----------------------------------------------------------------

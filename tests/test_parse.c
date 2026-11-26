@@ -142,11 +142,17 @@ static void teste_sessao(void) {
     CHECAR(xapi_parse_estado("{\"state\":\"Novidade\"}", det, sizeof det) == XSESSAO_DESCONHECIDO);
     CHECAR(xapi_parse_estado("<html>", det, sizeof det) == XSESSAO_ERRO);
 
-    char *corpo = xapi_corpo_play("F4001ABCDEF");
+    char *corpo = xapi_corpo_play("F4001ABCDEF", NULL);
     CHECAR(corpo && strstr(corpo, "\"serverId\":\"F4001ABCDEF\""));
     CHECAR(corpo && strstr(corpo, "\"nanoVersion\":\"V3;WebrtcTransport.dll\""));
     CHECAR(corpo && strstr(corpo, "\"titleId\":\"\""));
     free(corpo);
+    corpo = xapi_corpo_play("", "FORZAHORIZON5");            // nuvem
+    CHECAR(corpo && strstr(corpo, "\"titleId\":\"FORZAHORIZON5\"") && strstr(corpo, "\"serverId\":\"\""));
+    free(corpo);
+    CHECAR(xapi_parse_tempo_espera("{\"estimatedProvisioningTimeInSeconds\":12,"
+                                   "\"estimatedAllocationTimeInSeconds\":0,\"estimatedTotalWaitTimeInSeconds\":12}") == 12);
+    CHECAR(xapi_parse_tempo_espera("{}") == -1 && xapi_parse_tempo_espera(NULL) == -1);
 
     char *t = auth_parse_token_console(200, "{\"token_type\":\"bearer\",\"access_token\":\"LPT\",\"refresh_token\":\"R\"}");
     CHECAR(t && !strcmp(t, "LPT"));
@@ -266,8 +272,16 @@ static void teste_filtro_rede_local(void) {
         strcpy(f.mid[f.total], "0");
         f.total++;
     }
+    XCandidatos g = f;                                      // cópia para a nuvem
     CHECAR(xapi_filtrar_rede_local(&f) == 3);
     CHECAR(strstr(f.cand[0], "10.0.0.5") && strstr(f.cand[1], "172.16.1.2") && strstr(f.cand[2], "169.254.3.4"));
+    // Nuvem: endereços públicos valem; nome, IPv4 inválido e lixo continuam fora
+    CHECAR(xapi_filtrar_ipv4(&g) == 5);
+    CHECAR(strstr(g.cand[2], "172.32.1.2") && strstr(g.cand[3], "192.169.0.1"));
+    XCandidatos h = {0};
+    snprintf(h.cand[h.total++], sizeof h.cand[0], "a=candidate:1 1 UDP 100 20.201.9.14 1035 typ host");
+    snprintf(h.cand[h.total++], sizeof h.cand[0], "a=candidate:2 1 UDP 1 2603:1050:1::5 1035 typ host");
+    CHECAR(xapi_filtrar_ipv4(&h) == 1 && strstr(h.cand[0], "20.201.9.14"));
 }
 
 static size_t hex_para_bytes(const char *hex, uint8_t *saida) {

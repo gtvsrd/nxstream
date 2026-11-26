@@ -53,10 +53,13 @@ static double g_ultimo_congelamento = 0; // segundos suspenso no último sleep/H
 static bool g_retorno_pendente = false;   // sistema avisou que o app voltou a rodar
 static bool g_em_foco = true;             // último estado de foco conhecido
 static XConsole g_console;               // console escolhido na lista
+// xCloud (fase X1): sessão de um jogo na nuvem. g_console vira só o rótulo das
+// telas (nome do jogo, tipo "Xbox Cloud Gaming"); o resto do fluxo é o mesmo.
+static bool g_na_nuvem = false;
+static XTitulo g_jogo;
 static bool g_auto_conexao_feita = false; // já passou pela lista uma vez (conexão automática só na 1ª)
 static bool g_reconectando = false;      // fase 4: falhas na conexão viram nova tentativa, não tela de erro
 static bool g_chegou_a_conectar = false; // esta tentativa chegou a conectar (zera a contagem de tentativas)
-static time_t g_streaming_obtido = 0;    // quando o gsToken atual foi obtido (vale ~4 h)
 static bool g_forcar_renovacao = false;  // o servidor respondeu 401: renovar o gsToken antes da próxima chamada
 static u64 g_tick_queda = 0;            // quando a conexão caiu (para medir a reconexão inteira)
 static char g_gamertag[64] = "";        // nome da conta, para o cabeçalho e para não pedir de novo
@@ -283,7 +286,7 @@ static const char *endereco_curto(const char *url) {
 typedef enum {
     CH_RENOVAR, CH_STREAMING, CH_LISTAR, CH_SESSAO_INICIAR, CH_SESSAO_ESTADO, CH_TOKEN_CONSOLE,
     CH_SESSAO_CONECTAR, CH_ENVIAR_SDP, CH_RECEBER_SDP, CH_ENVIAR_ICE, CH_RECEBER_ICE, CH_OBTER_NOVO,
-    CH_NUVEM_ACESSO, CH_NUVEM_LISTAR,
+    CH_NUVEM_ACESSO, CH_NUVEM_LISTAR, CH_TEMPO_ESPERA,
 } TipoChamada;
 
 static AuthStatus obter_streaming_novo(AuthConta *conta, AuthStreaming *novo);
@@ -294,7 +297,8 @@ typedef struct {
     AuthConta *conta;
     AuthStreaming *streaming;
     XSessao *sessao;
-    const char *texto;   // server_id, oferta, token ou ufrag
+    const char *texto;   // server_id, oferta, token, ufrag ou titleId
+    const char *texto2;  // titleId ao abrir sessão na nuvem (NULL = console)
     void *saida;         // XConsoles*, char** (token/resposta), XCandidatos*
     const void *entrada; // XCandidatos* locais
     char *detalhe;
@@ -308,7 +312,7 @@ static void chamada_executar(Chamada *c) {
         case CH_RENOVAR:         c->r = auth_renovar(c->conta); break;
         case CH_STREAMING:       c->r = auth_streaming(c->conta, c->streaming); break;
         case CH_LISTAR:          c->r = xapi_listar_consoles(c->streaming, (XConsoles *)c->saida); break;
-        case CH_SESSAO_INICIAR:  c->r = xapi_sessao_iniciar(c->streaming, c->texto, c->sessao); break;
+        case CH_SESSAO_INICIAR:  c->r = xapi_sessao_iniciar(c->streaming, c->texto, c->texto2, c->sessao); break;
         case CH_SESSAO_ESTADO:   c->r = xapi_sessao_estado(c->streaming, c->sessao, c->detalhe, (int)c->tam); break;
         case CH_TOKEN_CONSOLE:   c->r = auth_token_console(c->conta, (char **)c->saida); break;
         case CH_SESSAO_CONECTAR: c->r = xapi_sessao_conectar(c->streaming, c->sessao, c->texto); break;
@@ -321,6 +325,7 @@ static void chamada_executar(Chamada *c) {
         case CH_OBTER_NOVO:      c->r = obter_streaming_novo(c->conta, c->streaming); break;
         case CH_NUVEM_ACESSO:    c->r = obter_nuvem_novo(c->conta, c->streaming); break;
         case CH_NUVEM_LISTAR:    c->r = xnuvem_listar(c->streaming, (XTitulos *)c->saida); break;
+        case CH_TEMPO_ESPERA:    c->r = xapi_tempo_espera(c->streaming, c->texto); break;
     }
 }
 
@@ -618,17 +623,17 @@ static void conta_lembrar_consoles(const XConsoles *consoles) {
 static char g_console_desligado[64];
 
 static AuthStreaming g_nuvem;        // gsToken da nuvem (separado do console)
-static time_t g_nuvem_obtido = 0;
 static bool g_nuvem_recusado = false; // a API respondeu 401: renovar o acesso antes de tentar de novo
 #define NUVEM_RENOVAR_ANTES_S 300
 static XTitulos g_titulos;           // lista carregada (total_servidor 0 = ainda não)
+static int g_nuvem_ultimo = 0;       // posição do último jogo aberto na lista
 
 static void nuvem_esquecer(void) {
     auth_streaming_liberar(&g_nuvem);
     memset(&g_nuvem, 0, sizeof g_nuvem);
     xnuvem_liberar(&g_titulos);
-    g_nuvem_obtido = 0;
     g_nuvem_recusado = false;
+    g_nuvem_ultimo = 0;
 }
 
 // O token da conta dura ~1 h e a nuvem pode ser aberta bem depois do início:
@@ -688,7 +693,7 @@ static void mostrar_titulo_detalhe(const XTitulo *x) {
 
 static Passo passo_nuvem(AuthConta *conta) {
     // 1. Acesso (gsToken próprio, dura ~4 h)
-    bool vencendo = g_nuvem.duracao_s > 0 && time(NULL) - g_nuvem_obtido > g_nuvem.duracao_s - NUVEM_RENOVAR_ANTES_S;
+    bool vencendo = g_nuvem.duracao_s > 0 && time(NULL) - g_nuvem.obtido_em > g_nuvem.duracao_s - NUVEM_RENOVAR_ANTES_S;
     if (!g_nuvem.gs_token || vencendo || g_nuvem_recusado) {
         mostrar_aguarde("Acessando o Xbox Cloud Gaming...");
         AuthStreaming novo = {0};
@@ -705,7 +710,6 @@ static Passo passo_nuvem(AuthConta *conta) {
         }
         auth_streaming_liberar(&g_nuvem);
         g_nuvem = novo;
-        g_nuvem_obtido = time(NULL);
         g_nuvem_recusado = false;
     }
 
@@ -721,7 +725,7 @@ static Passo passo_nuvem(AuthConta *conta) {
 
     // 3. Lista em texto: 4 jogos visíveis, direcional com repetição ao segurar
     const int visiveis = 4;
-    int sel = 0, topo = 0;
+    int sel = g_nuvem_ultimo, topo = 0; // volta no jogo da última sessão
     u64 segurando = 0;
     double segurando_desde = 0, ultima_repeticao = 0;
     for (;;) {
@@ -751,14 +755,15 @@ static Passo passo_nuvem(AuthConta *conta) {
         const char *msg = total ? NULL : "Nenhum jogo liberado para esta conta na nuvem.";
         modo_ui();
         if (ui_ativa()) {
-            ui_lista("Jogos na nuvem", sub, itens, n, sel - topo, msg, "A=Detalhes|Y=Atualizar|B=Voltar|+=Fechar");
+            ui_lista("Jogos na nuvem", sub, itens, n, sel - topo, msg,
+                     "A=Jogar|X=Detalhes|Y=Atualizar|B=Voltar|+=Fechar");
         } else {
             cabecalho();
             printf("Jogos na nuvem - %s\n\n", sub);
             for (int i = 0; i < n; i++)
                 printf("%s %s (%s)\n" COR_FIM, topo + i == sel ? COR_DESTAQ " >" : "  ", itens[i].nome,
                        itens[i].detalhe);
-            printf("\n%s\nA = detalhes   Y = atualizar   B = voltar   + = fechar\n", msg ? msg : "");
+            printf("\n%s\nA = jogar   X = detalhes   Y = atualizar   B = voltar   + = fechar\n", msg ? msg : "");
         }
 
         bool fechar = false;
@@ -771,9 +776,20 @@ static Passo passo_nuvem(AuthConta *conta) {
             xnuvem_liberar(&g_titulos);
             return PASSO_NUVEM;
         }
-        if ((b & HidNpadButton_A) && total) {
+        if ((b & HidNpadButton_X) && total) {
             mostrar_titulo_detalhe(&g_titulos.itens[sel]);
             continue;
+        }
+        if ((b & HidNpadButton_A) && total) {
+            // Fase X1: abre o jogo na nuvem pelo mesmo fluxo da sessão do console
+            g_jogo = g_titulos.itens[sel];
+            g_na_nuvem = true;
+            memset(&g_console, 0, sizeof g_console);
+            copiar_utf8(g_console.nome, sizeof g_console.nome, g_jogo.nome[0] ? g_jogo.nome : g_jogo.titulo_id);
+            snprintf(g_console.tipo, sizeof g_console.tipo, "Xbox Cloud Gaming");
+            LOG("main: jogo na nuvem escolhido: %s (%s)", g_console.nome, g_jogo.titulo_id);
+            g_nuvem_ultimo = sel;
+            return PASSO_SESSAO;
         }
 
         // Direcional: um passo ao apertar; segurando, repete depois de 0,4 s
@@ -802,8 +818,9 @@ static Passo passo_nuvem(AuthConta *conta) {
 }
 
 static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
+    g_na_nuvem = false; // daqui em diante as sessões são do console
     // gsToken vencendo (dura ~4 h): obtém outro antes de usar
-    if (streaming->duracao_s > 0 && time(NULL) - g_streaming_obtido > streaming->duracao_s - 120)
+    if (streaming->duracao_s > 0 && time(NULL) - streaming->obtido_em > streaming->duracao_s - 120)
         return PASSO_STREAMING;
 
     // Abertura rápida: a conta tinha um só console da última vez. Abre a sessão
@@ -942,11 +959,13 @@ static Passo erro_sessao(const char *titulo, const char *detalhe) {
 static bool streaming_vencendo(const AuthStreaming *s, int margem_s) {
     if (g_forcar_renovacao)
         return true;
-    return s->duracao_s > 0 && time(NULL) - g_streaming_obtido > s->duracao_s - margem_s;
+    return s->duracao_s > 0 && time(NULL) - s->obtido_em > s->duracao_s - margem_s;
 }
 
 // Renova a conta e obtém um gsToken novo em *novo (não mexe no atual)
 static AuthStatus obter_streaming_novo(AuthConta *conta, AuthStreaming *novo) {
+    if (g_na_nuvem) // sessão na nuvem: o token a renovar é o da oferta xgpuweb
+        return obter_nuvem_novo(conta, novo);
     AuthStatus st = auth_renovar(conta);
     if (st == AUTH_OK) {
         if (!auth_salvar_refresh(NX_ARQ_TOKEN, conta->refresh_token))
@@ -965,7 +984,8 @@ static void aplicar_streaming_novo(AuthStreaming *atual, AuthStreaming *novo) {
     auth_streaming_liberar(atual);
     *atual = *novo;
     memset(novo, 0, sizeof *novo);
-    g_streaming_obtido = time(NULL);
+    if (!atual->obtido_em)
+        atual->obtido_em = time(NULL);
     g_forcar_renovacao = false;
 }
 
@@ -974,7 +994,7 @@ static void garantir_streaming(AuthConta *conta, AuthStreaming *s) {
     if (!streaming_vencendo(s, RENOVAR_ANTES_SESSAO_S))
         return;
     LOG("main: acesso ao streaming %s (obtido ha %ld s); renovando",
-        g_forcar_renovacao ? "recusado (HTTP 401)" : "vencendo", (long)(time(NULL) - g_streaming_obtido));
+        g_forcar_renovacao ? "recusado (HTTP 401)" : "vencendo", (long)(time(NULL) - s->obtido_em));
     if (g_reconectando || g_console.nome[0]) {
         mostrar_conexao("Renovando o acesso ao Xbox Live", NULL, NULL);
         mostrar_agora();
@@ -1012,8 +1032,7 @@ static void *thread_renovacao(void *arg) {
 static void renovacao_disparar(void) {
     if (g_ren.rodando || !g_conta)
         return;
-    LOG("main: acesso ao streaming vencendo (obtido ha %ld s); renovando em segundo plano",
-        (long)(time(NULL) - g_streaming_obtido));
+    LOG("main: acesso ao streaming vencendo; renovando em segundo plano");
     memset(&g_ren.novo, 0, sizeof g_ren.novo);
     g_ren.pronto = false;
     pthread_attr_t at;
@@ -1312,8 +1331,12 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                     if (st == 1) {
                         // Só IPv4 da rede local: público/IPv6 não servem e IPv6 fechava o app
                         int recebidos = remotos.total;
-                        xapi_filtrar_rede_local(&remotos);
-                        LOG("main: %d candidato(s) do console, %d da rede local usado(s)", recebidos, remotos.total);
+                        if (g_na_nuvem)
+                            xapi_filtrar_ipv4(&remotos); // servidores do xCloud: endereços públicos
+                        else
+                            xapi_filtrar_rede_local(&remotos);
+                        LOG("main: %d candidato(s) recebido(s), %d usado(s) (%s)", recebidos, remotos.total,
+                            g_na_nuvem ? "IPv4" : "rede local");
                         remotos_aceitos = remotos.total > 0 ? conexao_adicionar_remotos(&remotos) : 0;
                         t_etapa[ET_CANDIDATOS] = segundos_desde(inicio);
                         etapa = ET_CONECTANDO;
@@ -1413,10 +1436,15 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
                     conexao_encerrar();
                     encerrar_sessao(streaming, sessao);
                     g_reconectando = false;
-                    mostrar_mensagem(UI_INFO, "O Xbox encerrou a conexão.",
-                                     "Ele foi desligado ou a sessão foi fechada no próprio console.\n"
-                                     "Conectar de novo liga o Xbox outra vez, se estiver em suspensão.",
-                                     "A=Conectar de novo|B=Voltar para a lista|+=Fechar");
+                    if (g_na_nuvem)
+                        mostrar_mensagem(UI_INFO, "A sessão na nuvem foi encerrada.",
+                                         "O servidor fechou a sessão (tempo sem jogar, saída do jogo ou manutenção).",
+                                         "A=Jogar de novo|B=Voltar para os jogos|+=Fechar");
+                    else
+                        mostrar_mensagem(UI_INFO, "O Xbox encerrou a conexão.",
+                                         "Ele foi desligado ou a sessão foi fechada no próprio console.\n"
+                                         "Conectar de novo liga o Xbox outra vez, se estiver em suspensão.",
+                                         "A=Conectar de novo|B=Voltar para a lista|+=Fechar");
                     u64 b = esperar_botao(HidNpadButton_A | HidNpadButton_B | HidNpadButton_Plus);
                     return b == HidNpadButton_A ? PASSO_SESSAO : b == HidNpadButton_B ? PASSO_LISTA : PASSO_SAIR;
                 }
@@ -1708,6 +1736,17 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
     "Ele nao esta em repouso, entao nao da para liga-lo de longe. Ligue o console pelo botao e aperte A.\n" \
     "Para o NXStream ligar o Xbox sozinho: Configuracoes > Geral > Opcoes de energia > Suspensao."
 
+#define NUVEM_TEMPO_MAX_PREPARO_S 900 // 15 min: fila em horário de pico
+
+static const char *estado_nuvem_texto(XSessaoEstado e) {
+    switch (e) {
+        case XSESSAO_PREPARANDO:    return "Preparando o jogo na nuvem";
+        case XSESSAO_AGUARDA_LOGIN: return "Autorizando o acesso";
+        case XSESSAO_NA_FILA:       return "Na fila para jogar";
+        default:                    return xapi_sessao_estado_texto(e);
+    }
+}
+
 // Uma tentativa de abrir a sessão e esperar ela ficar pronta. *pronta = true se
 // deu certo; senão retorna o passo escolhido na tela de erro (PASSO_SESSAO = "A,
 // tentar de novo"), ou lista/sair/reconectar.
@@ -1718,9 +1757,15 @@ static Passo abrir_sessao_uma(AuthConta *conta, AuthStreaming *streaming, XSessa
     mostrar_agora();
 
     XSessao sessao;
-    if (!chamar((Chamada){.tipo = CH_SESSAO_INICIAR, .streaming = streaming, .texto = g_console.server_id,
-                          .sessao = &sessao}))
+    if (!chamar((Chamada){.tipo = CH_SESSAO_INICIAR, .streaming = streaming,
+                          .texto = g_na_nuvem ? "" : g_console.server_id,
+                          .texto2 = g_na_nuvem ? g_jogo.titulo_id : NULL, .sessao = &sessao}))
         return erro_sessao("Nao foi possivel abrir a sessao.", xapi_ultimo_erro());
+    // Nuvem: a fila (WaitingForResources) e a preparação de um servidor podem
+    // levar minutos; o console responde em segundos
+    const int tempo_max = g_na_nuvem ? NUVEM_TEMPO_MAX_PREPARO_S : SESSAO_TEMPO_MAX_PREPARO_S;
+    int espera_estimada = -1; // nuvem, na fila: estimativa do servidor (segundos)
+    bool espera_consultada = false;
 
     // --- 1. Preparação: consulta o estado até ficar pronta -----------------
     u64 inicio = armGetSystemTick();
@@ -1733,9 +1778,12 @@ static Passo abrir_sessao_uma(AuthConta *conta, AuthStreaming *streaming, XSessa
     while (estado != XSESSAO_PRONTA) {
         double passou = segundos_desde(inicio);
 
-        if (passou > SESSAO_TEMPO_MAX_PREPARO_S) {
-            LOG("main: sessao nao ficou pronta em %d s", SESSAO_TEMPO_MAX_PREPARO_S);
+        if (passou > tempo_max) {
+            LOG("main: sessao nao ficou pronta em %d s", tempo_max);
             encerrar_sessao(streaming, &sessao);
+            if (g_na_nuvem)
+                return erro_sessao("A nuvem demorou demais para preparar o jogo.",
+                                   "A fila ou a preparacao passou do limite. Tente de novo em alguns minutos.");
             return erro_sessao("O console demorou demais para responder.",
                                "Confira se ele esta ligado ou em repouso e conectado a internet.");
         }
@@ -1764,7 +1812,15 @@ static Passo abrir_sessao_uma(AuthConta *conta, AuthStreaming *streaming, XSessa
                     snprintf(g_console_desligado, sizeof g_console_desligado, "%s", g_console.server_id);
                     return erro_sessao("O Xbox esta desligado.", DETALHE_XBOX_DESLIGADO);
                 }
-                return erro_sessao("O console recusou a sessao.", detalhe);
+                return erro_sessao(g_na_nuvem ? "A nuvem recusou a sessao." : "O console recusou a sessao.",
+                                   detalhe);
+            }
+
+            if (estado == XSESSAO_NA_FILA && g_na_nuvem && !espera_consultada) {
+                espera_consultada = true;
+                espera_estimada = (int)chamar((Chamada){.tipo = CH_TEMPO_ESPERA, .streaming = streaming,
+                                                        .texto = g_jogo.titulo_id});
+                LOG("main: na fila da nuvem; espera estimada %d s", espera_estimada);
             }
 
             if (estado == XSESSAO_AGUARDA_LOGIN) {
@@ -1792,11 +1848,19 @@ static Passo abrir_sessao_uma(AuthConta *conta, AuthStreaming *streaming, XSessa
         if ((int)passou != ultimo_segundo) {
             ultimo_segundo = (int)passou;
             char detalhe[200];
-            snprintf(detalhe, sizeof detalhe, "%s · %d s%s", xapi_tipo_amigavel(g_console.tipo), (int)passou,
-                     estado == XSESSAO_PREPARANDO
-                         ? "\nSe o console estava em repouso, ele acorda sem ligar a TV."
-                         : "");
-            mostrar_conexao(xapi_sessao_estado_texto(estado), detalhe, "B=Cancelar");
+            if (g_na_nuvem) {
+                char fila[64] = "";
+                if (estado == XSESSAO_NA_FILA && espera_estimada > 0)
+                    snprintf(fila, sizeof fila, "\nEspera estimada: %d min", (espera_estimada + 59) / 60);
+                snprintf(detalhe, sizeof detalhe, "Xbox Cloud Gaming · %d s%s", (int)passou, fila);
+            } else {
+                snprintf(detalhe, sizeof detalhe, "%s · %d s%s", xapi_tipo_amigavel(g_console.tipo), (int)passou,
+                         estado == XSESSAO_PREPARANDO
+                             ? "\nSe o console estava em repouso, ele acorda sem ligar a TV."
+                             : "");
+            }
+            mostrar_conexao(g_na_nuvem ? estado_nuvem_texto(estado) : xapi_sessao_estado_texto(estado), detalhe,
+                            "B=Cancelar");
         }
 
         u64 b = quadro(&fechar);
@@ -2139,19 +2203,21 @@ int main(int argc, char *argv[]) {
                     }
                     ui_definir_conta(g_gamertag);
                     recem_logada = false;
-                    g_streaming_obtido = time(NULL);
                     g_forcar_renovacao = false;
                     break;
                 case PASSO_LISTA:
                     passo = passo_lista(&conta, &streaming);
                     break;
                 case PASSO_SESSAO:
-                    passo = passo_sessao(&conta, &streaming);
+                    passo = passo_sessao(&conta, g_na_nuvem ? &g_nuvem : &streaming);
+                    if (g_na_nuvem && passo == PASSO_LISTA)
+                        passo = PASSO_NUVEM; // da nuvem, "voltar" é para a lista de jogos
                     break;
                 case PASSO_DIAG:
                     passo = passo_diag();
                     break;
                 case PASSO_NUVEM:
+                    g_na_nuvem = false;
                     passo = passo_nuvem(&conta);
                     break;
                 default:

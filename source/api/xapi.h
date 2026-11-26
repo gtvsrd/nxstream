@@ -45,7 +45,11 @@ typedef struct {
 bool xapi_listar_consoles(const AuthStreaming *streaming, XConsoles *consoles);
 
 // --- Sessão -----------------------------------------------------------------
-bool xapi_sessao_iniciar(const AuthStreaming *s, const char *server_id, XSessao *sessao);
+// Console: server_id preenchido, title_id NULL. Nuvem (xCloud): server_id "" e
+// title_id do jogo; a sessão vai para /v5/sessions/cloud/play.
+bool xapi_sessao_iniciar(const AuthStreaming *s, const char *server_id, const char *title_id, XSessao *sessao);
+// Nuvem: estimativa de espera do jogo em segundos (-1 = não veio). Só informativo.
+int  xapi_tempo_espera(const AuthStreaming *s, const char *title_id);
 // detalhe recebe o estado bruto ou a mensagem de erro do servidor
 XSessaoEstado xapi_sessao_estado(const AuthStreaming *s, const XSessao *sessao,
                                  char *detalhe, int tam_detalhe);
@@ -74,7 +78,8 @@ const char *xapi_sessao_estado_texto(XSessaoEstado estado);
 bool xapi_parse_consoles(const char *json, XConsoles *consoles);
 bool xapi_parse_sessao(const char *json, XSessao *sessao);
 XSessaoEstado xapi_parse_estado(const char *json, char *detalhe, int tam_detalhe);
-char *xapi_corpo_play(const char *server_id);   // JSON do /play; liberar com free()
+char *xapi_corpo_play(const char *server_id, const char *title_id); // JSON do /play; liberar com free()
+int   xapi_parse_tempo_espera(const char *json);  // estimatedTotalWaitTimeInSeconds ou -1
 char *xapi_corpo_sdp(const char *oferta);                         // liberar com free()
 int   xapi_parse_resposta_sdp(const char *json, char **sdp, char *erro, int tam_erro);
 char *xapi_corpo_ice(const XCandidatos *locais, const char *ufrag); // liberar com free()
@@ -86,4 +91,7 @@ bool  xapi_teredo(const char *ipv6, char *ipv4, int tam_ipv4, int *porta);
 // IPv6 não é suportado pela libnx (processar um candidato IPv6 fechava o app).
 // Remove também duplicados. Retorna quantos ficaram.
 int   xapi_filtrar_rede_local(XCandidatos *candidatos);
+// Nuvem: os servidores do xCloud têm endereço público. Mantém qualquer IPv4
+// (sem IPv6, pelo mesmo motivo acima) e remove duplicados.
+int   xapi_filtrar_ipv4(XCandidatos *candidatos);
 

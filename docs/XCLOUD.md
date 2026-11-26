@@ -40,6 +40,7 @@ Como no resto do projeto, cada fase termina com um `.nro` testado no Switch ante
 | Fase | Versão | Estado |
 |---|---|---|
 | X0 | v0.11.0 / v0.11.1 | Funcionou no Switch (25/11); v0.11.1 deixa a carga mais rápida |
+| X1 | v0.12.0 | Em teste no Switch |
 
 ### Detalhes por fase
 
@@ -71,6 +72,22 @@ Como no resto do projeto, cada fase termina com um `.nro` testado no Switch ante
 | 2ª abertura (fechar o app e abrir de novo) | `todos os nomes ja estavam no cache`, lista em poucos segundos | Sim: 5,7 s |
 
 **Resultado da v0.11.1 (log de 25/11):** o cache funcionou: da 2ª vez a lista ficou pronta em **5,7 s** (antes 20 s). O gzip funcionou no catálogo (6,7 MB → 1,2 MB pela rede), mas a 1ª carga levou 21,8 s mesmo assim: quem demora é o servidor, ~3 s por lote. Já `/v2/titles` (1,3 MB, 5,3 s) vem sem compressão: o servidor da nuvem não usa gzip. Fica para a X3 mostrar na hora a última lista salva e atualizar por trás.
+
+**X1 – Como ficou (v0.12.0).**
+- Na lista "Jogos na nuvem", **A = Jogar** (X mostra os detalhes). O jogo abre pelo mesmo fluxo da sessão do console (`abrir_sessao` e `passo_conectar` em `main.c`), com `g_na_nuvem` ligado: o gsToken usado é o da nuvem (`g_nuvem`) e o `g_console` vira só o rótulo das telas (nome do jogo, "Xbox Cloud Gaming").
+- `xapi_sessao_iniciar(..., titleId)`: `POST /v5/sessions/cloud/play` com `titleId` e `serverId` vazio. Estados iguais aos do console, mais a fila (`WaitingForResources`): a estimativa vem de `/v1/waittime/{titleId}` uma vez e aparece na tela ("Espera estimada: N min"). Limite de preparo de 15 min (console: 2 min).
+- `ReadyToConnect`: o mesmo token de transferência do console (o Greenlight usa o mesmo `lpt` nos dois).
+- Candidatos: `xapi_filtrar_ipv4` aceita endereços públicos (servidores do Azure) e continua recusando IPv6. Sem STUN, como o Greenlight: a checagem sai do Switch para o endereço público do servidor e atravessa o roteador.
+- Renovação: `obter_streaming_novo` renova o token da nuvem quando a sessão é da nuvem; cada token guarda quando foi obtido (`AuthStreaming.obtido_em`).
+- Fim da sessão: B, Desconectar ou fechar o app encerram a sessão (o servidor é liberado). Se o servidor fechar (tempo sem jogar, saída do jogo), aparece "A sessão na nuvem foi encerrada" com A = Jogar de novo. **Uma queda de rede ainda abre uma sessão nova, que recomeça o jogo**: retomar a mesma é a fase X4.
+- Sem NACK nem buffer de reordenação ainda (fase X2): perda de pacotes na internet aparece como travadas curtas até o próximo quadro-chave.
+
+| Teste (v0.12.0) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| A num jogo da lista | "Preparando o jogo na nuvem" (ou "Na fila para jogar"), depois o jogo | |
+| Jogar uns minutos | Imagem e som; controle respondendo; estatísticas (+ e − juntos) | |
+| Menu › Desconectar | Volta para a lista de jogos, no mesmo jogo | |
+| Log | `jogo na nuvem escolhido`, `sessao criada`, estados, `candidato(s) recebido(s), N usado(s) (IPv4)`, `conectado ao console` | |
 
 **X1 – Sessão.** O caminho de conexão é o mesmo do Remote Play; o que muda:
 - corpo do `play`: `titleId` preenchido, `serverId` vazio;

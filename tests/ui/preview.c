@@ -67,7 +67,7 @@ int main(int argc, char **argv) {
                        {"Hades II", "Supergiant Games", 0},
                        {"Halo Infinite", "Xbox Game Studios", 0}};
     ui_lista("Jogos na nuvem", "2 de 487 jogos · Game Pass Ultimate · região BrazilSouth", jogos, 4, 1,
-             NULL, "A=Detalhes|Y=Atualizar|B=Voltar|+=Fechar");
+             NULL, "A=Jogar|X=Detalhes|Y=Atualizar|B=Voltar|+=Fechar");
     ui_renderizar(px, UI_LARGURA, 0); salvar("10_nuvem");
     // Menu por cima do vídeo: fundo simulando um quadro do jogo com o véu escuro
     for (int i = 0; i < UI_LARGURA * UI_ALTURA; i++) {

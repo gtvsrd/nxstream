@@ -141,6 +141,7 @@ bool auth_parse_streaming(const char *json, AuthStreaming *s) {
         snprintf(s->base_uri, sizeof s->base_uri, "%s", base);
         copiar(s->regiao, sizeof s->regiao, nome);
         copiar(s->regioes, sizeof s->regioes, lista);
+        s->obtido_em = time(NULL);
         size_t n = strlen(s->base_uri);
         if (n > 0 && s->base_uri[n - 1] == '/')
             s->base_uri[n - 1] = '\0';
