@@ -426,6 +426,14 @@ Checklist e detalhes em `docs/XCLOUD.md` (seção X0). A lista de consoles ganho
 | Ligar o Xbox pelo botão com essa tela aberta | Conecta sozinho uns segundos depois de ele ligar | |
 | Ligar o Xbox antes de abrir o app | Conecta direto | |
 
+**Resultado da v0.12.4 (log de 25/11, 22:13):** tela de espera no lugar do erro; quando a lista mostrou o Xbox `On`, a sessão ficou pronta em 4,3 s e o vídeo apareceu ~7 s depois, sem apertar nada no Switch. O usuário mediu **~10 s** entre o Xbox terminar de ligar e a conexão começar.
+
+**v0.12.5:** lista a cada **2 s** (era 5) e, a cada **8 s**, uma tentativa de sessão ("sonda") sem trocar a tela: com o console desligado ela falha em ~2 s; se ele já atende antes de aparecer `On` na lista, a própria sonda vira a conexão. O log diz qual chegou primeiro: `o Xbox apareceu ligado na lista (N s de espera, N sonda(s))` ou `o Xbox atendeu a sonda (N s de espera, sonda N)`.
+
+| Teste (v0.12.5) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Ligar o Xbox logo que a tela de espera aparecer | Conecta poucos segundos depois de ele terminar de ligar | |
+
 As próximas fases recebem seus checklists aqui quando começarem.
 
 ## Convenções

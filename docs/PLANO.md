@@ -18,6 +18,7 @@
 - **v0.11.0** (25/11): início do xCloud, fase X0 (`docs/XCLOUD.md`): R na lista de consoles abre a lista dos jogos da nuvem. Funcionou: 622 jogos, Ultimate, região BRAZILSOUTH, mas em 20 s.
 - **v0.11.1**: carga da nuvem mais rápida (gzip, nomes no SD): 2ª abertura em 5,7 s.
 - **v0.11.4**: grava no log o motivo quando o Xbox encerra a conexão.
+- **v0.12.5**: espera do Xbox ligar mais rápida (lista a cada 2 s e tentativa de sessão a cada 8 s).
 - **v0.12.4**: tela "O Xbox está desligado" que conecta sozinha quando o console é ligado pelo botão; abertura sem tentativa à toa.
 - **v0.12.3**: o app lembra que o Xbox está desligado (a Microsoft continua dizendo "em repouso").
 - **v0.12.2**: rede no cartão de estatísticas; "O Xbox foi desligado" quando é o caso. X1 e X2 do xCloud validadas.

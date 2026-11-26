@@ -965,7 +965,14 @@ static Passo passo_lista(AuthConta *conta, AuthStreaming *streaming) {
 // ---------------------------------------------------------------------------
 
 // Tela de erro da sessão. Retorna o próximo passo.
+// Espera do Xbox ser ligado (esperar_xbox_ligar, v0.12.5)
+static double g_espera_desde = -1;  // início da espera (segundos_desde(0)); -1 = sem espera
+static int g_espera_sondas = 0;
+static bool g_sondando = false;     // a sessão em abertura é uma sonda da espera
+
 static Passo erro_sessao(const char *titulo, const char *detalhe) {
+    g_sondando = false; // um erro de verdade encerra a espera
+    g_espera_desde = -1;
     if (detalhe && strstr(detalhe, "HTTP 401"))
         g_forcar_renovacao = true; // token recusado: renova antes da próxima tentativa
     if (g_reconectando) { // fase 4: durante a reconexão, a falha vira nova tentativa
@@ -1781,58 +1788,92 @@ static Passo passo_conectar(AuthStreaming *streaming, XSessao *sessao, double te
     "Ele nao esta em repouso, entao nao da para liga-lo de longe. Ligue o console pelo botao e aperte A.\n" \
     "Para o NXStream ligar o Xbox sozinho: Configuracoes > Geral > Opcoes de energia > Suspensao."
 
+static void mostrar_espera_ligar(int segundos) {
+    char detalhe[256];
+    snprintf(detalhe, sizeof detalhe,
+             "Ligue o console pelo botão: o NXStream conecta sozinho quando ele ligar (%d s).\n"
+             "Para ligar de longe: Configurações > Geral > Opções de energia > Suspensão.",
+             segundos);
+    mostrar_conexao("O Xbox está desligado", detalhe, "B=Voltar para a lista|R=Jogos na nuvem|+=Fechar");
+}
+
 // v0.12.4: em vez do erro, espera o Xbox ser ligado pelo botão. A Microsoft
 // pode dizer "ConnectedStandby" com o console desligado (estado velho), mas
-// "On" só aparece quando ele está ligado de verdade: consulta a lista a cada 5 s
-// e, quando o console aparece "On", volta PASSO_SESSAO para abrir a sessão.
-#define ESPERA_LIGAR_INTERVALO_S 5.0
+// "On" só aparece quando ele está ligado de verdade.
+// v0.12.5: o usuário mediu ~10 s entre o Xbox terminar de ligar e a conexão.
+// Agora, além da lista a cada 2 s (era 5), uma tentativa de sessão a cada 8 s
+// ("sonda"), sem trocar a tela: com o console desligado ela falha em ~2 s; se
+// ele já atende antes de aparecer "On" na lista, a sonda vira a conexão.
+#define ESPERA_LIGAR_INTERVALO_S 2.0
+#define ESPERA_SONDA_S           8.0
 #define ESPERA_LIGAR_MAX_S       900  // 15 min: depois disso, a tela de erro
+static void espera_terminar(void) {
+    g_espera_desde = -1;
+    g_espera_sondas = 0;
+    g_sondando = false;
+}
+
 static Passo esperar_xbox_ligar(AuthStreaming *streaming) {
-    LOG("main: esperando o Xbox ser ligado (lista a cada %.0f s)", ESPERA_LIGAR_INTERVALO_S);
-    console_marcar_desligado(g_console.server_id);
-    u64 inicio = armGetSystemTick();
-    double proxima = ESPERA_LIGAR_INTERVALO_S; // acabou de falhar ou de ser consultado
-    int ultimo = -1, consultas = 0;
+    if (g_espera_desde < 0) {
+        g_espera_desde = segundos_desde(0);
+        g_espera_sondas = 0;
+        LOG("main: esperando o Xbox ser ligado (lista a cada %.0f s, sessao a cada %.0f s)",
+            ESPERA_LIGAR_INTERVALO_S, ESPERA_SONDA_S);
+        console_marcar_desligado(g_console.server_id);
+    }
+    g_sondando = false;
+    u64 inicio = armGetSystemTick(); // desta volta (a próxima sonda conta daqui)
+    double proxima = ESPERA_LIGAR_INTERVALO_S;
+    int ultimo = -1;
     char estado[32] = "";
     bool fechar = false;
     for (;;) {
-        double passou = segundos_desde(inicio);
-        if (passou > ESPERA_LIGAR_MAX_S) {
+        double total = segundos_desde(0) - g_espera_desde;
+        double aqui = segundos_desde(inicio);
+        if (total > ESPERA_LIGAR_MAX_S) {
             LOG("main: o Xbox nao foi ligado em %d s", ESPERA_LIGAR_MAX_S);
+            espera_terminar();
             return erro_sessao("O Xbox esta desligado.", DETALHE_XBOX_DESLIGADO);
         }
-        if (passou >= proxima) {
-            proxima = passou + ESPERA_LIGAR_INTERVALO_S;
+        if (aqui >= ESPERA_SONDA_S) {
+            g_sondando = true;
+            g_espera_sondas++;
+            return PASSO_SESSAO; // abrir_sessao tenta; se falhar igual, volta para cá
+        }
+        if (aqui >= proxima) {
+            proxima = aqui + ESPERA_LIGAR_INTERVALO_S;
             XConsoles cs;
             if (chamar((Chamada){.tipo = CH_LISTAR, .streaming = streaming, .saida = &cs})) {
-                consultas++;
                 for (int i = 0; i < cs.total; i++)
                     if (!strcmp(cs.itens[i].server_id, g_console.server_id))
                         snprintf(estado, sizeof estado, "%s", cs.itens[i].estado);
                 if (!strcmp(estado, "On")) {
-                    LOG("main: o Xbox ligou (%.0f s, %d consulta(s)); conectando", passou, consultas);
+                    LOG("main: o Xbox apareceu ligado na lista (%.0f s de espera, %d sonda(s)); conectando",
+                        segundos_desde(0) - g_espera_desde, g_espera_sondas);
+                    espera_terminar();
                     console_marcar_desligado(NULL);
                     return PASSO_SESSAO;
                 }
             }
             ultimo = -1; // redesenha (a consulta pode ter levado um tempo)
         }
-        if ((int)passou != ultimo) {
-            ultimo = (int)passou;
-            char detalhe[256];
-            snprintf(detalhe, sizeof detalhe,
-                     "Ligue o console pelo botão: o NXStream conecta sozinho quando ele ligar (%d s).\n"
-                     "Para ligar de longe: Configurações > Geral > Opções de energia > Suspensão.",
-                     (int)passou);
-            mostrar_conexao("O Xbox está desligado", detalhe, "B=Voltar para a lista|R=Jogos na nuvem|+=Fechar");
+        if ((int)total != ultimo) {
+            ultimo = (int)total;
+            mostrar_espera_ligar((int)total);
         }
         u64 b = quadro(&fechar);
-        if (fechar || (b & HidNpadButton_Plus))
+        if (fechar || (b & HidNpadButton_Plus)) {
+            espera_terminar();
             return PASSO_SAIR;
-        if (b & HidNpadButton_B)
+        }
+        if (b & HidNpadButton_B) {
+            espera_terminar();
             return PASSO_LISTA;
-        if (b & HidNpadButton_R)
+        }
+        if (b & HidNpadButton_R) {
+            espera_terminar();
             return PASSO_NUVEM;
+        }
     }
 }
 
@@ -1853,7 +1894,10 @@ static const char *estado_nuvem_texto(XSessaoEstado e) {
 static Passo abrir_sessao_uma(AuthConta *conta, AuthStreaming *streaming, XSessao *sessao_saida, double *preparo,
                               bool *pronta) {
     *pronta = false;
-    mostrar_conexao("Abrindo a sessão", NULL, NULL);
+    if (g_sondando) // sonda da espera: a tela "O Xbox está desligado" continua
+        mostrar_espera_ligar((int)(segundos_desde(0) - g_espera_desde));
+    else
+        mostrar_conexao("Abrindo a sessão", NULL, NULL);
     mostrar_agora();
 
     XSessao sessao;
@@ -1895,6 +1939,11 @@ static Passo abrir_sessao_uma(AuthConta *conta, AuthStreaming *streaming, XSessa
             estado = (XSessaoEstado)chamar((Chamada){.tipo = CH_SESSAO_ESTADO, .streaming = streaming,
                                                      .sessao = &sessao, .detalhe = detalhe, .tam = sizeof detalhe});
             LOG("main: sessao: %s (%.0f s)", detalhe[0] ? detalhe : xapi_sessao_estado_texto(estado), passou);
+            if (g_sondando && estado != XSESSAO_FALHOU && estado != XSESSAO_ERRO) {
+                LOG("main: o Xbox atendeu a sonda (%.0f s de espera, sonda %d); conectando",
+                    segundos_desde(0) - g_espera_desde, g_espera_sondas);
+                espera_terminar();
+            }
 
             if (estado == XSESSAO_ERRO) {
                 if (++erros_seguidos >= 5) {
@@ -1908,7 +1957,8 @@ static Passo abrir_sessao_uma(AuthConta *conta, AuthStreaming *streaming, XSessa
             if (estado == XSESSAO_FALHOU) {
                 encerrar_sessao(streaming, &sessao);
                 if (strstr(detalhe, "WaitingForServerToRegister")) {
-                    LOG("main: o Xbox nao respondeu ao chamado (desligado ou sem internet)");
+                    if (!g_sondando)
+                        LOG("main: o Xbox nao respondeu ao chamado (desligado ou sem internet)");
                     if (g_reconectando) { // na reconexão, a falha vira nova tentativa (como antes)
                         console_marcar_desligado(g_console.server_id);
                         return erro_sessao("O Xbox esta desligado.", DETALHE_XBOX_DESLIGADO);
@@ -1996,7 +2046,8 @@ static Passo abrir_sessao(AuthConta *conta, AuthStreaming *streaming, XSessao *s
         Passo p = abrir_sessao_uma(conta, streaming, sessao_saida, preparo, &pronta);
         if (pronta || p != PASSO_SESSAO)
             return p;
-        LOG("main: tentando abrir a sessao de novo");
+        if (!g_sondando)
+            LOG("main: tentando abrir a sessao de novo");
         garantir_streaming(conta, streaming); // renova antes, se a falha foi 401
     }
 }
