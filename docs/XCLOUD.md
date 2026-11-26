@@ -42,6 +42,7 @@ Como no resto do projeto, cada fase termina com um `.nro` testado no Switch ante
 | X0 | v0.11.0 / v0.11.1 | Funcionou no Switch (25/11); v0.11.1 deixa a carga mais rápida |
 | X1 | v0.12.0 | Funcionou no Switch (25/11): Gears Tactics abriu e conectou na 1ª |
 | X2 | v0.12.1 / v0.12.2 | Funcionou (25/11): 11 min em 720p, 0 erros de decodificação |
+| X3 | v0.13.0 | Em teste no Switch |
 
 ### Detalhes por fase
 
@@ -117,6 +118,23 @@ Como no resto do projeto, cada fase termina com um `.nro` testado no Switch ante
 **X2 – Qualidade.** Hoje a recepção de vídeo pede quadro-chave quando algo se perde, o que na internet causaria travadas frequentes. Plano: medir primeiro (perda e atraso por segundo no log e nas estatísticas), depois implementar NACK do lado de quem recebe (a libdatachannel não traz pronto) e um buffer de reordenação de algumas dezenas de milissegundos. Em 720p (decisão abaixo) a taxa deve ficar perto da do Remote Play (~5–8 Mbps), e o decodificador já é folgado (2 ms por quadro).
 
 **X3 – Interface.** Capas exigem baixar e decodificar JPEG (habilitar JPEG no stb_image, hoje só PNG), reduzir para o tamanho do cartão e guardar no SD para as próximas aberturas. A grade carrega as imagens em segundo plano para a navegação não travar.
+
+**X3 – Como ficou (v0.13.0).** Decisões do usuário (25/11): faixa de recentes + grade, busca pelo teclado do Switch, abas no topo com L/R.
+- **Abas** "Consoles" e "Nuvem" no cabeçalho, com os botões L e R; L ou R troca. O app abre na última aba usada (`conta.json`, `"aba"`), como decidido no roadmap.
+- **Tela da nuvem** (`docs/telas/10_nuvem.png`): faixa "Jogados recentemente" (os 24 de `/v2/titles/mru`) e grade "Todos os jogos" em 7 colunas, por nome. Capas de 140x210, borda verde no selecionado, rolagem animada; nome, editora e "jogado recentemente" embaixo. Direcional com repetição ao segurar; da faixa para baixo vai à grade na mesma coluna.
+- **Capas** (`ui/capas.c`): o catálogo traz a URL do pôster (`Image_Poster`, ou `Image_Tile`); o servidor de imagens da loja entrega já em 140x210 (`?w=140&h=210&format=jpg`, ~15 KB). Duas threads baixam as visíveis primeiro (e a próxima linha), guardam em `/switch/NXStream/capas/<productId>.jpg` e decodificam (stb_image com JPEG). 64 capas na memória. Sem capa ainda, o cartão mostra o nome.
+- **Busca:** Y abre o teclado do Switch; a grade mostra só os jogos com o texto, sem diferenciar maiúsculas nem acentos ("pokemon" acha "Pokémon"). B limpa.
+- **Outros botões:** A joga, X detalhes, − recarrega a lista, + fecha.
+- O cache de nomes passou para a versão 2 (com a capa): na 1ª abertura da v0.13.0 o catálogo é consultado de novo (~20 s, uma vez).
+- Fila: continua a tela de conexão com "Na fila para jogar" e a espera estimada (X1).
+
+| Teste (v0.13.0) | Resultado esperado | Resultado obtido |
+|---|---|---|
+| Abrir a aba Nuvem (L/R) | Faixa de recentes e grade; capas aparecendo em poucos segundos | |
+| Fechar e abrir o app | Abre direto na aba Nuvem; capas já vêm do SD | |
+| Rolar a grade segurando o direcional | Rolagem suave, sem travar; capas chegando | |
+| Y e buscar "minecraft" | Só os Minecraft; B volta a todos | |
+| A num jogo | Abre o jogo como antes; ao sair, volta no mesmo jogo | |
 
 **X4 – Reconexão.** O ponto mais incerto. Investigar se uma sessão de nuvem continua viva depois da queda e se aceita nova conexão (no Remote Play não aceita), ou se `/v5/sessions/cloud/active` permite retomar o mesmo jogo. Se não der para retomar, avisar o usuário antes de abrir sessão nova, porque o jogo pode recomeçar do último salvamento.
 

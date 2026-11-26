@@ -45,7 +45,7 @@ Rendered from the app's own UI code on a PC (`make -C tests/ui`); on the Switch 
 ## Requirements
 
 - A Switch running custom firmware (Atmosphère) with the Homebrew Menu
-- Your Xbox and Switch on the **same network** (xCloud support is in progress: since version 0.12.0 you can list and start cloud games; see the [xCloud roadmap](docs/XCLOUD.md), in Portuguese)
+- Your Xbox and Switch on the **same network** (xCloud support is in progress: since version 0.13.0 there is a Cloud tab with covers, recent games and search; see the [xCloud roadmap](docs/XCLOUD.md), in Portuguese)
 - **Remote features** enabled on the Xbox: *Settings › Devices & connections › Remote features › Enable remote features*, with the power mode set to *Sleep* if you want to wake it from standby
 
 ## Installation

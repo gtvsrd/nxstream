@@ -22,7 +22,7 @@ Para atualizar depois de mudar a interface: `make -C tests/ui` e copiar `tests/u
 | | |
 |---|---|
 | ![Login](telas/3_codigo.png) | ![Lista](telas/6_lista.png) |
-| **Login.** Código para digitar em microsoft.com/link no celular; A abre a página no navegador do Switch, já com o código. | **Lista de consoles.** Gamertag no canto, estado de cada console (bolinha verde: ligado; amarela: em repouso). Com um só console, a lista é pulada. |
+| **Login.** Código para digitar em microsoft.com/link no celular; A abre a página no navegador do Switch, já com o código. | **Lista de consoles.** Abas Consoles/Nuvem no topo (L/R), gamertag no canto, estado de cada console (bolinha verde: ligado; amarela: em repouso). Com um só console, a lista é pulada. |
 | ![Lista vazia](telas/7_lista_vazia.png) | ![Sair da conta](telas/5_aviso.png) |
 | **Nenhum console.** Explica onde ativar os recursos remotos no Xbox. | **Confirmação.** Perguntas e avisos com ícone. |
 
@@ -31,7 +31,7 @@ Para atualizar depois de mudar a interface: `make -C tests/ui` e copiar `tests/u
 | | |
 |---|---|
 | ![Jogos na nuvem](telas/10_nuvem.png) | |
-| **Jogos na nuvem** (R na lista de consoles, desde a v0.11.0). Jogos liberados para a conta, recentes no topo com bolinha verde; posição, plano e região no subtítulo. A abre o jogo (desde a v0.12.0), X mostra os detalhes. | |
+| **Jogos na nuvem** (aba Nuvem, desde a v0.13.0). Faixa de recentes e grade com as capas dos jogos liberados para a conta; o selecionado tem borda verde e o nome embaixo. A joga, X detalhes, Y busca pelo teclado do Switch. Capas falsas na imagem; no Switch, as do catálogo. | |
 
 ## Durante o jogo
 

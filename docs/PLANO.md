@@ -18,6 +18,7 @@
 - **v0.11.0** (25/11): início do xCloud, fase X0 (`docs/XCLOUD.md`): R na lista de consoles abre a lista dos jogos da nuvem. Funcionou: 622 jogos, Ultimate, região BRAZILSOUTH, mas em 20 s.
 - **v0.11.1**: carga da nuvem mais rápida (gzip, nomes no SD): 2ª abertura em 5,7 s.
 - **v0.11.4**: grava no log o motivo quando o Xbox encerra a conexão.
+- **v0.13.0**: xCloud fase X3: abas Consoles/Nuvem (L/R, abre na última), faixa de recentes, grade de capas, busca pelo teclado.
 - **v0.12.6**: sem as tentativas de sessão durante a espera (prendiam 90 s); sessão presa com o Xbox ligado é refeita.
 - **v0.12.5**: espera do Xbox ligar mais rápida (lista a cada 2 s e tentativa de sessão a cada 8 s).
 - **v0.12.4**: tela "O Xbox está desligado" que conecta sozinha quando o console é ligado pelo botão; abertura sem tentativa à toa.
@@ -29,7 +30,7 @@
 - **v0.11.3**: Xbox desligado aparece assim na lista; nuvem sem renovar a conta à toa.
 - **v0.11.2**: com o Xbox desligado (não em repouso), o erro aparece na hora com o que fazer; "Tentar de novo" depois de um erro de sessão não segue mais com a sessão que falhou.
 - **23/11:** repositório público (Actions sem cota). Antes, o histórico foi reescrito para tirar um dado pessoal dos testes; quem tinha um clone precisa clonar de novo.
-- Próximo passo do xCloud: fase X3 (interface da nuvem: aba, capas, busca, recentes, tela de fila).
+- Próximo passo do xCloud: o usuário testar a v0.13.0 (interface da nuvem); depois, fase X4 (reconexão sem reiniciar o jogo).
 - Fase 4: o usuário testar no dia a dia (repouso, Wi-Fi, HOME, sessão longa) e mandar os logs; com a fase 4 validada, juntar `fase-4` na `main` e seguir para a fase 5 (vibração, mapeamento configurável, opções).
 - Dicas registradas: para atualizar, copiar só o `NXStream.nro` (o `token.json` guarda o login entre versões); o preto em 16 (faixa limitada) é o correto no OLED.
 
