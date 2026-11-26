@@ -63,10 +63,20 @@ bool xapi_listar_consoles(const AuthStreaming *s, XConsoles *consoles) {
 
     bool ok = false;
     if (r.status == 200 && xapi_parse_consoles(r.corpo, consoles)) {
-        LOG("xapi: %d console(s) encontrado(s)", consoles->total);
-        for (int i = 0; i < consoles->total; i++)
-            LOG("xapi:   [%d] %s | %s | %s | id %.8s...", i, consoles->itens[i].nome,
-                consoles->itens[i].tipo, consoles->itens[i].estado, consoles->itens[i].server_id);
+        // v0.13.2: só quando muda (a espera do Xbox ligar consulta a cada 2 s)
+        static char anterior[512];
+        char resumo[512];
+        size_t n = (size_t)snprintf(resumo, sizeof resumo, "%d", consoles->total);
+        for (int i = 0; i < consoles->total && n < sizeof resumo; i++)
+            n += (size_t)snprintf(resumo + n, sizeof resumo - n, "|%s=%s", consoles->itens[i].server_id,
+                                  consoles->itens[i].estado);
+        if (strcmp(resumo, anterior)) {
+            snprintf(anterior, sizeof anterior, "%s", resumo);
+            LOG("xapi: %d console(s) encontrado(s)", consoles->total);
+            for (int i = 0; i < consoles->total; i++)
+                LOG("xapi:   [%d] %s | %s | %s | id %.8s...", i, consoles->itens[i].nome,
+                    consoles->itens[i].tipo, consoles->itens[i].estado, consoles->itens[i].server_id);
+        }
         ok = true;
     } else {
         log_erro("lista de consoles", &r);

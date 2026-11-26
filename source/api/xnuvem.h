@@ -52,5 +52,11 @@ bool  xnuvem_combina(const char *nome, const char *busca);
 // ou de outro idioma).
 char *xnuvem_cache_montar(const XTitulos *t, const char *idioma);
 int   xnuvem_cache_aplicar(const char *json, const char *idioma, XTitulos *t);
+// Lista salva no SD (v0.13.2): só os jogos com direito, para a aba Nuvem abrir
+// na hora e atualizar por trás. {"versao":1,"jogos":[["titleId","productId",recente],..]}
+char *xnuvem_lista_montar(const XTitulos *t);
+bool  xnuvem_lista_aplicar(const char *json, XTitulos *t);  // substitui *t; false = inválida
+// Lê a lista salva e os nomes salvos (rede nenhuma). false = não há lista salva.
+bool  xnuvem_carregar_salva(XTitulos *t);
 // Mantém só os jogos com direito e ordena (recentes primeiro, depois por nome).
 void  xnuvem_filtrar_ordenar(XTitulos *t);

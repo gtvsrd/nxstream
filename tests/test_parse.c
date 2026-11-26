@@ -446,6 +446,25 @@ static void teste_nuvem(void) {
     xnuvem_liberar(&t);
     CHECAR(t.itens == NULL && t.total == 0);
 
+    // Lista salva no SD: ida e volta (só os com direito)
+    XTitulos l = {0};
+    CHECAR(xnuvem_parse_titulos("{\"results\":[{\"titleId\":\"A1\",\"details\":{\"productId\":\"P1\","
+                                "\"hasEntitlement\":true}},{\"titleId\":\"B2\",\"details\":{\"productId\":\"P2\","
+                                "\"hasEntitlement\":false}},{\"titleId\":\"C3\",\"details\":{\"productId\":\"P3\","
+                                "\"isFreeInStore\":true}}]}", &l));
+    l.itens[2].recente = 4;
+    char *lj = xnuvem_lista_montar(&l);
+    CHECAR(lj && !strcmp(lj, "{\"versao\":1,\"jogos\":[[\"A1\",\"P1\",0],[\"C3\",\"P3\",4]]}"));
+    XTitulos l2 = {0};
+    CHECAR(xnuvem_lista_aplicar(lj, &l2) && l2.total == 2 && l2.total_servidor == 2);
+    CHECAR(!strcmp(l2.itens[1].titulo_id, "C3") && !strcmp(l2.itens[1].produto_id, "P3") && l2.itens[1].recente == 4);
+    CHECAR(l2.itens[0].tem_direito && l2.itens[0].nome[0] == '\0');
+    CHECAR(!xnuvem_lista_aplicar("{\"versao\":2,\"jogos\":[[\"X\",\"Y\",0]]}", &l2) && l2.total == 2);
+    CHECAR(!xnuvem_lista_aplicar("{\"versao\":1,\"jogos\":[]}", &l2));
+    free(lj);
+    xnuvem_liberar(&l);
+    xnuvem_liberar(&l2);
+
     // Busca sem maiúsculas nem acentos
     CHECAR(xnuvem_combina("Pokémon Café ReMix", "pokemon"));
     CHECAR(xnuvem_combina("Pokémon Café ReMix", "CAFE re"));

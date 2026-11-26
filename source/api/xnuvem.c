@@ -89,22 +89,42 @@ static char *ler_arquivo(const char *caminho) {
     return dados;
 }
 
-// Grava num temporário e troca, para não deixar um cache pela metade
-static void salvar_cache(const XTitulos *t) {
-    char *json = xnuvem_cache_montar(t, CATALOGO_IDIOMA);
+// Grava num temporário e troca, para não deixar um arquivo pela metade
+static bool gravar_json(const char *caminho, char *json) {
     if (!json)
-        return;
-    const char *tmp = NX_ARQ_NUVEM_NOMES ".tmp";
+        return false;
+    char tmp[128];
+    snprintf(tmp, sizeof tmp, "%s.tmp", caminho);
     FILE *f = fopen(tmp, "wb");
     bool ok = f && fwrite(json, 1, strlen(json), f) == strlen(json);
     if (f)
         ok = (fclose(f) == 0) && ok;
     if (ok) {
-        remove(NX_ARQ_NUVEM_NOMES);
-        ok = rename(tmp, NX_ARQ_NUVEM_NOMES) == 0;
+        remove(caminho);
+        ok = rename(tmp, caminho) == 0;
     }
-    LOG("xnuvem: cache de nomes %s (%zu KB)", ok ? "salvo" : "NAO foi salvo", strlen(json) / 1024);
     free(json);
+    return ok;
+}
+
+static void salvar_cache(const XTitulos *t) {
+    bool ok = gravar_json(NX_ARQ_NUVEM_NOMES, xnuvem_cache_montar(t, CATALOGO_IDIOMA));
+    LOG("xnuvem: cache de nomes %s", ok ? "salvo" : "NAO foi salvo");
+}
+
+bool xnuvem_carregar_salva(XTitulos *t) {
+    char *lista = ler_arquivo(NX_ARQ_NUVEM_LISTA);
+    bool ok = lista && xnuvem_lista_aplicar(lista, t);
+    free(lista);
+    if (!ok)
+        return false;
+    char *nomes = ler_arquivo(NX_ARQ_NUVEM_NOMES);
+    int com_nome = nomes ? xnuvem_cache_aplicar(nomes, CATALOGO_IDIOMA, t) : -1;
+    free(nomes);
+    xnuvem_filtrar_ordenar(t);
+    LOG("xnuvem: lista salva: %d jogo(s), %d com nome, %d recente(s)", t->total, com_nome < 0 ? 0 : com_nome,
+        t->recentes);
+    return true;
 }
 
 // Nomes no catálogo do Game Pass, em lotes, só para os jogos que o cache do SD
@@ -199,6 +219,8 @@ bool xnuvem_listar(const AuthStreaming *s, XTitulos *t) {
     if (buscar_nomes(t) > 0)
         salvar_cache(t);
     xnuvem_filtrar_ordenar(t); // de novo, agora por nome
+    if (!gravar_json(NX_ARQ_NUVEM_LISTA, xnuvem_lista_montar(t)))
+        LOG("xnuvem: lista NAO foi salva no SD");
 
     LOG("xnuvem: lista pronta em %.1f s: %d jogo(s), %d com nome, %d recente(s)", agora_s() - t0, t->total,
         t->com_nome, t->recentes);

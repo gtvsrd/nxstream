@@ -42,7 +42,7 @@ Como no resto do projeto, cada fase termina com um `.nro` testado no Switch ante
 | X0 | v0.11.0 / v0.11.1 | Funcionou no Switch (25/11); v0.11.1 deixa a carga mais rápida |
 | X1 | v0.12.0 | Funcionou no Switch (25/11): Gears Tactics abriu e conectou na 1ª |
 | X2 | v0.12.1 / v0.12.2 | Funcionou (25/11): 11 min em 720p, 0 erros de decodificação |
-| X3 | v0.13.0 | Em teste no Switch |
+| X3 | v0.13.0 – v0.13.2 | Funcionou (25/11): capas, aba lembrada, busca; v0.13.2 abre na hora |
 
 ### Detalhes por fase
 
@@ -127,6 +127,10 @@ Como no resto do projeto, cada fase termina com um `.nro` testado no Switch ante
 - **Outros botões:** A joga, X detalhes, − recarrega a lista, + fecha.
 - O cache de nomes passou para a versão 2 (com a capa): na 1ª abertura da v0.13.0 o catálogo é consultado de novo (~20 s, uma vez).
 - Fila: continua a tela de conexão com "Na fila para jogar" e a espera estimada (X1).
+
+**Resultado da v0.13.0 (log de 25/11, 22:56):** abriu sozinha na aba Nuvem na 2ª vez; 89 capas (76 baixadas, 13 do SD), **0 falhas**; busca "min" achou 10 jogos. Ponto fraco: ~7 s de "aguarde" a cada abertura da aba (acesso ~1 s e `/v2/titles` 5,5 s, sem compressão).
+
+**v0.13.2:** a lista de jogos liberados fica salva no SD (`/switch/NXStream/nuvem-lista.json`, com os nomes do cache): a aba abre **na hora** com ela e uma thread busca a atual por trás (com o acesso, se o token da conta for recente); o rótulo mostra "atualizando..." e, quando a lista nova chega, a grade é remontada sem perder o jogo selecionado. − também atualiza por trás. Se A for apertado durante a atualização, o app espera ela terminar ("Atualizando a lista de jogos..."), porque a sessão precisa do acesso. O log da lista de consoles só aparece quando algo muda (antes, a cada 2 s na espera do Xbox ligar).
 
 **v0.13.1** (pedido do usuário): L e R desenhados no formato dos botões de ombro (topo reto do lado de dentro, curva para fora) nas abas e no rodapé; **foto do perfil** (gamerpic) no lugar da inicial. A foto vem de `profile.xboxlive.com/users/me/profile/settings?settings=GameDisplayPicRaw` (XSTS do Xbox Live comum, cabeçalho `XBL3.0 x=uhs;token`), em 64x64, buscada por trás uma vez a cada abertura e guardada em `/switch/NXStream/foto.png`, que aparece na hora nas aberturas seguintes. Sair da conta apaga a foto.
 

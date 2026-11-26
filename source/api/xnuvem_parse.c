@@ -261,3 +261,56 @@ bool xnuvem_combina(const char *nome, const char *busca) {
     }
     return false;
 }
+
+char *xnuvem_lista_montar(const XTitulos *t) {
+    cJSON *raiz = cJSON_CreateObject();
+    cJSON_AddNumberToObject(raiz, "versao", 1);
+    cJSON *jogos = cJSON_AddArrayToObject(raiz, "jogos");
+    for (int i = 0; i < t->total; i++) {
+        const XTitulo *x = &t->itens[i];
+        if (!x->tem_direito)
+            continue;
+        cJSON *j = cJSON_CreateArray();
+        cJSON_AddItemToArray(j, cJSON_CreateString(x->titulo_id));
+        cJSON_AddItemToArray(j, cJSON_CreateString(x->produto_id));
+        cJSON_AddItemToArray(j, cJSON_CreateNumber(x->recente));
+        cJSON_AddItemToArray(jogos, j);
+    }
+    char *json = cJSON_PrintUnformatted(raiz);
+    cJSON_Delete(raiz);
+    return json;
+}
+
+bool xnuvem_lista_aplicar(const char *json, XTitulos *t) {
+    cJSON *raiz = json ? cJSON_Parse(json) : NULL;
+    const cJSON *versao = cJSON_GetObjectItemCaseSensitive(raiz, "versao");
+    const cJSON *jogos = cJSON_GetObjectItemCaseSensitive(raiz, "jogos");
+    int n = cJSON_IsArray(jogos) ? cJSON_GetArraySize(jogos) : 0;
+    if (!cJSON_IsNumber(versao) || versao->valuedouble != 1 || n <= 0) {
+        cJSON_Delete(raiz);
+        return false;
+    }
+    XTitulo *itens = calloc((size_t)n, sizeof *itens);
+    if (!itens) {
+        cJSON_Delete(raiz);
+        return false;
+    }
+    int total = 0;
+    const cJSON *j;
+    cJSON_ArrayForEach(j, jogos) {
+        const cJSON *id = cJSON_GetArrayItem(j, 0), *prod = cJSON_GetArrayItem(j, 1), *rec = cJSON_GetArrayItem(j, 2);
+        if (!cJSON_IsString(id) || !id->valuestring[0])
+            continue;
+        XTitulo *x = &itens[total++];
+        copiar(x->titulo_id, sizeof x->titulo_id, id->valuestring);
+        copiar(x->produto_id, sizeof x->produto_id, cJSON_IsString(prod) ? prod->valuestring : "");
+        x->recente = cJSON_IsNumber(rec) ? (int)rec->valuedouble : 0;
+        x->tem_direito = true;
+    }
+    cJSON_Delete(raiz);
+    free(t->itens);
+    memset(t, 0, sizeof *t);
+    t->itens = itens;
+    t->total = t->total_servidor = total;
+    return total > 0;
+}

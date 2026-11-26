@@ -758,7 +758,108 @@ static int g_n_grade;
 static int g_faixa_idx[32];          // jogados recentemente, na ordem
 static int g_n_faixa;
 
+// ---------------------------------------------------------------------------
+// Atualização da lista por trás (v0.13.2). A aba abre com a lista salva no SD
+// e uma thread busca a atual (e o acesso, se preciso) com cópias próprias dos
+// tokens; a thread principal recolhe o resultado quando ele fica pronto.
+// ---------------------------------------------------------------------------
+typedef struct {
+    pthread_t t;
+    bool rodando;            // thread criada e ainda não recolhida
+    bool pronto;             // a thread terminou (leitura atômica)
+    bool precisa_acesso;
+    AuthConta conta;         // cópia só do access token
+    AuthStreaming nuvem;     // cópia do acesso atual, ou o novo
+    XTitulos lista;
+    AuthStatus st_acesso;
+    bool ok;
+    char erro[256];
+    u64 inicio;
+} JobNuvem;
+static JobNuvem g_job;
+
+static void *thread_job_nuvem(void *arg) {
+    JobNuvem *j = arg;
+    j->st_acesso = AUTH_OK;
+    if (j->precisa_acesso) {
+        j->st_acesso = auth_nuvem(&j->conta, &j->nuvem);
+        if (j->st_acesso != AUTH_OK)
+            snprintf(j->erro, sizeof j->erro, "%s", auth_ultimo_erro());
+    }
+    if (j->st_acesso == AUTH_OK) {
+        j->ok = xnuvem_listar(&j->nuvem, &j->lista);
+        if (!j->ok)
+            snprintf(j->erro, sizeof j->erro, "%s", xnuvem_ultimo_erro());
+    }
+    __atomic_store_n(&j->pronto, true, __ATOMIC_RELEASE);
+    return NULL;
+}
+
+static void nuvem_job_iniciar(const AuthConta *conta, bool precisa_acesso) {
+    if (g_job.rodando || !conta->access_token)
+        return;
+    memset(&g_job, 0, sizeof g_job);
+    g_job.precisa_acesso = precisa_acesso;
+    g_job.conta.access_token = strdup(conta->access_token);
+    if (!precisa_acesso && g_nuvem.gs_token) {
+        g_job.nuvem = g_nuvem;
+        g_job.nuvem.gs_token = strdup(g_nuvem.gs_token);
+    }
+    g_job.inicio = armGetSystemTick();
+    pthread_attr_t at;
+    pthread_attr_init(&at);
+    pthread_attr_setstacksize(&at, 256 * 1024);
+    g_job.rodando = pthread_create(&g_job.t, &at, thread_job_nuvem, &g_job) == 0;
+    pthread_attr_destroy(&at);
+    LOG("main: atualizando a lista da nuvem em segundo plano%s", precisa_acesso ? " (com acesso)" : "");
+    if (!g_job.rodando) {
+        free(g_job.conta.access_token);
+        auth_streaming_liberar(&g_job.nuvem);
+    }
+}
+
+// 1 = lista nova em g_titulos; -1 = falhou (a lista atual continua); 0 = nada
+// pronto. esperar: bloqueia até a thread terminar.
+static int nuvem_job_recolher(bool esperar) {
+    if (!g_job.rodando || (!esperar && !__atomic_load_n(&g_job.pronto, __ATOMIC_ACQUIRE)))
+        return 0;
+    pthread_join(g_job.t, NULL);
+    g_job.rodando = false;
+    free(g_job.conta.access_token);
+    if (g_job.precisa_acesso && g_job.st_acesso == AUTH_OK) {
+        auth_streaming_liberar(&g_nuvem);
+        g_nuvem = g_job.nuvem; // o novo acesso passa a valer
+        g_nuvem_recusado = false;
+    } else {
+        auth_streaming_liberar(&g_job.nuvem);
+    }
+    if (g_job.ok) {
+        xnuvem_liberar(&g_titulos);
+        g_titulos = g_job.lista;
+        LOG("main: lista da nuvem atualizada por tras em %.1f s (%d jogos)", segundos_desde(g_job.inicio),
+            g_titulos.total);
+        return 1;
+    }
+    xnuvem_liberar(&g_job.lista);
+    if (strstr(g_job.erro, "HTTP 401"))
+        g_nuvem_recusado = true;
+    LOG("main: atualizacao da lista da nuvem falhou: %s", g_job.erro);
+    return -1;
+}
+
+// Espera a atualização com a tela de "aguarde" animada
+static int nuvem_job_esperar_na_tela(void) {
+    if (!g_job.rodando)
+        return 0;
+    mostrar_aguarde("Atualizando a lista de jogos...");
+    bool fechar = false;
+    while (!__atomic_load_n(&g_job.pronto, __ATOMIC_ACQUIRE))
+        quadro(&fechar);
+    return nuvem_job_recolher(true);
+}
+
 static void nuvem_esquecer(void) {
+    nuvem_job_recolher(true); // não deixa a thread usando o que vai ser apagado
     auth_streaming_liberar(&g_nuvem);
     memset(&g_nuvem, 0, sizeof g_nuvem);
     xnuvem_liberar(&g_titulos);
@@ -917,30 +1018,65 @@ static bool busca_teclado(char *texto, size_t tam) {
     return true;
 }
 
-static Passo passo_nuvem(AuthConta *conta) {
-    // 1. Acesso (gsToken próprio, dura ~4 h)
+// Acesso à nuvem com a tela de "aguarde". PASSO_NUVEM = deu certo.
+static Passo nuvem_acesso(AuthConta *conta) {
+    mostrar_aguarde("Acessando o Xbox Cloud Gaming...");
+    AuthStreaming novo = {0};
+    AuthStatus st = (AuthStatus)chamar((Chamada){.tipo = CH_NUVEM_ACESSO, .conta = conta, .streaming = &novo});
+    if (st == AUTH_INVALIDO) {
+        auth_streaming_liberar(&novo);
+        auth_apagar(NX_ARQ_TOKEN);
+        auth_conta_liberar(conta);
+        return PASSO_LOGIN;
+    }
+    if (st != AUTH_OK) {
+        auth_streaming_liberar(&novo);
+        return erro_nuvem("Não foi possível acessar o Xbox Cloud Gaming.", auth_ultimo_erro());
+    }
+    auth_streaming_liberar(&g_nuvem);
+    g_nuvem = novo;
+    g_nuvem_recusado = false;
+    return PASSO_NUVEM;
+}
+
+static bool nuvem_precisa_acesso(void) {
     bool vencendo = g_nuvem.duracao_s > 0 && time(NULL) - g_nuvem.obtido_em > g_nuvem.duracao_s - NUVEM_RENOVAR_ANTES_S;
-    if (!g_nuvem.gs_token || vencendo || g_nuvem_recusado) {
-        mostrar_aguarde("Acessando o Xbox Cloud Gaming...");
-        AuthStreaming novo = {0};
-        AuthStatus st = (AuthStatus)chamar((Chamada){.tipo = CH_NUVEM_ACESSO, .conta = conta, .streaming = &novo});
-        if (st == AUTH_INVALIDO) {
-            auth_streaming_liberar(&novo);
-            auth_apagar(NX_ARQ_TOKEN);
-            auth_conta_liberar(conta);
-            return PASSO_LOGIN;
-        }
-        if (st != AUTH_OK) {
-            auth_streaming_liberar(&novo);
-            return erro_nuvem("Não foi possível acessar o Xbox Cloud Gaming.", auth_ultimo_erro());
-        }
-        auth_streaming_liberar(&g_nuvem);
-        g_nuvem = novo;
-        g_nuvem_recusado = false;
+    return !g_nuvem.gs_token || vencendo || g_nuvem_recusado;
+}
+
+// Começa a atualização por trás. O acesso só vai junto se o token da conta for
+// recente (a thread não renova a conta); senão, é pedido aqui, com a tela.
+static Passo nuvem_atualizar_por_tras(AuthConta *conta) {
+    bool acesso = nuvem_precisa_acesso();
+    bool conta_recente = conta->obtido_em && time(NULL) - conta->obtido_em < CONTA_RENOVAR_DEPOIS_S;
+    if (acesso && !conta_recente) {
+        Passo p = nuvem_acesso(conta);
+        if (p != PASSO_NUVEM)
+            return p;
+        acesso = false;
+    }
+    nuvem_job_iniciar(conta, acesso);
+    return PASSO_NUVEM;
+}
+
+static Passo passo_nuvem(AuthConta *conta) {
+    nuvem_job_recolher(false); // uma atualização de antes pode ter terminado
+
+    // v0.13.2: com a lista salva no SD, a aba abre na hora e atualiza por trás
+    // (log de 25/11: ~7 s de espera a cada abertura, 5,5 s só de /v2/titles)
+    if (g_titulos.total_servidor == 0 && !g_job.rodando && xnuvem_carregar_salva(&g_titulos)) {
+        Passo p = nuvem_atualizar_por_tras(conta);
+        if (p != PASSO_NUVEM)
+            return p;
     }
 
-    // 2. Lista (fica na memória até Y=Atualizar)
+    // Sem lista salva (1ª vez): acesso e lista com a tela de "aguarde"
     if (g_titulos.total_servidor == 0) {
+        if (nuvem_precisa_acesso()) {
+            Passo p = nuvem_acesso(conta);
+            if (p != PASSO_NUVEM)
+                return p;
+        }
         mostrar_aguarde("Carregando os jogos da nuvem...");
         if (!chamar((Chamada){.tipo = CH_NUVEM_LISTAR, .streaming = &g_nuvem, .saida = &g_titulos})) {
             if (strstr(xnuvem_ultimo_erro(), "HTTP 401"))
@@ -972,6 +1108,23 @@ static Passo passo_nuvem(AuthConta *conta) {
     double segurando_desde = 0, ultima_repeticao = 0;
     bool primeiro_quadro = true;
     for (;;) {
+        // Lista nova chegou por trás: remonta mantendo o jogo selecionado
+        {
+            char id_sel[64] = "";
+            if (zona == 0 && g_n_faixa)
+                snprintf(id_sel, sizeof id_sel, "%s", g_titulos.itens[g_faixa_idx[sel_f]].titulo_id);
+            else if (zona == 1 && g_n_grade)
+                snprintf(id_sel, sizeof id_sel, "%s", g_titulos.itens[g_grade_idx[sel_g]].titulo_id);
+            if (nuvem_job_recolher(false) == 1) {
+                nuvem_montar_indices();
+                for (int i = 0; zona == 0 && i < g_n_faixa; i++)
+                    if (!strcmp(g_titulos.itens[g_faixa_idx[i]].titulo_id, id_sel))
+                        sel_f = i;
+                for (int i = 0; zona == 1 && i < g_n_grade; i++)
+                    if (!strcmp(g_titulos.itens[g_grade_idx[i]].titulo_id, id_sel))
+                        sel_g = i;
+            }
+        }
         bool tem_faixa = g_n_faixa > 0;
         if (!tem_faixa)
             zona = 1;
@@ -1029,7 +1182,7 @@ static Passo passo_nuvem(AuthConta *conta) {
                     snprintf(rt->texto, sizeof rt->texto, "Resultados para “%.40s” (%d)", g_busca, g_n_grade);
                 else
                     snprintf(rt->texto, sizeof rt->texto, "Todos os jogos (%d) · %s", g_n_grade,
-                             oferta_amigavel(g_nuvem.oferta));
+                             g_job.rodando ? "atualizando..." : oferta_amigavel(g_nuvem.oferta));
             }
             if (tem_faixa && r == 0) {
                 int i0 = (int)fx - 1;
@@ -1104,10 +1257,13 @@ static Passo passo_nuvem(AuthConta *conta) {
             }
             continue;
         }
-        if ((b & HidNpadButton_Minus) && !g_busca[0]) {
-            ui_definir_abas(-1);
-            xnuvem_liberar(&g_titulos);
-            return PASSO_NUVEM;
+        if ((b & HidNpadButton_Minus) && !g_busca[0] && !g_job.rodando) {
+            Passo p = nuvem_atualizar_por_tras(conta); // a grade continua na tela
+            if (p != PASSO_NUVEM) {
+                ui_definir_abas(-1);
+                return p;
+            }
+            continue;
         }
         if ((b & HidNpadButton_X) && atual) {
             ui_definir_abas(-1);
@@ -1117,7 +1273,12 @@ static Passo passo_nuvem(AuthConta *conta) {
         if ((b & HidNpadButton_A) && atual) {
             // Fase X1: abre o jogo na nuvem pelo mesmo fluxo da sessão do console
             ui_definir_abas(-1);
-            g_jogo = *atual;
+            XTitulo escolhido = *atual; // a lista pode ser trocada durante a espera
+            if (g_job.rodando)
+                nuvem_job_esperar_na_tela(); // a sessão precisa do acesso que ela traz
+            if (!g_nuvem.gs_token)
+                return erro_nuvem("Não foi possível acessar o Xbox Cloud Gaming.", g_job.erro);
+            g_jogo = escolhido;
             g_na_nuvem = true;
             memset(&g_console, 0, sizeof g_console);
             copiar_utf8(g_console.nome, sizeof g_console.nome, g_jogo.nome[0] ? g_jogo.nome : g_jogo.titulo_id);
@@ -2747,6 +2908,7 @@ int main(int argc, char *argv[]) {
         rtc_diag_finalizar_biblioteca();
         LOG("main: encerrando (3/4: liberando a libdatachannel)");
         rtc_comum_finalizar();
+        nuvem_job_recolher(true); // a atualização da lista também usa o HTTPS
         capas_encerrar(); // threads das capas usam o HTTPS
         LOG("main: encerrando (4/4: finalizando o HTTPS)");
         encerramento_esperar();

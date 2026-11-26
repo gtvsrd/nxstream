@@ -17,6 +17,7 @@
 #define NX_ARQ_LOG          NX_PASTA_APP "/NXStream.log"
 #define NX_ARQ_CONTA        NX_PASTA_APP "/conta.json"   // gamertag e último console (sem tokens)
 #define NX_ARQ_NUVEM_NOMES  NX_PASTA_APP "/nuvem-nomes.json" // nomes dos jogos da nuvem (catálogo)
+#define NX_ARQ_NUVEM_LISTA  NX_PASTA_APP "/nuvem-lista.json" // jogos liberados (a aba abre na hora)
 #define NX_PASTA_CAPAS      NX_PASTA_APP "/capas"            // capas dos jogos (JPEG, ~15 KB cada)
 #define NX_ARQ_FOTO         NX_PASTA_APP "/foto.png"         // foto do perfil (gamerpic), pequena
 // Opcional: se existir, o HTTPS usa estes certificados em vez dos do sistema
